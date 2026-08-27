@@ -1,0 +1,99 @@
+name: computer-use-interactive-e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_soak:
+        description: Run the long stable soak after the candidate lane passes
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  macos-retina:
+    timeout-minutes: 90
+    runs-on: [self-hosted, computer-use-e2e, macos, retina]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Install and build without running installer scripts
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 install --frozen-lockfile --ignore-scripts
+      - name: Build the MCP entrypoints
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 build
+      - name: Run the gated macOS candidate lane
+        shell: bash
+        working-directory: product
+        env:
+          CUA_E2E: "1"
+          CUA_E2E_MODE: candidate
+          CUA_REPEAT: "20"
+          CUA_E2E_EVIDENCE_PATH: ${{ runner.temp }}/macos-candidate.json
+        run: tests/e2e/macos/run.sh
+      - name: Run the real macOS soak after the platform gate
+        if: ${{ inputs.run_soak }}
+        shell: bash
+        working-directory: product
+        env:
+          CUA_SOAK: "1"
+          CUA_MACOS_PREFLIGHT: passed
+          CUA_SOAK_EVIDENCE_OUT: ${{ runner.temp }}/macos-soak.json
+        run: node --experimental-strip-types tests/e2e/soak/run.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-redacted-evidence
+          path: |
+            ${{ runner.temp }}/macos-candidate.json
+            ${{ runner.temp }}/macos-soak.json
+          if-no-files-found: error
+
+  windows-dpi:
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        dpi: [100, 125, 150]
+    runs-on: [self-hosted, computer-use-e2e, windows, "dpi-${{ matrix.dpi }}"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Install without running installer scripts
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 install --frozen-lockfile --ignore-scripts
+      - name: Build the MCP entrypoints
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 build
+      - name: Run the gated Windows candidate lane
+        shell: pwsh
+        working-directory: product
+        env:
+          CUA_E2E: "1"
+          CUA_E2E_MODE: candidate
+          CUA_REPEAT: "20"
+          CUA_E2E_DPI: ${{ matrix.dpi }}
+          CUA_E2E_EVIDENCE_OUT: ${{ runner.temp }}/windows-${{ matrix.dpi }}-candidate.json
+        run: tests/e2e/windows/run.ps1
+      - name: Run the real Windows soak after the platform gate
+        if: ${{ inputs.run_soak && matrix.dpi == 100 }}
+        shell: pwsh
+        working-directory: product
+        env:
+          CUA_SOAK: "1"
+          CUA_E2E_RUNNER_GATED: "1"
+          CUA_SOAK_EVIDENCE_OUT: ${{ runner.temp }}/windows-soak.json
+        run: node --experimental-strip-types tests/e2e/soak/run.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.dpi }}-redacted-evidence
+          path: |
+            ${{ runner.temp }}/windows-${{ matrix.dpi }}-candidate.json
+            ${{ runner.temp }}/windows-soak.json
+          if-no-files-found: error

@@ -1,0 +1,38 @@
+name: computer-use-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  portable-contracts:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Install the frozen dependency graph without native setup
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 install --frozen-lockfile --ignore-scripts
+      - name: Unit and contract tests
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 test
+      - name: Typecheck
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 typecheck
+      - name: Build
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 build
+      - name: Inspect the release and real npm tar manifests
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 exec vitest run tests/contract/release.test.ts && npm pack --dry-run --json

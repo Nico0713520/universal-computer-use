@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+
+import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
 const RELEASE_ROOT = "https://github.com/trycua/cua/releases/download";
@@ -50,6 +52,243 @@ function replacePinnedSourceMap(sourceMap, tag, commit) {
   return sourceMap
     .replace(releasePattern, `开发基线 release：\`${tag}\``)
     .replace(commitPattern, `开发基线 commit：\`${commit}\``);
+}
+
+function sameArray(left, right) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+function assertCandidateEngine(evidence, lock, platform, contractFingerprint) {
+  const engine = evidence.engine;
+  const platformLock = lock.platforms[platform];
+  if (
+    engine?.name !== "cua-driver"
+    || engine.version !== lock.version
+    || engine.tag !== lock.tag
+    || engine.source_commit !== lock.source_commit
+    || engine.asset !== platformLock.asset
+    || engine.asset_sha256 !== platformLock.sha256
+    || !sameArray(engine.required_fix_commits, lock.required_fix_commits)
+  ) {
+    throw new Error(`${platform}_candidate_engine_mismatch`);
+  }
+  const fingerprint = platform === "macos"
+    ? evidence.contract_fingerprint_sha256
+    : engine.contract_fingerprint_sha256;
+  if (fingerprint !== contractFingerprint) {
+    throw new Error("contract_fingerprint_mismatch");
+  }
+  if (platform === "windows" && !sameArray(engine.required_tools, lock.required_tools)) {
+    throw new Error("windows_candidate_tool_contract_mismatch");
+  }
+}
+
+async function parseEvidence(path, schemaPath) {
+  const bytes = await readFile(path);
+  let value;
+  try {
+    value = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw new Error(`evidence_json_invalid:${basename(path)}`);
+  }
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  // Zod validates the strict base schema. Candidate-only conditions are
+  // enforced explicitly below because z.fromJSONSchema intentionally does
+  // not implement JSON Schema if/then/else.
+  delete schema.allOf;
+  const parsed = z.fromJSONSchema(schema).safeParse(value);
+  if (!parsed.success) throw new Error(`evidence_schema_invalid:${basename(path)}`);
+  return { path, bytes, value: parsed.data, sha256: digest(bytes) };
+}
+
+function evidenceReference(platform, repeat, sha256) {
+  return `platform/${platform}-r${repeat}-${sha256}.json`;
+}
+
+async function atomicWrite(path, text) {
+  const temporary = resolve(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, text, { flag: "wx" });
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+/**
+ * Promote only complete, externally produced candidate evidence. Evidence
+ * remains outside the repository; the lock receives relative content-addressed
+ * references and normalized signer identities only.
+ */
+export async function promoteEngineRelease(options, dependencies) {
+  if (!STABLE_SEMVER.test(options.version)) {
+    throw new Error("promote requires one explicit stable SemVer x.y.z");
+  }
+  if (!(await dependencies.isWorktreeClean())) {
+    throw new Error("refusing to promote with a dirty worktree");
+  }
+  if (
+    !isAbsolute(options.lockPath)
+    || !isAbsolute(options.macEvidencePath)
+    || !isAbsolute(options.windowsEvidencePath)
+  ) {
+    throw new Error("promotion paths must be absolute");
+  }
+
+  const oldLockText = await readFile(options.lockPath, "utf8");
+  const lock = JSON.parse(oldLockText);
+  if (
+    lock.version !== options.version
+    || lock.tag !== `cua-driver-rs-v${options.version}`
+    || !COMMIT.test(lock.source_commit)
+    || !Array.isArray(lock.required_fix_commits)
+    || lock.required_fix_commits.length === 0
+    || !lock.required_fix_commits.every((commit) => COMMIT.test(commit))
+  ) {
+    throw new Error("promotion requires one staged formal release with required fixes");
+  }
+  if (
+    lock.platforms?.macos?.release_eligible !== false
+    || lock.platforms?.windows?.release_eligible !== false
+    || lock.platforms.macos.development_eligible !== true
+    || lock.platforms.windows.development_eligible !== true
+  ) {
+    throw new Error("promotion requires one non-release-eligible staged lock");
+  }
+  const contractFingerprint = await dependencies.currentContractFingerprint();
+  if (!SHA256.test(contractFingerprint)) throw new Error("public contract fingerprint is malformed");
+
+  // Read every external input before changing the lock. Windows PATH is a
+  // directory containing exactly one JSON file for each accepted DPI lane.
+  const windowsNames = (await readdir(options.windowsEvidencePath))
+    .filter((name) => name.toLowerCase().endsWith(".json"))
+    .sort();
+  if (windowsNames.length !== 3) {
+    throw new Error("windows_evidence_requires_exact_dpi_lanes");
+  }
+  const macRaw = JSON.parse(await readFile(options.macEvidencePath, "utf8"));
+  if (
+    macRaw?.mode !== "candidate"
+    || macRaw?.results?.repeat_completed < 20
+    || macRaw.results.repeat_requested !== macRaw.results.repeat_completed
+    || macRaw.results.plugin_seam_failures !== 0
+  ) {
+    throw new Error("macos_candidate_runs_insufficient");
+  }
+  const windowsRaw = await Promise.all(windowsNames.map(async (name) => ({
+    path: resolve(options.windowsEvidencePath, name),
+    value: JSON.parse(await readFile(resolve(options.windowsEvidencePath, name), "utf8")),
+  })));
+  const rawDpis = windowsRaw.map(({ value }) => value?.host?.dpi_percent).sort((a, b) => a - b);
+  if (JSON.stringify(rawDpis) !== JSON.stringify([100, 125, 150])) {
+    throw new Error("windows_evidence_requires_exact_dpi_lanes");
+  }
+  for (const { value } of windowsRaw) {
+    if (
+      value?.stage !== "candidate"
+      || value.promotable !== true
+      || value.results?.iterations_passed < 20
+      || value.results.iterations_expected !== value.results.iterations_passed
+      || value.results.plugin_seam_failures !== 0
+    ) {
+      throw new Error("windows_candidate_runs_insufficient");
+    }
+  }
+
+  const mac = await parseEvidence(options.macEvidencePath, options.macSchemaPath);
+  const windows = await Promise.all(windowsRaw.map(({ path }) =>
+    parseEvidence(path, options.windowsSchemaPath)));
+  assertCandidateEngine(mac.value, lock, "macos", contractFingerprint);
+  for (const evidence of windows) {
+    assertCandidateEngine(evidence.value, lock, "windows", contractFingerprint);
+  }
+
+  const macSigner = mac.value.signature;
+  if (
+    macSigner.codesign !== "valid"
+    || macSigner.gatekeeper !== "accepted"
+    || typeof macSigner.team_identifier !== "string"
+    || typeof macSigner.bundle_id !== "string"
+    || !SHA256.test(macSigner.designated_requirement_sha256)
+  ) {
+    throw new Error("macos_signer_missing");
+  }
+  const firstWindowsSigner = windows[0].value.signer;
+  if (
+    firstWindowsSigner?.status !== "Valid"
+    || typeof firstWindowsSigner.subject !== "string"
+    || firstWindowsSigner.subject.length === 0
+    || !/^[0-9A-F]{40}$/.test(firstWindowsSigner.thumbprint)
+  ) {
+    throw new Error("windows_signer_missing");
+  }
+  for (const evidence of windows.slice(1)) {
+    if (
+      evidence.value.signer.subject !== firstWindowsSigner.subject
+      || evidence.value.signer.thumbprint !== firstWindowsSigner.thumbprint
+    ) {
+      throw new Error("windows_signer_mismatch");
+    }
+  }
+
+  const macReference = evidenceReference("macos", mac.value.results.repeat_completed, mac.sha256);
+  const windowsReferences = windows
+    .sort((left, right) => left.value.host.dpi_percent - right.value.host.dpi_percent)
+    .map((evidence) => ({
+      ...evidence,
+      reference: evidenceReference(
+        `windows-${evidence.value.host.dpi_percent}`,
+        evidence.value.results.iterations_passed,
+        evidence.sha256,
+      ),
+    }));
+  const promotedLock = {
+    ...lock,
+    platforms: {
+      macos: {
+        ...lock.platforms.macos,
+        release_eligible: true,
+        signer: {
+          kind: "apple",
+          team_id: macSigner.team_identifier,
+          bundle_id: macSigner.bundle_id,
+          designated_requirement_sha256: macSigner.designated_requirement_sha256,
+        },
+        e2e_evidence: [macReference],
+      },
+      windows: {
+        ...lock.platforms.windows,
+        release_eligible: true,
+        signer: {
+          kind: "authenticode",
+          subject: firstWindowsSigner.subject,
+          thumbprint: firstWindowsSigner.thumbprint,
+        },
+        e2e_evidence: windowsReferences.map(({ reference }) => reference),
+      },
+    },
+  };
+  const promotedText = `${JSON.stringify(promotedLock, null, 2)}\n`;
+  await atomicWrite(options.lockPath, promotedText);
+  try {
+    await dependencies.verifyContracts();
+  } catch (error) {
+    await atomicWrite(options.lockPath, oldLockText);
+    throw error;
+  }
+
+  return {
+    version: lock.version,
+    tag: lock.tag,
+    release_eligible: true,
+    evidence_renames: [
+      { source: options.macEvidencePath, target: macReference, sha256: mac.sha256 },
+      ...windowsReferences.map(({ path, reference, sha256 }) => ({ source: path, target: reference, sha256 })),
+    ],
+  };
 }
 
 /**
@@ -288,6 +527,19 @@ export const defaultStageDependencies = {
   },
 };
 
+export const defaultPromotionDependencies = {
+  isWorktreeClean: defaultStageDependencies.isWorktreeClean,
+  async currentContractFingerprint() {
+    const protocolUrl = pathToFileURL(resolve(productDirectory, "dist", "protocol.js"));
+    const protocol = await import(`${protocolUrl.href}?promotion=${Date.now()}`);
+    if (!Array.isArray(protocol.PUBLIC_TOOL_SCHEMAS)) {
+      throw new Error("build is missing PUBLIC_TOOL_SCHEMAS");
+    }
+    return digest(JSON.stringify(protocol.PUBLIC_TOOL_SCHEMAS));
+  },
+  verifyContracts: defaultStageDependencies.verifyContracts,
+};
+
 function isDirectEntryPoint() {
   const entry = process.argv[1];
   return entry !== undefined && pathToFileURL(resolve(entry)).href === import.meta.url;
@@ -295,9 +547,36 @@ function isDirectEntryPoint() {
 
 if (isDirectEntryPoint()) {
   const [command, version, ...extra] = process.argv.slice(2);
-  if (command !== "stage" || version === undefined || extra.length !== 0) {
-    process.stderr.write("Usage: select-engine-release.mjs stage VERSION\n");
+  const stage = command === "stage" && version !== undefined && extra.length === 0;
+  const promote = command === "promote"
+    && version !== undefined
+    && extra.length === 4
+    && extra[0] === "--mac-evidence"
+    && extra[2] === "--windows-evidence";
+  if (!stage && !promote) {
+    process.stderr.write(
+      "Usage:\n"
+      + "  select-engine-release.mjs stage VERSION\n"
+      + "  select-engine-release.mjs promote VERSION --mac-evidence PATH --windows-evidence PATH\n",
+    );
     process.exitCode = 2;
+  } else if (promote) {
+    void promoteEngineRelease(
+      {
+        version,
+        lockPath: resolve(productDirectory, "engine.lock.json"),
+        macEvidencePath: resolve(extra[1]),
+        windowsEvidencePath: resolve(extra[3]),
+        macSchemaPath: resolve(productDirectory, "tests", "e2e", "macos", "evidence.schema.json"),
+        windowsSchemaPath: resolve(productDirectory, "tests", "e2e", "windows", "evidence.schema.json"),
+      },
+      defaultPromotionDependencies,
+    ).then((result) => {
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    }).catch((error) => {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    });
   } else {
     void stageEngineRelease(
       {
