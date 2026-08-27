@@ -30,7 +30,7 @@ computer_act
 
 ### 2.1 v1 必须做到
 
-- macOS 13+ 与 Windows 10 1903+/Windows 11 x64 使用同一 MCP 工具协议。
+- macOS 14+ 与 Windows 10 1903+/Windows 11 x64 使用同一 MCP 工具协议。
 - 兼容能运行本地 stdio MCP、接收 MCP 图片结果并调用工具的多模态 Agent。
 - 使用宿主 Agent 当前模型，不要求用户提供第二套模型、端点或 API Key。
 - 支持主显示器截图、点击、双击、右击、移动、拖拽、滚动、文本输入、单键、组合键和等待。
@@ -164,9 +164,9 @@ type ComputerAction =
   | { type: "click"; x: number; y: number }
   | { type: "double_click"; x: number; y: number }
   | { type: "right_click"; x: number; y: number }
-  | { type: "move"; x: number; y: number; duration_ms?: number }
+  | { type: "move"; x: number; y: number }
   | { type: "drag"; from_x: number; from_y: number; to_x: number; to_y: number; duration_ms?: number }
-  | { type: "scroll"; delta_x?: number; delta_y: number }
+  | { type: "scroll"; x: number; y: number; direction: "up" | "down" | "left" | "right"; amount: number; by?: "line" | "page" }
   | { type: "type"; text: string }
   | { type: "keypress"; keys: string[] }
   | { type: "wait"; ms: number };
@@ -176,7 +176,8 @@ type ComputerAction =
 
 - 坐标是截图像素，左上角为 `(0, 0)`。
 - `x` 必须满足 `0 <= x < screenshot.width`，`y` 同理。
-- `duration_ms` 范围 `0..10000`。
+- `drag.duration_ms` 范围 `0..10000`。
+- `scroll.amount` 范围 `1..50`，滚动发生在当前截图中的 `(x, y)`。
 - `wait.ms` 范围 `0..20000`。
 - `type.text` 最大 20,000 个 Unicode 字符。
 - `keypress.keys` 包含 1–8 个标准化键名。
@@ -205,6 +206,8 @@ type ComputerAction =
   }
 }
 ```
+
+当动作未到达 Cua 的具体执行路径时，`route` 和 `delivery` 使用产品级哨兵值 `unknown`；插件不得虚构一个实际未使用的 Cua 路径。
 
 MCP 内容包含动作摘要和新 `ImageContent`。若动作失败但重新截图成功，仍返回新 snapshot，供模型看清当前状态。若重新截图也失败，会话中没有有效 snapshot，模型必须重新调用 `computer_observe`。
 
@@ -240,7 +243,8 @@ Cua Driver 是运行时依赖，不是我方源码子树。仓库不包含 Cua R
 
 - 精确 Cua 版本；
 - 对应 release tag 和 source commit；
-- macOS/Windows 资产名称和 SHA-256；
+- macOS/Windows 资产名称和 SHA-256，作为版本晋级与发布审计证据；
+- tag/source commit 固定的入口安装器、可执行辅助脚本及各自 SHA-256；
 - 支持的协议工具清单；
 - `release_eligible` 状态。
 
@@ -257,13 +261,13 @@ Cua Driver 是运行时依赖，不是我方源码子树。仓库不包含 Cua R
 | `right_click` | `click`，`button:right`、`count:1` |
 | `move` | `move_cursor` |
 | `drag` | `drag` |
-| `scroll` | `scroll` |
+| `scroll` | `scroll`，原样传递坐标、方向、行/页和数量 |
 | `type` | `type_text` |
 | 单键 `keypress` | `press_key` |
 | 组合键 `keypress` | `hotkey` |
 | `wait` | 插件内可取消计时器，不调用 Cua |
 
-所有 Cua 调用固定 `target:{kind:"desktop",display_id:"primary"}` 和插件内部 session。v1 不把 Cua 的其他 16 个工具暴露给模型。
+所有接受 action target 的 Cua 输入动作固定 `target:{kind:"desktop",display_id:"primary"}` 和插件内部 session；观察与会话生命周期调用只传其正式契约支持的字段。v1 不把 Cua 的其他工具暴露给模型。
 
 ## 9. 错误与恢复
 
@@ -272,6 +276,7 @@ Cua Driver 是运行时依赖，不是我方源码子树。仓库不包含 Cua R
 - `runtime_missing`：未安装 Cua；运行 `setup`。
 - `runtime_unavailable`：Runtime 未运行或连接中断；运行 `doctor` 或重启 Runtime。
 - `engine_version_mismatch`：实际版本与锁文件不符；安装锁定版本。
+- `engine_not_release_eligible`：当前平台的锁定引擎尚未通过公开发布门槛；等待或晋级正式版本。
 - `permission_required`：macOS 权限缺失；运行 Cua 授权流程。
 - `unsupported_platform`：当前 OS/架构不在 v1 范围。
 - `interactive_session_required`：桌面锁定、无人登录或 Session 0。
@@ -304,8 +309,8 @@ computer-use uninstall
 
 - 检查 Node.js、OS 和架构；
 - 读取 `engine.lock.json`；
-- 调用或下载对应的官方 Cua 安装器；
-- 要求精确版本，校验已发布资产哈希；
+- 下载同一 release tag/source commit 的官方 Cua 安装脚本组并逐文件校验哈希；
+- 要求官方安装器安装精确版本，安装后再次校验 Runtime 版本和系统代码签名；
 - 启动 Cua Runtime；
 - macOS 引导一次性 Screen Recording 和 Accessibility 授权；
 - 输出宿主配置命令，不静默修改未知宿主配置。
