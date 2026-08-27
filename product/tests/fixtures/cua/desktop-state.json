@@ -1,0 +1,13 @@
+{
+  "text": "captured desktop state",
+  "images": [
+    {
+      "mimeType": "image/png",
+      "dataBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+    }
+  ],
+  "structuredJson": "{\"platform\":\"macos\",\"display\":\"primary\",\"screenshot_width\":2560,\"screenshot_height\":1440,\"screen_width\":1280,\"screen_height\":720,\"scale_factor\":2,\"screenshot_mime_type\":\"image/png\"}",
+  "isError": false,
+  "degraded": false,
+  "rawJson": "{}"
+}
