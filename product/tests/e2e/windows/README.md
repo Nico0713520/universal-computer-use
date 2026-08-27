@@ -55,6 +55,7 @@ $env:CUA_E2E_EVIDENCE_OUT = '<absolute path outside the repository to a new evid
 ```
 
 Development evidence is always `promotable:false`, even if every test passes.
+`CUA_REPEAT` must be between 1 and 100 in both modes.
 
 ## Candidate run
 
@@ -78,6 +79,8 @@ Run that command independently on actual 100%, 125% and 150% machine/settings. A
 ## Evidence and permission boundaries
 
 Evidence conforms to `evidence.schema.json` and contains only allowlisted machine/runtime metadata: OS build/architecture, DPI, browser build hash, engine lock/fingerprint, Runtime executable hash, Authenticode status plus certificate subject/thumbprint, a hash and stable allowlisted fields from `computer-use doctor --json`, fixture assertion counts and the content-origin measurement metadata.
+
+The runner executes the exact `CUA_RUNTIME_EXE --version` command and requires the complete output `cua-driver <locked-version>` before accepting its signature or hash. The contract fingerprint is computed from the built package as `sha256(JSON.stringify(PUBLIC_TOOL_SCHEMAS))`, matching the macOS lane. Evidence creation uses `FileMode.CreateNew`, so another process cannot replace or overwrite the selected output between the preflight check and the write.
 
 It does not contain screenshots, screenshot bytes, typed strings, key values, model prompts, environment dumps, paths, Cua `rawJson`, or free-form diagnostic text. Real evidence and calibration files must stay outside the repository and must not be committed.
 

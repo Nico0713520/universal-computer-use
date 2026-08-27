@@ -83,6 +83,14 @@ describe("Windows DPI evidence contract", () => {
     expect(runner).toContain("WTSActive");
     expect(runner).toContain("GetDpiForSystem");
     expect(runner).toContain("tests/e2e/shared");
+    expect(runner).toMatch(/CUA_REPEAT[\s\S]*not exceed 100/i);
+    expect(runner).toContain("& $runtimePath --version");
+    expect(runner).toContain('$runtimeVersionReport -ne "cua-driver $($lock.version)"');
+    expect(runner).toContain("FileMode]::CreateNew");
+    expect(runner).not.toContain("[IO.File]::WriteAllText");
+    expect(runner).toContain('dist\\protocol.js');
+    expect(runner).toContain("JSON.stringify(PUBLIC_TOOL_SCHEMAS)");
+    expect(runner).not.toContain("$contractMaterial");
     expect(runner).not.toMatch(/Get-ChildItem\s+Env:|CUA_E2E_MODE\s*=\s*["']candidate["']/i);
   });
 });

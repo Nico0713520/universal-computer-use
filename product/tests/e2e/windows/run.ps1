@@ -178,6 +178,9 @@ if ($repeatText -notmatch "^[1-9][0-9]*$") {
   Stop-Lane "CUA_REPEAT must be a positive integer"
 }
 $repeat = [int]$repeatText
+if ($repeat -gt 100) {
+  Stop-Lane "CUA_REPEAT must not exceed 100"
+}
 if ($mode -eq "candidate" -and $repeat -lt 20) {
   Stop-Lane "candidate evidence requires CUA_REPEAT of at least 20"
 }
@@ -187,7 +190,8 @@ $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $productRoot ".."))
 $lockPath = Join-Path $productRoot "engine.lock.json"
 $mcpPath = Join-Path $productRoot "dist\mcp\main.js"
 $cliPath = Join-Path $productRoot "dist\cli\main.js"
-foreach ($requiredPath in @($lockPath, $mcpPath, $cliPath)) {
+$protocolPath = Join-Path $productRoot "dist\protocol.js"
+foreach ($requiredPath in @($lockPath, $mcpPath, $cliPath, $protocolPath)) {
   if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
     Stop-Lane "required lock/build artifact is missing: $requiredPath"
   }
@@ -263,6 +267,17 @@ if (-not [IO.Path]::IsPathRooted($runtimePathText)) {
 $runtimePath = [IO.Path]::GetFullPath($runtimePathText)
 if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
   Stop-Lane "CUA_RUNTIME_EXE does not exist"
+}
+if ([IO.Path]::GetFileName($runtimePath).ToLowerInvariant() -ne "cua-driver.exe") {
+  Stop-Lane "CUA_RUNTIME_EXE must name the Cua Runtime executable"
+}
+$runtimeVersionLines = & $runtimePath --version
+if ($LASTEXITCODE -ne 0) {
+  Stop-Lane "CUA_RUNTIME_EXE --version failed"
+}
+$runtimeVersionReport = ($runtimeVersionLines -join "`n").Trim()
+if ($runtimeVersionReport -ne "cua-driver $($lock.version)") {
+  Stop-Lane "CUA_RUNTIME_EXE --version does not exactly match engine.lock.json"
 }
 $signature = Get-AuthenticodeSignature -LiteralPath $runtimePath
 $signatureStatus = [string]$signature.Status
@@ -470,8 +485,19 @@ finally {
   Pop-Location
 }
 
-$contractMaterial = ([string]$lock.version) + "`n" + ((@($lock.required_tools) | ForEach-Object { [string]$_ }) -join "`n")
-$contractFingerprint = Get-LowerSha256Text $contractMaterial
+$contractFingerprintLines = & $node.Source --input-type=module -e '
+  import { createHash } from "node:crypto";
+  import { pathToFileURL } from "node:url";
+  const { PUBLIC_TOOL_SCHEMAS } = await import(pathToFileURL(process.argv[1]).href);
+  process.stdout.write(createHash("sha256").update(JSON.stringify(PUBLIC_TOOL_SCHEMAS)).digest("hex"));
+' $protocolPath
+if ($LASTEXITCODE -ne 0) {
+  Stop-Lane "built public tool schema fingerprint could not be computed"
+}
+$contractFingerprint = ($contractFingerprintLines -join "").Trim()
+if ($contractFingerprint -notmatch "^[0-9a-f]{64}$") {
+  Stop-Lane "built public tool schema fingerprint is malformed"
+}
 $promotable = $mode -eq "candidate"
 $evidence = [ordered]@{
   schema_version = 1
@@ -558,5 +584,18 @@ if (-not (Test-Path -LiteralPath $evidenceDirectory -PathType Container)) {
   New-Item -ItemType Directory -Path $evidenceDirectory | Out-Null
 }
 $utf8WithoutBom = New-Object Text.UTF8Encoding($false)
-[IO.File]::WriteAllText($evidenceOut, $evidenceJson + "`n", $utf8WithoutBom)
+$evidenceBytes = $utf8WithoutBom.GetBytes($evidenceJson + "`n")
+$evidenceStream = [IO.File]::Open(
+  $evidenceOut,
+  [IO.FileMode]::CreateNew,
+  [IO.FileAccess]::Write,
+  [IO.FileShare]::None
+)
+try {
+  $evidenceStream.Write($evidenceBytes, 0, $evidenceBytes.Length)
+  $evidenceStream.Flush($true)
+}
+finally {
+  $evidenceStream.Dispose()
+}
 Write-Host "Windows $actualDpiPercent% $mode evidence written to $evidenceOut"
