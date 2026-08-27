@@ -137,6 +137,25 @@ describe("Cua daemon connection", () => {
     ]);
   });
 
+  it("maps a failed Cua observation envelope to capture_failed", async () => {
+    const lock = await loadEngineLock();
+    const toolResult = JSON.parse(
+      await readFile(new URL("../fixtures/cua/desktop-state.json", import.meta.url), "utf8"),
+    ) as ToolResult;
+    toolResult.isError = true;
+    toolResult.errorCode = "capture_denied";
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResult,
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock);
+
+    await expect(engine.observe(new AbortController().signal)).rejects.toMatchObject({
+      code: "capture_failed",
+    });
+  });
+
   it("maps a missing screenshot image to capture_failed", async () => {
     const lock = await loadEngineLock();
     const toolResult = JSON.parse(

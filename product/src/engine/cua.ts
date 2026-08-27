@@ -31,6 +31,15 @@ function isPositiveInteger(value: unknown): value is number {
 }
 
 function parseDesktopObservation(result: ToolResult): EngineObservation {
+  if (result.isError) {
+    throw new ComputerUseError(
+      "capture_failed",
+      "Cua failed to capture the desktop",
+      "observe_again",
+      true,
+    );
+  }
+
   let desktop: DesktopStateJson;
   try {
     desktop = JSON.parse(result.structuredJson ?? "") as DesktopStateJson;
