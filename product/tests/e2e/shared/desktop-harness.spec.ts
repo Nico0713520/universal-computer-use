@@ -382,6 +382,8 @@ describe.skipIf(!E2E_ENABLED)("deterministic desktop harness through real stdio 
     const point = screenshotPoint(layout, observed, "click-target");
     const first = await act(observed.snapshotId, { type: "click", ...point });
     expect(first.isError).not.toBe(true);
+    expect(first.structuredContent).toMatchObject({ consumed_snapshot_id: observed.snapshotId });
+    expect(first.structuredContent?.snapshot_id).not.toBe(observed.snapshotId);
     await expect.poll(
       async () => (await fetchJson<HarnessState>("/state")).clicks,
       { timeout: 5_000 },
