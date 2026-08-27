@@ -67,6 +67,27 @@ describe("doctor", () => {
     expect(report.reported_engine_version).toBeNull();
   });
 
+  it("fails before observation when an injected Runtime version differs from the lock", async () => {
+    const engine = new FakeEngine();
+    Object.defineProperty(engine, "version", { value: "0.22.0" });
+
+    const report = await runDoctor(
+      { platform: "darwin", arch: "arm64" },
+      { lock: await loadEngineLock(), connectEngine: vi.fn(async () => engine) },
+    );
+
+    expect(report).toMatchObject({
+      ok: false,
+      reported_engine_version: "0.22.0",
+      engine_connected: true,
+      required_tools_present: false,
+      observation_succeeded: false,
+      error: { code: "engine_version_mismatch", recovery: "setup", retryable: false },
+    });
+    expect(engine.observations).toBe(0);
+    expect(engine.closes).toBe(1);
+  });
+
   it("truthfully classifies a locked desktop without sending an action", async () => {
     const engine = new FakeEngine({
       observationSequence: [

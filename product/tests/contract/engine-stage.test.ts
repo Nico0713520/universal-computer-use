@@ -11,6 +11,7 @@ type StageOptions = {
   version: string;
   lockPath: string;
   packagePath: string;
+  dependencyLockPath: string;
   sourceMapPath: string;
 };
 
@@ -19,6 +20,11 @@ type StageDependencies = {
   resolveTagCommit(tag: string): Promise<string>;
   isAncestor(ancestor: string, descendant: string): Promise<boolean>;
   download(url: URL): Promise<Uint8Array>;
+  updateDependencyLock(input: {
+    version: string;
+    packagePath: string;
+    dependencyLockPath: string;
+  }): Promise<void>;
   verifyContracts(): Promise<void>;
 };
 
@@ -45,6 +51,7 @@ async function fixture() {
   roots.push(root);
   const lockPath = join(root, "engine.lock.json");
   const packagePath = join(root, "package.json");
+  const dependencyLockPath = join(root, "pnpm-lock.yaml");
   const sourceMapPath = join(root, "upstream-sources.md");
   const lock = structuredClone(await loadEngineLock());
   lock.required_fix_commits = ["a".repeat(40)];
@@ -58,10 +65,14 @@ async function fixture() {
     )}\n`,
   );
   await writeFile(
+    dependencyLockPath,
+    "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      '@trycua/cua-driver':\n        specifier: 0.22.1\n        version: 0.22.1\n",
+  );
+  await writeFile(
     sourceMapPath,
     "- 开发基线 release：`cua-driver-rs-v0.22.1`\n- 开发基线 commit：`c60ef6ad2db8774fb342938843e2f17f26c68240`\n",
   );
-  return { root, lockPath, packagePath, sourceMapPath };
+  return { root, lockPath, packagePath, dependencyLockPath, sourceMapPath };
 }
 
 const version = "1.2.3";
@@ -83,6 +94,14 @@ const checksums = `${sha256("mac asset")}  ${macAsset}\n${sha256("windows asset"
 function dependencies(overrides: Partial<StageDependencies> = {}) {
   const urls: string[] = [];
   const verifyContracts = vi.fn(async () => undefined);
+  const updateDependencyLock = vi.fn(async ({ version: nextVersion, packagePath, dependencyLockPath }) => {
+    const pkg = JSON.parse(await readFile(packagePath, "utf8"));
+    expect(pkg.dependencies["@trycua/cua-driver"]).toBe(nextVersion);
+    await writeFile(
+      dependencyLockPath,
+      `lockfileVersion: '9.0'\nsdk-version: ${nextVersion}\n`,
+    );
+  });
   const deps: StageDependencies = {
     isWorktreeClean: vi.fn(async () => true),
     resolveTagCommit: vi.fn(async (receivedTag) => {
@@ -98,10 +117,11 @@ function dependencies(overrides: Partial<StageDependencies> = {}) {
       if (value === undefined) throw new Error(`unexpected download: ${url.href}`);
       return Buffer.from(value);
     },
+    updateDependencyLock,
     verifyContracts,
     ...overrides,
   };
-  return { deps, urls, verifyContracts };
+  return { deps, urls, updateDependencyLock, verifyContracts };
 }
 
 describe("candidate engine stage", () => {
@@ -114,6 +134,7 @@ describe("candidate engine stage", () => {
 
     const lock = JSON.parse(await readFile(paths.lockPath, "utf8"));
     const pkg = JSON.parse(await readFile(paths.packagePath, "utf8"));
+    const dependencyLock = await readFile(paths.dependencyLockPath, "utf8");
     const sourceMap = await readFile(paths.sourceMapPath, "utf8");
     expect(lock).toMatchObject({ version, tag, source_commit: sourceCommit });
     expect(() => EngineLockSchema.parse(lock)).not.toThrow();
@@ -150,6 +171,12 @@ describe("candidate engine stage", () => {
     expect(lock.platforms.macos.uninstaller_file.sha256).toBe(sha256(files["uninstall.sh"]));
     expect(lock.platforms.windows.uninstaller_file.sha256).toBe(sha256(files["uninstall.ps1"]));
     expect(pkg.dependencies["@trycua/cua-driver"]).toBe(version);
+    expect(dependencyLock).toContain(`sdk-version: ${version}`);
+    expect(edge.updateDependencyLock).toHaveBeenCalledWith({
+      version,
+      packagePath: paths.packagePath,
+      dependencyLockPath: paths.dependencyLockPath,
+    });
     expect(sourceMap).toContain(`开发基线 release：\`${tag}\``);
     expect(sourceMap).toContain(`开发基线 commit：\`${sourceCommit}\``);
     expect(edge.urls).toContain(
@@ -202,6 +229,7 @@ describe("candidate engine stage", () => {
     const before = await Promise.all([
       readFile(paths.lockPath, "utf8"),
       readFile(paths.packagePath, "utf8"),
+      readFile(paths.dependencyLockPath, "utf8"),
       readFile(paths.sourceMapPath, "utf8"),
     ]);
     const edge = dependencies({
@@ -222,34 +250,47 @@ describe("candidate engine stage", () => {
       Promise.all([
         readFile(paths.lockPath, "utf8"),
         readFile(paths.packagePath, "utf8"),
+        readFile(paths.dependencyLockPath, "utf8"),
         readFile(paths.sourceMapPath, "utf8"),
       ]),
     ).resolves.toEqual(before);
   });
 
-  it("rolls back all target files when contract verification fails", async () => {
+  it.each(["dependency update", "contract verification"] as const)(
+    "rolls back all four target files when %s fails",
+    async (failurePoint) => {
     const paths = await fixture();
     const before = await Promise.all([
       readFile(paths.lockPath, "utf8"),
       readFile(paths.packagePath, "utf8"),
+      readFile(paths.dependencyLockPath, "utf8"),
       readFile(paths.sourceMapPath, "utf8"),
     ]);
-    const edge = dependencies({
-      verifyContracts: vi.fn(async () => {
-        throw new Error("contract failed");
-      }),
-    });
+    const edge = dependencies(
+      failurePoint === "dependency update"
+        ? {
+            updateDependencyLock: vi.fn(async ({ dependencyLockPath }) => {
+              await writeFile(dependencyLockPath, "partially updated\n");
+              throw new Error("dependency update failed");
+            }),
+          }
+        : {
+            verifyContracts: vi.fn(async () => {
+              throw new Error("contract failed");
+            }),
+          },
+    );
     const { stageEngineRelease } = await stageModule();
 
-    await expect(stageEngineRelease({ version, ...paths }, edge.deps)).rejects.toThrow(
-      "contract failed",
-    );
+    await expect(stageEngineRelease({ version, ...paths }, edge.deps)).rejects.toThrow();
     await expect(
       Promise.all([
         readFile(paths.lockPath, "utf8"),
         readFile(paths.packagePath, "utf8"),
+        readFile(paths.dependencyLockPath, "utf8"),
         readFile(paths.sourceMapPath, "utf8"),
       ]),
     ).resolves.toEqual(before);
-  });
+    },
+  );
 });

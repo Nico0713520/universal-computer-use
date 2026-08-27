@@ -19,6 +19,8 @@ export interface Downloader {
   download(url: URL, destination: string): Promise<void>;
 }
 
+const TERMINATION_GRACE_MS = 250;
+
 export const nodeProcessRunner: ProcessRunner = {
   run(command, args, options) {
     return new Promise((resolve, reject) => {
@@ -30,9 +32,24 @@ export const nodeProcessRunner: ProcessRunner = {
       let stdout = "";
       let stderr = "";
       let timedOut = false;
+      let settled = false;
+      let forceTimer: NodeJS.Timeout | undefined;
+      const finish = (result: ProcessResult | Error): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (forceTimer !== undefined) clearTimeout(forceTimer);
+        if (result instanceof Error) reject(result);
+        else resolve(result);
+      };
+      const timeoutError = (): Error => new Error(`process timeout: ${command}`);
       const timer = setTimeout(() => {
         timedOut = true;
         child.kill("SIGTERM");
+        forceTimer = setTimeout(() => {
+          child.kill("SIGKILL");
+          finish(timeoutError());
+        }, TERMINATION_GRACE_MS);
       }, options.timeoutMs);
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
@@ -43,16 +60,14 @@ export const nodeProcessRunner: ProcessRunner = {
         stderr += chunk;
       });
       child.once("error", (error) => {
-        clearTimeout(timer);
-        reject(error);
+        finish(timedOut ? timeoutError() : error);
       });
       child.once("close", (code) => {
-        clearTimeout(timer);
         if (timedOut) {
-          reject(new Error(`process timeout: ${command}`));
+          finish(timeoutError());
           return;
         }
-        resolve({ code: code ?? 1, stdout, stderr });
+        finish({ code: code ?? 1, stdout, stderr });
       });
     });
   },

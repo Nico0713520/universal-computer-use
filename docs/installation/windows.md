@@ -62,7 +62,7 @@ computer-use config --client codex
 computer-use config --client kimi
 ```
 
-Generic output is stdout-only JSON with an absolute `computer-use-mcp` executable path; explanations are written to stderr. Codex and Kimi output deterministic registration commands. The host must send PNG content to its own current multimodal model and permit repeated `computer_observe` / one-action `computer_act` calls. Host approval settings remain the host's responsibility.
+Generic output is stdout-only JSON whose `command` is the absolute path to the current `node.exe` and whose first argument is the absolute `dist\mcp\main.js` path; it does not depend on `PATH`, an npm shim, or direct execution of a JavaScript file. Explanations are written to stderr. Codex and Kimi output deterministic registration commands with those paths as two independently quoted arguments. The host must send PNG content to its own current multimodal model and permit repeated `computer_observe` / one-action `computer_act` calls. Host approval settings remain the host's responsibility.
 
 ## Upgrade
 

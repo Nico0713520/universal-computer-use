@@ -99,7 +99,17 @@ export async function runDoctor(
     return failedBase(dependencies.lock, platform, serializedError(error));
   }
 
+  let requiredToolsPresent = false;
   try {
+    if (engine.version !== dependencies.lock.version) {
+      throw new ComputerUseError(
+        "engine_version_mismatch",
+        "Installed Cua version differs from engine.lock.json",
+        "setup",
+        false,
+      );
+    }
+    requiredToolsPresent = true;
     const observed = await engine.observe(new AbortController().signal);
     if (observed.platform !== platform) {
       throw new ComputerUseError(
@@ -136,7 +146,7 @@ export async function runDoctor(
       ...failedBase(dependencies.lock, platform, failure),
       reported_engine_version: engine.version,
       engine_connected: true,
-      required_tools_present: true,
+      required_tools_present: requiredToolsPresent,
       desktop_unlocked:
         failure.code === "interactive_session_required" ? false : null,
       permissions: failure.code === "permission_required" ? "required" : "unknown",

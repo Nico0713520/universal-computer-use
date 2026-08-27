@@ -12,15 +12,20 @@ function isAbsoluteOnAnySupportedPlatform(path: string): boolean {
 }
 
 function commandArgument(path: string): string {
-  return /\s/.test(path) ? JSON.stringify(path) : path;
+  if (path.includes('"')) throw new Error("executable paths containing quotes are unsupported");
+  return `"${path}"`;
 }
 
 export function renderConfig(
   client: ConfigClient,
-  mcpExecutablePath: string,
+  nodeExecutablePath: string,
+  mcpScriptPath: string,
 ): ConfigOutput {
-  if (!isAbsoluteOnAnySupportedPlatform(mcpExecutablePath)) {
-    throw new Error("absolute MCP executable path required");
+  if (
+    !isAbsoluteOnAnySupportedPlatform(nodeExecutablePath) ||
+    !isAbsoluteOnAnySupportedPlatform(mcpScriptPath)
+  ) {
+    throw new Error("absolute Node executable and MCP script paths required");
   }
 
   const stderr =
@@ -31,8 +36,8 @@ export function renderConfig(
         {
           mcpServers: {
             "computer-use": {
-              command: mcpExecutablePath,
-              args: [],
+              command: nodeExecutablePath,
+              args: [mcpScriptPath],
             },
           },
         },
@@ -43,7 +48,7 @@ export function renderConfig(
     };
   }
   return {
-    stdout: `${client} mcp add computer-use -- ${commandArgument(mcpExecutablePath)}\n`,
+    stdout: `${client} mcp add computer-use -- ${commandArgument(nodeExecutablePath)} ${commandArgument(mcpScriptPath)}\n`,
     stderr,
   };
 }

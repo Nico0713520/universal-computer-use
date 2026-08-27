@@ -31,12 +31,13 @@ type CliDependencies = Readonly<{
   downloader: Downloader;
   runner: ProcessRunner;
   connectEngine: typeof CuaEngine.connect;
-  mcpExecutablePath: string;
+  nodeExecutablePath: string;
+  mcpScriptPath: string;
   productOwnedPaths: readonly string[];
   isEngineInstalled: () => Promise<boolean>;
 }>;
 
-const mcpExecutablePath = fileURLToPath(new URL("../mcp/main.js", import.meta.url));
+const mcpScriptPath = fileURLToPath(new URL("../mcp/main.js", import.meta.url));
 
 function defaultEnginePath(): string {
   if (process.platform === "darwin") return "/Applications/CuaDriver.app";
@@ -55,7 +56,8 @@ const defaultDependencies: CliDependencies = {
   downloader: fetchDownloader,
   runner: nodeProcessRunner,
   connectEngine: CuaEngine.connect,
-  mcpExecutablePath,
+  nodeExecutablePath: process.execPath,
+  mcpScriptPath,
   // Task 9 owns host-specific Skill links. Until it creates a product-owned
   // manifest, safe uninstall deliberately removes no inferred user paths.
   productOwnedPaths: [],
@@ -138,7 +140,11 @@ export async function runCli(
     if (client !== "generic" && client !== "codex" && client !== "kimi") {
       throw new Error(`unsupported config client: ${client}`);
     }
-    const output = renderConfig(client satisfies ConfigClient, dependencies.mcpExecutablePath);
+    const output = renderConfig(
+      client satisfies ConfigClient,
+      dependencies.nodeExecutablePath,
+      dependencies.mcpScriptPath,
+    );
     io.stdout.write(output.stdout);
     io.stderr.write(output.stderr);
     return 0;

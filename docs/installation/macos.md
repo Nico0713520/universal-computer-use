@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- macOS 13 or newer on Apple silicon or Intel x64.
+- macOS 14 or newer on Apple silicon or Intel x64.
 - Node.js 22.19.0 or newer and an npm-compatible package manager.
 - An unlocked, foreground login session. The v1 plugin does not operate the login window, FileVault unlock screen, screen saver lock screen, or a background session.
 - A host Agent that supports local stdio MCP, forwards MCP image content to its current multimodal model, and can continue tool calls until the visible task is complete.
@@ -67,7 +67,7 @@ computer-use config --client codex
 computer-use config --client kimi
 ```
 
-The generic command prints JSON only to stdout, using an absolute `computer-use-mcp` path. Explanatory text goes to stderr. The other commands print a copyable MCP registration command. The host must pass returned PNG images to its own current multimodal model and allow the model to alternate `computer_observe` and one `computer_act` call. Any approval dialogs belong to the host's policy, not this plugin.
+The generic command prints JSON only to stdout. Its `command` is the absolute path to the current Node executable and `args[0]` is the absolute path to `dist/mcp/main.js`, so the host never relies on an executable bit, `PATH`, or an npm shim. Explanatory text goes to stderr. The other commands print a copyable MCP registration command with those same two paths as independently quoted arguments. The host must pass returned PNG images to its own current multimodal model and allow the model to alternate `computer_observe` and one `computer_act` call. Any approval dialogs belong to the host's policy, not this plugin.
 
 ## Upgrade
 

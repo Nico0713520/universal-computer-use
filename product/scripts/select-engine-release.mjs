@@ -67,6 +67,7 @@ export async function stageEngineRelease(options, dependencies) {
 
   const oldLockText = await readFile(options.lockPath, "utf8");
   const oldPackageText = await readFile(options.packagePath, "utf8");
+  const oldDependencyLockText = await readFile(options.dependencyLockPath, "utf8");
   const oldSourceMap = await readFile(options.sourceMapPath, "utf8");
   const lock = JSON.parse(oldLockText);
   const packageJson = JSON.parse(oldPackageText);
@@ -183,11 +184,17 @@ export async function stageEngineRelease(options, dependencies) {
     await writeFile(options.lockPath, stagedLockText);
     await writeFile(options.packagePath, stagedPackageText);
     await writeFile(options.sourceMapPath, stagedSourceMap);
+    await dependencies.updateDependencyLock({
+      version: options.version,
+      packagePath: options.packagePath,
+      dependencyLockPath: options.dependencyLockPath,
+    });
     await dependencies.verifyContracts();
   } catch (error) {
     await Promise.all([
       writeFile(options.lockPath, oldLockText),
       writeFile(options.packagePath, oldPackageText),
+      writeFile(options.dependencyLockPath, oldDependencyLockText),
       writeFile(options.sourceMapPath, oldSourceMap),
     ]);
     throw error;
@@ -245,6 +252,24 @@ export const defaultStageDependencies = {
     return comparison.status === "ahead" || comparison.status === "identical";
   },
   download: fetchBytes,
+  async updateDependencyLock({ packagePath, dependencyLockPath }) {
+    const packageDirectory = dirname(packagePath);
+    if (resolve(packageDirectory, "pnpm-lock.yaml") !== resolve(dependencyLockPath)) {
+      throw new Error("dependency lock path must be the package pnpm-lock.yaml");
+    }
+    const executable = process.platform === "win32" ? "npx.cmd" : "npx";
+    await execFileAsync(
+      executable,
+      [
+        "--yes",
+        "pnpm@9.0.4",
+        "install",
+        "--lockfile-only",
+        "--ignore-scripts",
+      ],
+      { cwd: packageDirectory },
+    );
+  },
   async verifyContracts() {
     const executable = process.platform === "win32" ? "npx.cmd" : "npx";
     await execFileAsync(
@@ -279,6 +304,7 @@ if (isDirectEntryPoint()) {
         version,
         lockPath: resolve(productDirectory, "engine.lock.json"),
         packagePath: resolve(productDirectory, "package.json"),
+        dependencyLockPath: resolve(productDirectory, "pnpm-lock.yaml"),
         sourceMapPath: resolve(repositoryDirectory, "docs", "upstream-sources.md"),
       },
       defaultStageDependencies,

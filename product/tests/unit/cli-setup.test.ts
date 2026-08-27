@@ -6,7 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { EngineLock } from "../../src/engine/lock.js";
 import { loadEngineLock } from "../../src/engine/lock.js";
-import type { Downloader, ProcessRunner } from "../../src/cli/process-runner.js";
+import {
+  nodeProcessRunner,
+  type Downloader,
+  type ProcessRunner,
+} from "../../src/cli/process-runner.js";
 import { runSetup } from "../../src/cli/setup.js";
 
 const bytesByName: Record<string, string> = {
@@ -86,6 +90,22 @@ const healthyDoctor = {
 };
 
 describe("setup", () => {
+  it("force-kills and rejects a child that ignores SIGTERM within a bounded grace period", async () => {
+    const startedAt = Date.now();
+
+    await expect(
+      nodeProcessRunner.run(
+        process.execPath,
+        [
+          "-e",
+          "process.on('SIGTERM',()=>{});setTimeout(()=>process.exit(0),1500)",
+        ],
+        { timeoutMs: 100 },
+      ),
+    ).rejects.toThrow("process timeout");
+    expect(Date.now() - startedAt).toBeLessThan(750);
+  });
+
   it("downloads and checks the exact macOS script group before local execution", async () => {
     const boundary = fakeBoundary();
     const lock = await fixtureLock();
