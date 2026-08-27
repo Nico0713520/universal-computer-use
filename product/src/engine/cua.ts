@@ -9,8 +9,11 @@ import {
 } from "@trycua/cua-driver";
 
 import { ComputerUseError } from "../errors.js";
+import type { ComputerAction } from "../protocol.js";
+import { mapAction } from "./action-mapper.js";
 import type { EngineLock } from "./lock.js";
-import type { EngineObservation } from "./port.js";
+import type { EngineExecution, EngineObservation, EnginePort } from "./port.js";
+import { mapCuaResult } from "./result-mapper.js";
 
 export type CuaSdkLike = Pick<
   CuaDriverLike,
@@ -28,6 +31,27 @@ type DesktopStateJson = {
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function abortError(): DOMException {
+  return new DOMException("The operation was aborted", "AbortError");
+}
+
+function cancellableWait(waitMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(abortError());
+
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, waitMs);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function parseDesktopObservation(result: ToolResult): EngineObservation {
@@ -96,7 +120,7 @@ function parseDesktopObservation(result: ToolResult): EngineObservation {
   };
 }
 
-export class CuaEngine {
+export class CuaEngine implements EnginePort {
   readonly name = "cua-driver" as const;
 
   private constructor(
@@ -196,6 +220,26 @@ export class CuaEngine {
       { signal },
     );
     return parseDesktopObservation(result);
+  }
+
+  async execute(action: ComputerAction, signal: AbortSignal): Promise<EngineExecution> {
+    const mapped = mapAction(action, this.sessionId);
+    if ("waitMs" in mapped) {
+      await cancellableWait(mapped.waitMs, signal);
+      return {
+        status: "executed",
+        effect: "confirmed",
+        route: "system_api",
+        delivery: "not_applicable",
+      };
+    }
+
+    const result = await this.sdk.callTool(
+      mapped.tool,
+      JSON.stringify(mapped.args),
+      { signal },
+    );
+    return mapCuaResult(result);
   }
 
   async close(): Promise<void> {
