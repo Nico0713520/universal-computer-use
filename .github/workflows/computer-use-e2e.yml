@@ -35,6 +35,10 @@ jobs:
           CUA_E2E_MODE: candidate
           CUA_REPEAT: "20"
           CUA_E2E_EVIDENCE_PATH: ${{ runner.temp }}/macos-candidate.json
+          CUA_E2E_BROWSER: ${{ vars.CUA_MACOS_BROWSER }}
+          CUA_E2E_CUA_APP_PATH: ${{ vars.CUA_MACOS_CUA_APP_PATH }}
+          CUA_E2E_CONTENT_ORIGIN_X_PX: ${{ vars.CUA_MACOS_CONTENT_ORIGIN_X_PX }}
+          CUA_E2E_CONTENT_ORIGIN_Y_PX: ${{ vars.CUA_MACOS_CONTENT_ORIGIN_Y_PX }}
         run: tests/e2e/macos/run.sh
       - name: Run the real macOS soak after the platform gate
         if: ${{ inputs.run_soak }}
@@ -44,6 +48,9 @@ jobs:
           CUA_SOAK: "1"
           CUA_MACOS_PREFLIGHT: passed
           CUA_SOAK_EVIDENCE_OUT: ${{ runner.temp }}/macos-soak.json
+          CUA_E2E_BROWSER: ${{ vars.CUA_MACOS_BROWSER }}
+          CUA_E2E_CONTENT_ORIGIN_X_PX: ${{ vars.CUA_MACOS_CONTENT_ORIGIN_X_PX }}
+          CUA_E2E_CONTENT_ORIGIN_Y_PX: ${{ vars.CUA_MACOS_CONTENT_ORIGIN_Y_PX }}
         run: node --experimental-strip-types tests/e2e/soak/run.ts
       - uses: actions/upload-artifact@v4
         with:
@@ -80,6 +87,12 @@ jobs:
           CUA_REPEAT: "20"
           CUA_E2E_DPI: ${{ matrix.dpi }}
           CUA_E2E_EVIDENCE_OUT: ${{ runner.temp }}/windows-${{ matrix.dpi }}-candidate.json
+          CUA_E2E_BROWSER: ${{ vars.CUA_WINDOWS_BROWSER }}
+          CUA_RUNTIME_EXE: ${{ vars.CUA_WINDOWS_RUNTIME_EXE }}
+          CUA_UPSTREAM_REPO: ${{ vars.CUA_WINDOWS_UPSTREAM_REPO }}
+          CUA_E2E_CALIBRATION: ${{ vars[format('CUA_WINDOWS_CALIBRATION_{0}', matrix.dpi)] }}
+          CUA_E2E_CONTENT_ORIGIN_X_PX: ${{ vars[format('CUA_WINDOWS_CONTENT_ORIGIN_X_{0}', matrix.dpi)] }}
+          CUA_E2E_CONTENT_ORIGIN_Y_PX: ${{ vars[format('CUA_WINDOWS_CONTENT_ORIGIN_Y_{0}', matrix.dpi)] }}
         run: tests/e2e/windows/run.ps1
       - name: Run the real Windows soak after the platform gate
         if: ${{ inputs.run_soak && matrix.dpi == 100 }}
@@ -89,6 +102,12 @@ jobs:
           CUA_SOAK: "1"
           CUA_E2E_RUNNER_GATED: "1"
           CUA_SOAK_EVIDENCE_OUT: ${{ runner.temp }}/windows-soak.json
+          CUA_E2E_BROWSER: ${{ vars.CUA_WINDOWS_BROWSER }}
+          CUA_RUNTIME_EXE: ${{ vars.CUA_WINDOWS_RUNTIME_EXE }}
+          CUA_E2E_CALIBRATION: ${{ vars[format('CUA_WINDOWS_CALIBRATION_{0}', matrix.dpi)] }}
+          CUA_UPSTREAM_REPO: ${{ vars.CUA_WINDOWS_UPSTREAM_REPO }}
+          CUA_E2E_CONTENT_ORIGIN_X_PX: ${{ vars[format('CUA_WINDOWS_CONTENT_ORIGIN_X_{0}', matrix.dpi)] }}
+          CUA_E2E_CONTENT_ORIGIN_Y_PX: ${{ vars[format('CUA_WINDOWS_CONTENT_ORIGIN_Y_{0}', matrix.dpi)] }}
         run: node --experimental-strip-types tests/e2e/soak/run.ts
       - uses: actions/upload-artifact@v4
         with:

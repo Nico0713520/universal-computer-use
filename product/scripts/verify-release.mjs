@@ -98,6 +98,34 @@ async function contractFingerprint(directory) {
   return sha256(JSON.stringify(protocol.PUBLIC_TOOL_SCHEMAS));
 }
 
+async function validatedEngineLock(options) {
+  let raw;
+  try {
+    raw = JSON.parse(await readFile(options.lockPath, "utf8"));
+  } catch {
+    throw new Error("engine_lock_invalid");
+  }
+  const lockModuleUrl = pathToFileURL(resolve(options.productDirectory, "dist", "engine", "lock.js"));
+  const lockModule = await import(`${lockModuleUrl.href}?release=${Date.now()}`);
+  const parsed = lockModule.EngineLockSchema?.safeParse(raw);
+  if (parsed?.success !== true) throw new Error("engine_lock_invalid");
+  const lock = parsed.data;
+  if (
+    lock.tag !== `cua-driver-rs-v${lock.version}`
+    || lock.required_fix_commits.length === 0
+    || !/^[0-9a-f]{40}$/.test(lock.source_commit)
+  ) {
+    throw new Error("engine_lock_formal_release_invalid");
+  }
+  const packageJson = JSON.parse(
+    await readFile(resolve(options.productDirectory, "package.json"), "utf8"),
+  );
+  if (packageJson.dependencies?.["@trycua/cua-driver"] !== lock.version) {
+    throw new Error("engine_lock_sdk_version_mismatch");
+  }
+  return lock;
+}
+
 async function schemaParser(path, { stripConditions = false, hostStatus = false } = {}) {
   const schema = JSON.parse(await readFile(path, "utf8"));
   if (stripConditions) delete schema.allOf;
@@ -259,6 +287,16 @@ function exactKeys(value, expected) {
     && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expected].sort());
 }
 
+function isNonnegativeInteger(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+function isIsoTimestamp(value) {
+  if (typeof value !== "string") return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
+}
+
 async function verifyStableSoaks(options, lock) {
   const configured = options.environment?.CUA_SOAK_EVIDENCE_FILES;
   if (typeof configured !== "string" || configured.length === 0) {
@@ -295,14 +333,20 @@ async function verifyStableSoaks(options, lock) {
       || (platform !== "macos" && platform !== "windows")
       || seen.has(platform)
       || evidence.engine_version !== lock.version
-      || !(evidence.duration_seconds >= 1800 || evidence.actions_completed >= 200)
-      || !Number.isInteger(evidence.complete_cycles)
+      || !isIsoTimestamp(evidence.generated_at)
+      || !isNonnegativeInteger(evidence.duration_seconds)
+      || !isNonnegativeInteger(evidence.actions_completed)
+      || evidence.duration_seconds < 1800
+      || evidence.actions_completed < 200
+      || !isNonnegativeInteger(evidence.complete_cycles)
       || evidence.complete_cycles < 1
       || counters.some((value) => value !== 0)
       || evidence.fixture_oracle !== "loopback-http-state"
       || !Number.isFinite(evidence.rss_warm_mib)
       || !Number.isFinite(evidence.rss_final_mib)
       || !Number.isFinite(evidence.rss_delta_mib)
+      || evidence.rss_warm_mib <= 0
+      || evidence.rss_final_mib <= 0
       || evidence.rss_delta_mib > 150
       || Math.abs((evidence.rss_final_mib - evidence.rss_warm_mib) - evidence.rss_delta_mib) > 0.1
     ) throw new Error("stable_soak_evidence_invalid");
@@ -317,7 +361,7 @@ export async function verifyRelease(options) {
   if (options.channel !== "beta" && options.channel !== "stable") {
     throw new Error("release_channel_invalid");
   }
-  const lock = JSON.parse(await readFile(options.lockPath, "utf8"));
+  const lock = await validatedEngineLock(options);
   if (
     lock?.platforms?.macos?.release_eligible !== true
     || lock?.platforms?.windows?.release_eligible !== true

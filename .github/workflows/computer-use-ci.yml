@@ -24,15 +24,15 @@ jobs:
       - name: Install the frozen dependency graph without native setup
         working-directory: product
         run: npx --yes pnpm@9.0.4 install --frozen-lockfile --ignore-scripts
+      - name: Build
+        working-directory: product
+        run: npx --yes pnpm@9.0.4 build
       - name: Unit and contract tests
         working-directory: product
         run: npx --yes pnpm@9.0.4 test
       - name: Typecheck
         working-directory: product
         run: npx --yes pnpm@9.0.4 typecheck
-      - name: Build
-        working-directory: product
-        run: npx --yes pnpm@9.0.4 build
       - name: Inspect the release and real npm tar manifests
         working-directory: product
         run: npx --yes pnpm@9.0.4 exec vitest run tests/contract/release.test.ts && npm pack --dry-run --json

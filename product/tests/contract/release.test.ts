@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,20 @@ type PromoteModule = {
   }>;
 };
 
+type SoakModule = {
+  assertObservationIdentity(
+    output: unknown,
+    platform: "macos" | "windows",
+    engineVersion: string,
+  ): { platform: "macos" | "windows"; engineVersion: string };
+  replaceVisualSession<T>(current: T, dependencies: {
+    reset(session: T): Promise<void>;
+    close(session: T): Promise<void>;
+    start(): Promise<T>;
+  }): Promise<T>;
+  writeSoakEvidence(path: string, value: unknown): Promise<void>;
+};
+
 type VerifyReleaseModule = {
   inspectPackedArtifact(productDirectory: string): Promise<{
     files: string[];
@@ -47,6 +61,11 @@ async function releaseModule(): Promise<VerifyReleaseModule> {
 async function promoteModule(): Promise<PromoteModule> {
   const url = new URL("../../scripts/select-engine-release.mjs", import.meta.url);
   return (await import(url.href)) as unknown as PromoteModule;
+}
+
+async function soakModule(): Promise<SoakModule> {
+  const url = new URL("../e2e/soak/run.ts", import.meta.url);
+  return (await import(url.href)) as unknown as SoakModule;
 }
 
 const temporaryRoots: string[] = [];
@@ -387,8 +406,8 @@ describe("release verification", () => {
         platform,
         generated_at: "2026-08-27T12:34:56.000Z",
         engine_version: ready.promotedLock.version,
-        duration_seconds: platform === "macos" ? 1800 : 60,
-        actions_completed: platform === "windows" ? 200 : 50,
+        duration_seconds: 1800,
+        actions_completed: 200,
         complete_cycles: 5,
         plugin_seam_failures: 0,
         stale_snapshot_acceptances: 0,
@@ -414,6 +433,148 @@ describe("release verification", () => {
         CUA_SOAK_EVIDENCE_FILES: soakPaths.join(delimiter),
       },
     })).resolves.toMatchObject({ channel: "stable", verified: true });
+  });
+
+  it("rejects soak evidence unless both thresholds and every strict scalar contract pass", async () => {
+    const { verifyRelease } = await releaseModule();
+    const fixture = await promotedEvidenceBundle(100);
+    const productDirectory = fileURLToPath(new URL("../../", import.meta.url));
+    const paths: string[] = [];
+    for (const platform of ["macos", "windows"] as const) {
+      const path = join(fixture.evidenceRoot, `invalid-soak-${platform}.json`);
+      await writeFile(path, `${JSON.stringify({
+        schema_version: 1,
+        evidence_type: "computer-use-soak",
+        platform,
+        generated_at: "2026-08-27T12:34:56.000Z",
+        engine_version: fixture.promotedLock.version,
+        duration_seconds: platform === "macos" ? 1800 : 60,
+        actions_completed: platform === "windows" ? 200 : 50,
+        complete_cycles: 5,
+        plugin_seam_failures: 0,
+        stale_snapshot_acceptances: 0,
+        coordinate_mismatches: 0,
+        deadlocks: 0,
+        unclassified_timeouts: 0,
+        malformed_pngs: 0,
+        sensitive_log_events: 0,
+        rss_warm_mib: 80,
+        rss_final_mib: 120,
+        rss_delta_mib: 40,
+        fixture_oracle: "loopback-http-state",
+      })}\n`);
+      paths.push(path);
+    }
+    const options = {
+      channel: "stable" as const,
+      lockPath: fixture.lockPath,
+      productDirectory,
+      environment: {
+        CUA_RELEASE_PLATFORM_EVIDENCE_ROOT: fixture.evidenceRoot,
+        CUA_HOST_EVIDENCE_FILES: fixture.hostPaths.join(delimiter),
+        CUA_SOAK_EVIDENCE_FILES: paths.join(delimiter),
+      },
+    };
+    await expect(verifyRelease(options)).rejects.toThrow("stable_soak_evidence_invalid");
+
+    for (const path of paths) {
+      const valid = JSON.parse(await readFile(path, "utf8"));
+      valid.duration_seconds = 1800;
+      valid.actions_completed = 200;
+      await writeFile(path, `${JSON.stringify(valid)}\n`);
+    }
+    const malformed = JSON.parse(await readFile(paths[0], "utf8"));
+    malformed.duration_seconds = 1800.5;
+    malformed.generated_at = "not-a-date";
+    await writeFile(paths[0], `${JSON.stringify(malformed)}\n`);
+    await expect(verifyRelease(options)).rejects.toThrow("stable_soak_evidence_invalid");
+  });
+
+  it("validates the raw engine lock before trusting release eligibility or external evidence", async () => {
+    const { verifyRelease } = await releaseModule();
+    const fixture = await promotedEvidenceBundle();
+    const productDirectory = fileURLToPath(new URL("../../", import.meta.url));
+    const lock = JSON.parse(await readFile(fixture.lockPath, "utf8"));
+    lock.unreviewed = true;
+    await writeFile(fixture.lockPath, `${JSON.stringify(lock)}\n`);
+    await expect(verifyRelease({
+      channel: "beta",
+      lockPath: fixture.lockPath,
+      productDirectory,
+      environment: {},
+    })).rejects.toThrow("engine_lock_invalid");
+
+    delete lock.unreviewed;
+    lock.tag = `moving-${lock.version}`;
+    await writeFile(fixture.lockPath, `${JSON.stringify(lock)}\n`);
+    await expect(verifyRelease({
+      channel: "beta",
+      lockPath: fixture.lockPath,
+      productDirectory,
+      environment: {},
+    })).rejects.toThrow("engine_lock_formal_release_invalid");
+
+    lock.tag = `cua-driver-rs-v${lock.version}`;
+    lock.required_fix_commits = [];
+    await writeFile(fixture.lockPath, `${JSON.stringify(lock)}\n`);
+    await expect(verifyRelease({
+      channel: "beta",
+      lockPath: fixture.lockPath,
+      productDirectory,
+      environment: {},
+    })).rejects.toThrow("engine_lock_formal_release_invalid");
+
+    lock.required_fix_commits = fixture.lock.required_fix_commits;
+    lock.platforms.macos.signer.team_id = null;
+    await writeFile(fixture.lockPath, `${JSON.stringify(lock)}\n`);
+    await expect(verifyRelease({
+      channel: "beta",
+      lockPath: fixture.lockPath,
+      productDirectory,
+      environment: {},
+    })).rejects.toThrow("engine_lock_invalid");
+  });
+});
+
+describe("soak runner safety seams", () => {
+  it("replaces the entire browser/fixture session between complete cycles", async () => {
+    const { replaceVisualSession } = await soakModule();
+    const order: string[] = [];
+    const replacement = await replaceVisualSession("old", {
+      reset: async (session) => { order.push(`reset:${session}`); },
+      close: async (session) => { order.push(`close:${session}`); },
+      start: async () => { order.push("start"); return "new"; },
+    });
+    expect(replacement).toBe("new");
+    expect(order).toEqual(["reset:old", "close:old", "start"]);
+  });
+
+  it("binds every cycle's observation to the actual platform and locked engine", async () => {
+    const { assertObservationIdentity } = await soakModule();
+    expect(assertObservationIdentity({
+      platform: "macos",
+      engine: { name: "cua-driver", version: "1.2.3" },
+    }, "macos", "1.2.3")).toEqual({ platform: "macos", engineVersion: "1.2.3" });
+    expect(() => assertObservationIdentity({
+      platform: "windows",
+      engine: { name: "cua-driver", version: "1.2.3" },
+    }, "macos", "1.2.3")).toThrow("observation_engine_identity_mismatch");
+    expect(() => assertObservationIdentity({
+      platform: "macos",
+      engine: { name: "other", version: "1.2.3" },
+    }, "macos", "1.2.3")).toThrow("observation_engine_identity_mismatch");
+  });
+
+  it("never replaces an existing final evidence path and removes staging files", async () => {
+    const { writeSoakEvidence } = await soakModule();
+    const root = await mkdtemp(join(tmpdir(), "computer-use-soak-write-test-"));
+    temporaryRoots.push(root);
+    const path = join(root, "evidence.json");
+    await writeFile(path, "original\n");
+
+    await expect(writeSoakEvidence(path, { replacement: true })).rejects.toThrow();
+    expect(await readFile(path, "utf8")).toBe("original\n");
+    expect(await readdir(root)).toEqual(["evidence.json"]);
   });
 });
 

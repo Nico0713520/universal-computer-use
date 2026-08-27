@@ -1,11 +1,13 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { constants } from "node:fs";
 import { once } from "node:events";
-import { access, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { access, copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import type { Readable } from "node:stream";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -28,7 +30,21 @@ type State = Readonly<{
   scroll: Readonly<{ events: number }>;
   drop: Readonly<{ count: number }>;
 }>;
-type Observation = Readonly<{ snapshotId: string; width: number; height: number }>;
+type Frame = Readonly<{
+  snapshotId: string;
+  width: number;
+  height: number;
+}>;
+type Observation = Frame & Readonly<{
+  platform: "macos" | "windows";
+  engineVersion: string;
+}>;
+type VisualSession = Readonly<{
+  fixture: Readonly<{ process: ChildProcess; url: string }>;
+  browser: ChildProcess;
+  profile: string;
+  layout: Layout;
+}>;
 
 const execFileAsync = promisify(execFile);
 const productDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -113,6 +129,51 @@ async function waitForLayout(url: string): Promise<Layout> {
   fail("browser_layout_timeout");
 }
 
+async function startVisualSession(browserExecutable: string): Promise<VisualSession> {
+  const fixture = await startFixture();
+  const profile = await mkdtemp(join(tmpdir(), "computer-use-soak-browser-"));
+  const browser = spawn(browserExecutable, [
+    `--user-data-dir=${profile}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-extensions",
+    "--force-color-profile=srgb",
+    "--window-position=40,40",
+    "--window-size=1280,800",
+    `--app=${fixture.url}`,
+  ], { stdio: ["ignore", "ignore", "ignore"] });
+  try {
+    const layout = await waitForLayout(fixture.url);
+    return { fixture, browser, profile, layout };
+  } catch (error) {
+    await stop(browser);
+    await stop(fixture.process);
+    await rm(profile, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function closeVisualSession(session: VisualSession): Promise<void> {
+  await stop(session.browser);
+  await stop(session.fixture.process);
+  await rm(session.profile, { recursive: true, force: true });
+}
+
+export async function replaceVisualSession<T>(
+  current: T,
+  dependencies: {
+    reset(session: T): Promise<void>;
+    close(session: T): Promise<void>;
+    start(): Promise<T>;
+  },
+): Promise<T> {
+  await dependencies.reset(current);
+  await dependencies.close(current);
+  return dependencies.start();
+}
+
 function png(result: CallToolResult): void {
   const images = result.content.filter((item) => item.type === "image");
   if (images.length !== 1 || images[0]?.type !== "image" || images[0].mimeType !== "image/png") {
@@ -139,7 +200,31 @@ async function withDeadline<T>(operation: Promise<T>): Promise<T> {
   }
 }
 
-async function observe(client: Client): Promise<Observation> {
+export function assertObservationIdentity(
+  output: unknown,
+  expectedPlatform: "macos" | "windows",
+  lockedEngineVersion: string,
+): { platform: "macos" | "windows"; engineVersion: string } {
+  const value = output as {
+    platform?: unknown;
+    engine?: { name?: unknown; version?: unknown };
+  };
+  if (
+    value?.platform !== expectedPlatform
+    || value.engine?.name !== "cua-driver"
+    || value.engine.version !== lockedEngineVersion
+  ) fail("observation_engine_identity_mismatch");
+  return {
+    platform: value.platform as "macos" | "windows",
+    engineVersion: value.engine.version as string,
+  };
+}
+
+async function observe(
+  client: Client,
+  expectedPlatform: "macos" | "windows",
+  lockedEngineVersion: string,
+): Promise<Observation> {
   const result = CallToolResultSchema.parse(await withDeadline(
     client.callTool({ name: "computer_observe", arguments: {} }),
   ));
@@ -148,16 +233,20 @@ async function observe(client: Client): Promise<Observation> {
   const output = result.structuredContent as {
     snapshot_id?: unknown;
     screenshot?: { width?: unknown; height?: unknown };
+    platform?: unknown;
+    engine?: { name?: unknown; version?: unknown };
   };
   if (
     typeof output.snapshot_id !== "string"
     || typeof output.screenshot?.width !== "number"
     || typeof output.screenshot.height !== "number"
   ) fail("observe_shape");
+  const identity = assertObservationIdentity(output, expectedPlatform, lockedEngineVersion);
   return {
     snapshotId: output.snapshot_id,
     width: output.screenshot.width,
     height: output.screenshot.height,
+    ...identity,
   };
 }
 
@@ -165,7 +254,7 @@ async function act(
   client: Client,
   snapshotId: string,
   action: Record<string, unknown>,
-): Promise<Observation> {
+): Promise<Frame> {
   const result = CallToolResultSchema.parse(await withDeadline(client.callTool({
     name: "computer_act",
     arguments: { snapshot_id: snapshotId, action },
@@ -187,7 +276,7 @@ async function act(
   return { snapshotId: output.snapshot_id, width: output.screenshot.width, height: output.screenshot.height };
 }
 
-function point(layout: Layout, observation: Observation, id: string, origin: Point): Point {
+function point(layout: Layout, observation: Frame, id: string, origin: Point): Point {
   const control = layout.controls[id];
   const screen = layout.viewport.screen_css;
   if (control === undefined || screen === null) fail(`layout_${id}_missing`);
@@ -211,10 +300,20 @@ async function rssMiB(pid: number): Promise<number> {
   return bytes / (1024 * 1024);
 }
 
-async function atomicEvidence(path: string, value: unknown): Promise<void> {
-  const temporary = `${path}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-  await rename(temporary, path);
+export async function writeSoakEvidence(path: string, value: unknown): Promise<void> {
+  const temporary = resolve(
+    dirname(path),
+    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    await copyFile(temporary, path, constants.COPYFILE_EXCL);
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 async function main(): Promise<void> {
@@ -251,9 +350,7 @@ async function main(): Promise<void> {
   await execFileAsync(npx, ["--yes", "pnpm@9.0.4", "build"], { cwd: productDirectory });
   await access(mcpScript);
   const lock = JSON.parse(await readFile(resolve(productDirectory, "engine.lock.json"), "utf8"));
-  const fixture = await startFixture();
-  const profile = await mkdtemp(join(tmpdir(), "computer-use-soak-browser-"));
-  let browserProcess: ChildProcess | undefined;
+  let visual: VisualSession | undefined;
   let client: Client | undefined;
   let transport: StdioClientTransport | undefined;
   let stderr = "";
@@ -262,20 +359,9 @@ async function main(): Promise<void> {
   let completeCycles = 0;
   let rssWarm = 0;
   let started = 0;
+  let observedEngineVersion: string | undefined;
   try {
-    browserProcess = spawn(browser, [
-      `--user-data-dir=${profile}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-background-networking",
-      "--disable-component-update",
-      "--disable-extensions",
-      "--force-color-profile=srgb",
-      "--window-position=40,40",
-      "--window-size=1280,800",
-      `--app=${fixture.url}`,
-    ], { stdio: ["ignore", "ignore", "ignore"] });
-    const layout = await waitForLayout(fixture.url);
+    visual = await startVisualSession(browser);
     transport = new StdioClientTransport({
       command: process.execPath,
       args: [mcpScript],
@@ -300,10 +386,14 @@ async function main(): Promise<void> {
     started = Date.now();
 
     while ((Date.now() - started) / 1000 < durationMinimum || actionsCompleted < actionMinimum) {
-      const initialState = await fetchJson<State>(fixture.url, "/state");
-      let current = await observe(client);
+      if (visual === undefined) fail("visual_session_missing");
+      const cycleVisual: VisualSession = visual;
+      const initialState = await fetchJson<State>(cycleVisual.fixture.url, "/state");
+      const observation = await observe(client, platform, lock.version);
+      observedEngineVersion = observation.engineVersion;
+      let current: Frame = observation;
       const consumed = current.snapshotId;
-      current = await act(client, current.snapshotId, { type: "click", ...point(layout, current, "text-target", origin) });
+      current = await act(client, current.snapshotId, { type: "click", ...point(cycleVisual.layout, current, "text-target", origin) });
       actionsCompleted += 1;
       const stale = CallToolResultSchema.parse(await withDeadline(client.callTool({
         name: "computer_act",
@@ -316,23 +406,23 @@ async function main(): Promise<void> {
       actionsCompleted += 1;
       current = await act(client, current.snapshotId, { type: "keypress", keys: ["ENTER"] });
       actionsCompleted += 1;
-      current = await act(client, current.snapshotId, { type: "click", ...point(layout, current, "click-target", origin) });
+      current = await act(client, current.snapshotId, { type: "click", ...point(cycleVisual.layout, current, "click-target", origin) });
       actionsCompleted += 1;
       current = await act(client, current.snapshotId, {
         type: "scroll",
-        ...point(layout, current, "scroll-target", origin),
+        ...point(cycleVisual.layout, current, "scroll-target", origin),
         direction: "down",
         amount: 6,
         by: "line",
       });
       actionsCompleted += 1;
-      const from = point(layout, current, "drag-source", origin);
-      const to = point(layout, current, "drop-target", origin);
+      const from = point(cycleVisual.layout, current, "drag-source", origin);
+      const to = point(cycleVisual.layout, current, "drop-target", origin);
       current = await act(client, current.snapshotId, { type: "drag", from_x: from.x, from_y: from.y, to_x: to.x, to_y: to.y, duration_ms: 500 });
       actionsCompleted += 1;
       await act(client, current.snapshotId, { type: "wait", ms: 50 });
       actionsCompleted += 1;
-      const finalState = await fetchJson<State>(fixture.url, "/state");
+      const finalState = await fetchJson<State>(cycleVisual.fixture.url, "/state");
       if (
         finalState.clicks !== initialState.clicks + 1
         || finalState.text !== privateMarker
@@ -340,14 +430,24 @@ async function main(): Promise<void> {
         || finalState.scroll.events <= initialState.scroll.events
         || finalState.drop.count !== initialState.drop.count + 1
       ) fail("coordinate_mismatch");
-      const reset = await fetchJson<State>(fixture.url, "/reset", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
+      visual = await replaceVisualSession(cycleVisual, {
+        reset: async (session) => {
+          const reset = await fetchJson<State>(session.fixture.url, "/reset", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          });
+          if (
+            reset.generation !== finalState.generation + 1
+            || reset.clicks !== 0
+            || reset.text !== ""
+            || reset.scroll.events !== 0
+            || reset.drop.count !== 0
+          ) fail("fixture_reset_failed");
+        },
+        close: closeVisualSession,
+        start: () => startVisualSession(browser),
       });
-      if (reset.generation !== finalState.generation + 1 || reset.clicks !== 0 || reset.text !== "") {
-        fail("fixture_reset_failed");
-      }
       completeCycles += 1;
       if (completeCycles === 1) rssWarm = await rssMiB(pid);
       if (sensitiveLogEvents > 0) fail("sensitive_log_output");
@@ -357,12 +457,13 @@ async function main(): Promise<void> {
     const rssDelta = rssFinal - rssWarm;
     if (rssDelta > 150) fail("rss_growth_exceeded");
     const durationSeconds = Math.floor((Date.now() - started) / 1000);
-    await atomicEvidence(evidencePath, {
+    if (observedEngineVersion === undefined) fail("observation_engine_identity_missing");
+    await writeSoakEvidence(evidencePath, {
       schema_version: 1,
       evidence_type: "computer-use-soak",
       platform,
       generated_at: new Date().toISOString(),
-      engine_version: lock.version,
+      engine_version: observedEngineVersion,
       duration_seconds: durationSeconds,
       actions_completed: actionsCompleted,
       complete_cycles: completeCycles,
@@ -382,14 +483,19 @@ async function main(): Promise<void> {
   } finally {
     await client?.close().catch(() => undefined);
     await transport?.close().catch(() => undefined);
-    await stop(browserProcess);
-    await stop(fixture.process);
-    await rm(profile, { recursive: true, force: true });
+    if (visual !== undefined) await closeVisualSession(visual);
     void stderr;
   }
 }
 
-await main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+function isDirectEntryPoint(): boolean {
+  const entry = process.argv[1];
+  return entry !== undefined && pathToFileURL(resolve(entry)).href === import.meta.url;
+}
+
+if (isDirectEntryPoint()) {
+  await main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}
