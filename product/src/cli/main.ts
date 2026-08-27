@@ -1,0 +1,199 @@
+#!/usr/bin/env node
+
+import { access } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import process from "node:process";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { ComputerUseRuntime } from "../core/runtime.js";
+import { CuaEngine } from "../engine/cua.js";
+import { loadEngineLock, type EngineLock } from "../engine/lock.js";
+import { ComputerUseError, ERROR_CODES } from "../errors.js";
+import { runStdioServer } from "../mcp/main.js";
+import { renderConfig, type ConfigClient } from "./config.js";
+import { runDoctor } from "./doctor.js";
+import {
+  fetchDownloader,
+  nodeProcessRunner,
+  type Downloader,
+  type ProcessRunner,
+} from "./process-runner.js";
+import { runSetup } from "./setup.js";
+import { runUninstall } from "./uninstall.js";
+
+type CliIo = Readonly<{
+  stdout: { write(value: string): unknown };
+  stderr: { write(value: string): unknown };
+}>;
+
+type CliDependencies = Readonly<{
+  loadLock: () => Promise<EngineLock>;
+  downloader: Downloader;
+  runner: ProcessRunner;
+  connectEngine: typeof CuaEngine.connect;
+  mcpExecutablePath: string;
+  productOwnedPaths: readonly string[];
+  isEngineInstalled: () => Promise<boolean>;
+}>;
+
+const mcpExecutablePath = fileURLToPath(new URL("../mcp/main.js", import.meta.url));
+
+function defaultEnginePath(): string {
+  if (process.platform === "darwin") return "/Applications/CuaDriver.app";
+  return join(
+    process.env.LOCALAPPDATA ?? "",
+    "Programs",
+    "Cua",
+    "cua-driver",
+    "bin",
+    "cua-driver.exe",
+  );
+}
+
+const defaultDependencies: CliDependencies = {
+  loadLock: loadEngineLock,
+  downloader: fetchDownloader,
+  runner: nodeProcessRunner,
+  connectEngine: CuaEngine.connect,
+  mcpExecutablePath,
+  // Task 9 owns host-specific Skill links. Until it creates a product-owned
+  // manifest, safe uninstall deliberately removes no inferred user paths.
+  productOwnedPaths: [],
+  async isEngineInstalled() {
+    try {
+      await access(defaultEnginePath());
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+function usage(): string {
+  return [
+    "Usage:",
+    "  computer-use setup [--development]",
+    "  computer-use doctor [--json]",
+    "  computer-use config --client generic|codex|kimi",
+    "  computer-use uninstall [--engine]",
+    "  computer-use mcp",
+  ].join("\n");
+}
+
+function requireOnly(args: readonly string[], allowed: readonly string[]): void {
+  if (args.some((arg) => !allowed.includes(arg)) || new Set(args).size !== args.length) {
+    throw new Error(`invalid arguments\n${usage()}`);
+  }
+}
+
+export async function runCli(
+  argv: readonly string[],
+  io: CliIo = { stdout: process.stdout, stderr: process.stderr },
+  dependencies: CliDependencies = defaultDependencies,
+): Promise<number> {
+  const [command, ...args] = argv;
+  if (command === undefined) throw new Error(usage());
+  if (command === "--help" || command === "-h") {
+    requireOnly(args, []);
+    io.stdout.write(`${usage()}\n`);
+    return 0;
+  }
+
+  if (command === "setup") {
+    requireOnly(args, ["--development"]);
+    const development = args.includes("--development");
+    const lock = await dependencies.loadLock();
+    const report = await runSetup(
+      { development },
+      {
+        lock,
+        downloader: dependencies.downloader,
+        runner: dependencies.runner,
+        runDoctor: () =>
+          runDoctor({}, { lock, connectEngine: dependencies.connectEngine }),
+      },
+    );
+    if (report.warning !== undefined) {
+      io.stderr.write(`${JSON.stringify(report.warning)}\n`);
+    }
+    io.stdout.write(`${JSON.stringify(report)}\n`);
+    io.stderr.write(`${report.config_command}\n`);
+    return 0;
+  }
+
+  if (command === "doctor") {
+    requireOnly(args, ["--json"]);
+    const lock = await dependencies.loadLock();
+    const report = await runDoctor(
+      {},
+      { lock, connectEngine: dependencies.connectEngine },
+    );
+    io.stdout.write(`${JSON.stringify(report)}\n`);
+    return report.ok ? 0 : 1;
+  }
+
+  if (command === "config") {
+    if (args.length !== 2 || args[0] !== "--client") throw new Error(usage());
+    const client = args[1];
+    if (client !== "generic" && client !== "codex" && client !== "kimi") {
+      throw new Error(`unsupported config client: ${client}`);
+    }
+    const output = renderConfig(client satisfies ConfigClient, dependencies.mcpExecutablePath);
+    io.stdout.write(output.stdout);
+    io.stderr.write(output.stderr);
+    return 0;
+  }
+
+  if (command === "uninstall") {
+    requireOnly(args, ["--engine"]);
+    const lock = await dependencies.loadLock();
+    const report = await runUninstall(
+      { engine: args.includes("--engine") },
+      {
+        lock,
+        downloader: dependencies.downloader,
+        runner: dependencies.runner,
+        productOwnedPaths: dependencies.productOwnedPaths,
+        isEngineInstalled: dependencies.isEngineInstalled,
+      },
+    );
+    io.stdout.write(`${JSON.stringify(report)}\n`);
+    return 0;
+  }
+
+  if (command === "mcp") {
+    requireOnly(args, []);
+    const lock = await dependencies.loadLock();
+    const engine = await dependencies.connectEngine(lock);
+    await runStdioServer(new ComputerUseRuntime(engine));
+    return 0;
+  }
+
+  throw new Error(usage());
+}
+
+function errorCode(error: unknown): string {
+  if (error instanceof ComputerUseError) return error.code;
+  if (error instanceof Error && ERROR_CODES.some((code) => error.message.includes(code))) {
+    return ERROR_CODES.find((code) => error.message.includes(code)) ?? "command_failed";
+  }
+  return "command_failed";
+}
+
+function isDirectEntryPoint(): boolean {
+  const entry = process.argv[1];
+  return entry !== undefined && pathToFileURL(resolve(entry)).href === import.meta.url;
+}
+
+if (isDirectEntryPoint()) {
+  void runCli(process.argv.slice(2))
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `${JSON.stringify({ ok: false, error: { code: errorCode(error), message: error instanceof Error ? error.message : String(error) } })}\n`,
+      );
+      process.exitCode = 1;
+    });
+}
