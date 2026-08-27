@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-computer-use.example/schemas/macos-e2e-evidence-v1.json",
+  "title": "Redacted macOS Computer Use E2E Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "platform",
+    "mode",
+    "generated_at",
+    "promotion_authority",
+    "release_eligible_at_test",
+    "engine",
+    "contract_fingerprint_sha256",
+    "system",
+    "signature",
+    "results"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "platform": { "const": "macos" },
+    "mode": { "enum": ["development", "candidate"] },
+    "generated_at": { "type": "string", "format": "date-time", "maxLength": 40 },
+    "promotion_authority": { "const": "task15-only" },
+    "release_eligible_at_test": { "const": false },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "tag", "source_commit", "asset", "asset_sha256", "required_fix_commits"],
+      "properties": {
+        "name": { "const": "cua-driver" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "tag": { "type": "string", "pattern": "^cua-driver-rs-v[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "asset": { "type": "string", "pattern": "^cua-driver-rs-[0-9]+\\.[0-9]+\\.[0-9]+-darwin-universal\\.tar\\.gz$" },
+        "asset_sha256": { "$ref": "#/$defs/sha256" },
+        "required_fix_commits": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "contract_fingerprint_sha256": { "$ref": "#/$defs/sha256" },
+    "system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os_version", "architecture", "interactive_aqua", "desktop_unlocked", "permissions", "display"],
+      "properties": {
+        "os_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$" },
+        "architecture": { "enum": ["arm64", "x86_64"] },
+        "interactive_aqua": { "const": true },
+        "desktop_unlocked": { "const": true },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accessibility", "screen_recording"],
+          "properties": {
+            "accessibility": { "const": "granted" },
+            "screen_recording": { "const": "granted" }
+          }
+        },
+        "display": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["screenshot_width", "screenshot_height", "backing_scale", "content_origin_x", "content_origin_y", "origin_source"],
+          "properties": {
+            "screenshot_width": { "type": "integer", "minimum": 1, "maximum": 32768 },
+            "screenshot_height": { "type": "integer", "minimum": 1, "maximum": 32768 },
+            "backing_scale": { "type": "number", "exclusiveMinimum": 1, "maximum": 8 },
+            "content_origin_x": { "type": "integer", "minimum": 0, "maximum": 32767 },
+            "content_origin_y": { "type": "integer", "minimum": 0, "maximum": 32767 },
+            "origin_source": { "const": "injected-visible-marker-measurement" }
+          }
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app_location", "app_path_sha256", "bundle_id", "team_identifier", "designated_requirement_sha256", "codesign", "gatekeeper"],
+      "properties": {
+        "app_location": { "enum": ["/Applications/CuaDriver.app", "<redacted-custom-path>"] },
+        "app_path_sha256": { "$ref": "#/$defs/sha256" },
+        "bundle_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]{2,127}$" },
+        "team_identifier": { "type": "string", "pattern": "^[A-Z0-9]{10}$" },
+        "designated_requirement_sha256": { "$ref": "#/$defs/sha256" },
+        "codesign": { "const": "valid" },
+        "gatekeeper": { "const": "accepted" }
+      }
+    },
+    "results": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repeat_requested", "repeat_completed", "plugin_seam_failures", "shared_lane", "retina_lane", "permission_contract_lane", "restart_lane"],
+      "properties": {
+        "repeat_requested": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "repeat_completed": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "plugin_seam_failures": { "const": 0 },
+        "shared_lane": { "const": "passed" },
+        "retina_lane": { "const": "passed" },
+        "permission_contract_lane": { "const": "passed-controlled-fixture" },
+        "restart_lane": { "const": "passed-real-runtime" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "candidate" } }, "required": ["mode"] },
+      "then": {
+        "properties": {
+          "engine": { "properties": { "required_fix_commits": { "minItems": 1 } } },
+          "results": {
+            "properties": {
+              "repeat_requested": { "minimum": 20 },
+              "repeat_completed": { "minimum": 20 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
