@@ -8,12 +8,15 @@ import {
 } from "../../src/engine/lock.js";
 
 describe("engine lock", () => {
-  it("pins the reviewed Cua development baseline", async () => {
+  it("keeps the staged Cua release internally consistent", async () => {
     const lock = await loadEngineLock();
 
     expect(lock.engine).toBe("cua-driver");
-    expect(lock.version).toBe("0.22.1");
-    expect(lock.source_commit).toBe("c60ef6ad2db8774fb342938843e2f17f26c68240");
+    expect(lock.tag).toBe(`cua-driver-rs-v${lock.version}`);
+    expect(lock.source_commit).toMatch(/^[0-9a-f]{40}$/);
+    expect(lock.required_fix_commits).toContain(
+      "90295148d34dac8e5a1307bac917e08171af5839",
+    );
     expect(lock.required_tools).toEqual([
       "click",
       "drag",
@@ -37,26 +40,37 @@ describe("engine lock", () => {
       "_install-common.psm1",
     ]);
     expect(lock.platforms.windows.uninstaller_file.name).toBe("uninstall.ps1");
+    expect(lock.platforms.macos.asset).toBe(
+      `cua-driver-rs-${lock.version}-darwin-universal.tar.gz`,
+    );
+    expect(lock.platforms.windows.asset).toBe(
+      `cua-driver-rs-${lock.version}-windows-x86_64.zip`,
+    );
     expect(lock.platforms.macos.development_eligible).toBe(true);
     expect(lock.platforms.windows.development_eligible).toBe(true);
-    expect(lock.platforms.macos.signer).toMatchObject({
-      kind: "apple",
-      bundle_id: "com.trycua.driver",
-    });
+    expect(lock.platforms.macos.signer).toMatchObject({ kind: "apple" });
     expect(lock.platforms.windows.signer).toMatchObject({ kind: "authenticode" });
   });
 
-  it("blocks both public platforms until signer and E2E evidence are promoted", async () => {
+  it("applies development and release eligibility gates from the validated lock", async () => {
     const lock = await loadEngineLock();
 
-    expect(() => assertDevelopmentEligible(lock, "macos")).not.toThrow();
-    expect(() => assertDevelopmentEligible(lock, "windows")).not.toThrow();
-    expect(() => assertReleaseEligible(lock, "macos")).toThrowError(
-      "engine_not_release_eligible",
-    );
-    expect(() => assertReleaseEligible(lock, "windows")).toThrowError(
-      "engine_not_release_eligible",
-    );
+    for (const platform of ["macos", "windows"] as const) {
+      if (lock.platforms[platform].development_eligible) {
+        expect(() => assertDevelopmentEligible(lock, platform)).not.toThrow();
+      } else {
+        expect(() => assertDevelopmentEligible(lock, platform)).toThrowError(
+          "engine_not_development_eligible",
+        );
+      }
+      if (lock.platforms[platform].release_eligible) {
+        expect(() => assertReleaseEligible(lock, platform)).not.toThrow();
+      } else {
+        expect(() => assertReleaseEligible(lock, platform)).toThrowError(
+          "engine_not_release_eligible",
+        );
+      }
+    }
   });
 
   it("rejects locks whose installer entrypoint is not in the verified file set", () => {

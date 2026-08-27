@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
+import { loadEngineLock } from "../../src/engine/lock.js";
+
 const sourceMapUrl = new URL("../../../docs/upstream-sources.md", import.meta.url);
 
 async function readSourceMap(): Promise<string> {
@@ -11,8 +13,10 @@ async function readSourceMap(): Promise<string> {
 describe("upstream source map", () => {
   it("pins every reviewed source and its SPDX license", async () => {
     const sourceMap = await readSourceMap();
+    const lock = await loadEngineLock();
 
-    expect(sourceMap).toContain("c60ef6ad2db8774fb342938843e2f17f26c68240");
+    expect(sourceMap).toContain(`开发基线 release：\`${lock.tag}\``);
+    expect(sourceMap).toContain(`开发基线 commit：\`${lock.source_commit}\``);
     expect(sourceMap).toContain("90295148d34dac8e5a1307bac917e08171af5839");
     expect(sourceMap).toContain("c2ad42e3eb9b27830db41a3e6f51ca7179d9b168");
     expect(sourceMap).toContain("10cdae4a3c30a29c6e96c8ec14e6bf1c5f02940e");
