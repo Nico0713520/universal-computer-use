@@ -7,6 +7,8 @@ Compatibility is evidence-based. The only status values are `verified`, `experim
 | Generic MCP | not-tested | — | macOS / Windows | — | not-tested | not-tested | not-tested | Static configuration contract exists; host-specific end-to-end evidence is pending. |
 | Codex | not-tested | — | macOS / Windows | — | not-tested | not-tested | not-tested | Registration guide exists; eligible-Runtime host evidence is pending. |
 | Kimi | not-tested | — | macOS / Windows | — | not-tested | not-tested | not-tested | Registration guide exists; eligible-Runtime host evidence is pending. |
+| WorkBuddy | experimental | — | macOS / Windows | — | not-tested | not-tested | not-tested | Declaration-only adapter; host loading format and end-to-end behavior need validation against a named WorkBuddy version. |
+| DeepSeek Harness | experimental | — | macOS / Windows | — | not-tested | not-tested | not-tested | Declaration-only Cordis adapter; host loading format and end-to-end behavior need validation against a named Harness version. |
 
 ## Evidence rules
 
@@ -18,3 +20,5 @@ Compatibility is evidence-based. The only status values are `verified`, `experim
 - Limitations state missing platforms, blocked permissions, secure-desktop exclusions, or other boundaries observed in the run.
 
 The generic `integrations/generic/mcp.json` file is a portable development sample that launches `computer-use-mcp` from the executable search path. Production installations should run `computer-use config --client generic` and use its absolute Node executable plus absolute MCP script configuration. Codex and Kimi installations should likewise use their generated host command and install or link the same canonical Skill shipped in `product/skills/computer-use`.
+
+The WorkBuddy and DeepSeek Harness directories are non-blocking experimental declarations. Both point at that same canonical Skill and launch the same `computer-use-mcp` executable; neither adds a host-specific control loop or changes the public tool protocol. Their manifest shapes are not compatibility evidence. Keep them experimental until a named host version proves loading, image delivery, repeated tool calls, automatic-mode behavior and natural stop using the evidence rules above.

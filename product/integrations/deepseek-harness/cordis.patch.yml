@@ -1,0 +1,10 @@
+status: experimental
+computerUse:
+  skill: ../../skills/computer-use/SKILL.md
+  tools:
+    - computer_observe
+    - computer_act
+mcpServers:
+  computer-use:
+    command: computer-use-mcp
+    args: []
