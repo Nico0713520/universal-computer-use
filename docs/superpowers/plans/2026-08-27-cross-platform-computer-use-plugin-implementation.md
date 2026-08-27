@@ -4,7 +4,7 @@
 
 **Goal:** Build a model-free local MCP plugin that exposes two screenshot-driven tools and delegates all native macOS/Windows capture and input work to an unmodified, version-locked Cua Driver Runtime.
 
-**Architecture:** One small TypeScript package owns the public protocol, one-current-snapshot guard, single-action orchestration, Cua SDK adapter, stdio MCP server, setup/doctor CLI, Skill, and host configuration generators. Cua Driver remains a separately installed signed Runtime; the repository contains no copied Cua Rust code and the release gate rejects an unverified engine version.
+**Architecture:** One small TypeScript package owns the public protocol, one-current-snapshot guard, single-action orchestration, Cua SDK adapter, stdio MCP server, setup/doctor CLI, Skill, and host configuration generators. Implementation is source-first: every module is checked against pinned Cua, UI-TARS Desktop, and OpenAI Agents SDK files in `docs/upstream-sources.md`, while Cua Driver remains a separately installed signed Runtime and no Cua Rust/native code enters the product package.
 
 **Tech Stack:** Node.js `>=22.19.0`, TypeScript `5.7.3`, pnpm `9.0.4`, Zod `4.4.3`, MCP TypeScript SDK `1.30.0`, Vitest `3.2.4`, Cua TypeScript SDK development baseline `0.22.1`, macOS shell and Windows PowerShell only for delegating the upstream installer.
 
@@ -26,15 +26,15 @@
 
 | 阶段 | Tasks | 交付结果 | 退出条件 |
 |---|---:|---|---|
-| A. 协议地基 | 1–3 | 单包工程、引擎锁、两个工具 Schema、一次性 snapshot | 契约快照稳定；旧 snapshot 与非法输入在到达 Cua 前失败 |
+| A. 源码与协议地基 | 1–3 | 上游源码地图契约、单包工程、引擎锁、两个工具 Schema、一次性 snapshot | 来源、许可证和契约快照稳定；旧 snapshot 与非法输入在到达 Cua 前失败 |
 | B. 执行接缝 | 4–6 | Cua 连接、九类动作映射、串行循环、超时与操作后截图 | 全部由 Fake SDK/Engine 确定性通过；无真实桌面依赖 |
 | C. 可安装插件 | 7–9 | stdio MCP、setup/doctor/config/uninstall、canonical Skill、Codex/Kimi 接入 | Agent 能收到 PNG、连续调用、只暴露两个工具；安装链路精确固定 |
-| D. 双平台证明 | 10 | macOS Retina、Windows 100/125/150% DPI、固定桌面 Fixture、真实 App 验收 | 每个平台确定性 Fixture 20/20；旧截图点击和坐标漂移均被发现 |
-| E. 发布加固 | 11 | WorkBuddy/DeepSeek 薄适配、隐私日志、CI、版本晋级和发布门禁 | 两个平台 E2E 与 Codex/Kimi 宿主证据齐全后才允许发布 |
+| D. 双平台与宿主证明 | 10–13 | 固定桌面 Fixture、macOS Retina、Windows 100/125/150% DPI、Codex/Kimi 验收 | 每个平台确定性 Fixture 20/20；新 snapshot、旧截图拒绝和坐标一致性被证明 |
+| E. 发布加固与扩展 | 14–16 | 隐私日志、CI、版本晋级、Stable soak、WorkBuddy/DeepSeek 实验适配 | 双平台 E2E 与 Codex/Kimi 证据齐全后允许 Beta；100 次与 soak 通过后允许 Stable |
 
-关键路径是 `1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11`。Task 1–9 是我们真正维护的轻量代码，复杂度中等；Task 10–11 偏重，但主要是双系统真实环境、签名/权限/DPI 证明，不是再造执行引擎。
+关键路径是 `1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11/12 → 13/14 → 15`；Task 16 不阻塞首个稳定版本。Task 1–9 与 14 是我们真正维护的轻量代码，复杂度中等；Task 10–13 和 15 偏重，但主要是双系统真实环境、签名/权限/DPI 证明，不是再造执行引擎。
 
-当前唯一明确的外部发布门槛是 macOS Retina：`0.22.1` 可用于接口开发，但公开 macOS 包必须先晋级到包含提交 `90295148d34dac8e5a1307bac917e08171af5839` 的正式 Cua release。门槛未满足时允许继续完成代码和无桌面测试，但 `setup` 和正式发布必须明确失败，不能偷偷用 main/nightly 或在我方补一套 DPI 实现。
+当前明确的外部发布门槛是 macOS Retina：`0.22.1` 可通过 `setup --development` 用于接口开发，但公开 macOS 包必须先晋级到包含提交 `90295148d34dac8e5a1307bac917e08171af5839` 的正式 Cua release。两个平台初始都设为不可发布，只有签名者、契约和实机证据齐全后才晋级；普通 `setup` 和正式发布必须失败关闭，不能偷偷用 main/nightly 或在我方补一套 DPI 实现。
 
 ## Global Constraints
 
@@ -46,8 +46,12 @@
 - v1 does not expose accessibility trees, element tokens, semantic verification, batching, background guarantees, multi-display selection, or privilege escalation.
 - macOS and Windows x64 use byte-identical public JSON Schemas.
 - Cua Driver is an external signed Runtime; never copy, patch, repackage, or re-sign its native files.
+- Before implementing a module, read its pinned upstream sources in `docs/upstream-sources.md`; copied/adapted snippets retain source commit, file path, SPDX, and third-party notice.
 - Development may use Cua `0.22.1`; public macOS release requires a formal Cua release containing commit `90295148d34dac8e5a1307bac917e08171af5839` or an upstream-equivalent verified Retina fix.
+- Ordinary setup requires `release_eligible:true`; only explicit `setup --development` may use `development_eligible:true` and it can never satisfy release verification.
 - The installed engine version and tool contract must match `product/engine.lock.json`; never follow `latest` silently.
+- A fresh capture always gets a new snapshot ID; PNG bytes are allowed to remain identical when the visible desktop did not change.
+- v1 does not implement Windows target integrity probing or privilege escalation; Cua permission/refusal results are reported truthfully and never converted into success.
 - Every engine action has a 20-second timeout; session idle timeout is 30 minutes.
 - Logs never contain typed text, key contents, screenshots, clipboard contents, environment variables, or model prompts.
 - All implementation work is test-first and each task ends in a focused commit.
@@ -64,6 +68,7 @@ product/
   tsconfig.test.json                   Strict typecheck for test sources
   vitest.config.ts                     Unit/contract test configuration
   engine.lock.json                     Exact Cua release and asset contract
+  THIRD_PARTY_NOTICES.md               Notices shipped inside the npm artifact
   src/
     version.ts                         Product and protocol constants
     protocol.ts                        Zod schemas and inferred public types
@@ -89,7 +94,7 @@ product/
       setup.ts                         Upstream installer delegation
       doctor.ts                        Machine-readable diagnostics
       config.ts                        Host MCP configuration output
-      uninstall.ts                     Product-only uninstall and optional engine handoff
+      uninstall.ts                     Product-only uninstall and locked upstream engine handoff
       main.ts                          `computer-use` command router
     logging/
       logger.ts                        Metadata-only JSONL logging
@@ -111,18 +116,20 @@ product/
       cua/                             Sanitized Cua ToolResult fixtures
       desktop-harness/                 Fixed visual test page and state oracle
     e2e/
+      shared/                          Cross-platform deterministic fixture tests
       macos/                           Interactive macOS runner
       windows/                         Interactive Windows runner
-      host/                            Codex/Kimi/other host acceptance
+      host/                            Codex/Kimi acceptance evidence
+      soak/                            Stable long-run runner
   scripts/
     select-engine-release.mjs          Promote a verified Cua release
     verify-release.mjs                 Artifact/license/engine gate
 docs/
+  upstream-sources.md                  Pinned source/license/adoption ledger
   installation/macos.md
   installation/windows.md
   host-compatibility.md
   troubleshooting.md
-  THIRD_PARTY_NOTICES.md
 ```
 
 ---
@@ -141,10 +148,12 @@ docs/
 - Create: `product/src/version.ts`
 - Create: `product/src/engine/lock.ts`
 - Create: `product/tests/contract/engine-lock.test.ts`
+- Create: `product/tests/contract/upstream-sources.test.ts`
+- Modify: `docs/upstream-sources.md`
 
 **Interfaces:**
 
-- Produces: `PRODUCT_VERSION`, `PROTOCOL_VERSION`, `EngineLockSchema`, `loadEngineLock()`, `assertReleaseEligible()`.
+- Produces: `PRODUCT_VERSION`, `PROTOCOL_VERSION`, `EngineLockSchema`, `loadEngineLock()`, `assertDevelopmentEligible()`, `assertReleaseEligible()`, and a tested source/license ledger.
 - Consumes: no product code.
 
 - [ ] **Step 1: Write the failing lock contract test**
@@ -167,18 +176,26 @@ describe("engine lock", () => {
     expect(lock.platforms.macos.installer_files.map(({ name }) => name)).toEqual([
       "install.sh", "_install-rust.sh", "_install-common.sh"
     ]);
+    expect(lock.platforms.macos.uninstaller_file.name).toBe("uninstall.sh");
     expect(lock.platforms.windows.installer_files.map(({ name }) => name)).toEqual([
       "install.ps1", "_install-common.psm1"
     ]);
+    expect(lock.platforms.windows.uninstaller_file.name).toBe("uninstall.ps1");
+    expect(lock.platforms.macos.development_eligible).toBe(true);
+    expect(lock.platforms.windows.development_eligible).toBe(true);
+    expect(lock.platforms.macos.signer).toMatchObject({ kind: "apple", bundle_id: "com.trycua.driver" });
+    expect(lock.platforms.windows.signer).toMatchObject({ kind: "authenticode" });
   });
 
-  it("blocks a public macOS release until the Retina fix is in a formal release", async () => {
+  it("blocks both public platforms until signer and E2E evidence are promoted", async () => {
     const lock = await loadEngineLock();
     expect(() => assertReleaseEligible(lock, "macos")).toThrowError("engine_not_release_eligible");
-    expect(() => assertReleaseEligible(lock, "windows")).not.toThrow();
+    expect(() => assertReleaseEligible(lock, "windows")).toThrowError("engine_not_release_eligible");
   });
 });
 ```
+
+Add `upstream-sources.test.ts` to read `../../../docs/upstream-sources.md` and assert the exact Cua baseline/fix commits, UI-TARS Desktop commit, OpenAI Agents SDK commit, each project's SPDX license declaration, and the five adoption labels `dependency|adapt|test-pattern|reference-only|forbidden`. It must also reject the phrases `copy Cua Rust` and `follow latest`.
 
 - [ ] **Step 2: Run the test and verify the missing-module failure**
 
@@ -194,7 +211,7 @@ Expected: FAIL because `src/engine/lock.ts` and the package workspace do not exi
   "version": "0.1.0",
   "type": "module",
   "publishConfig": { "access": "public" },
-  "files": ["dist", "skills", "integrations", "engine.lock.json", "README.md", "LICENSE"],
+  "files": ["dist", "skills", "integrations", "engine.lock.json", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"],
   "packageManager": "pnpm@9.0.4",
   "engines": { "node": ">=22.19.0" },
   "bin": {
@@ -236,7 +253,7 @@ export const PROTOCOL_VERSION = "1.0.0" as const;
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "engine": "cua-driver",
   "version": "0.22.1",
   "tag": "cua-driver-rs-v0.22.1",
@@ -248,6 +265,7 @@ export const PROTOCOL_VERSION = "1.0.0" as const;
   ],
   "platforms": {
     "macos": {
+      "development_eligible": true,
       "release_eligible": false,
       "asset": "cua-driver-rs-0.22.1-darwin-universal.tar.gz",
       "sha256": "cf4a1a74d6ad8ee7c094a381a061568028ff1353c19932e5806c6f0c1944ba7d",
@@ -256,23 +274,30 @@ export const PROTOCOL_VERSION = "1.0.0" as const;
         { "name": "install.sh", "source": "release", "sha256": "317ba3a49fdba10f2a7f1b9f392c1bc1b7657f3aae85e1e2e43684cf17a1bf3b" },
         { "name": "_install-rust.sh", "source": "source_commit", "sha256": "71ed3b3987020447ad7663e821f51e8d471f711d6fd9be9938ce978136c30664" },
         { "name": "_install-common.sh", "source": "source_commit", "sha256": "5bc3aa010eb8667a099b582a9ada9a8f93001745b842cc7cf3cc6c472520cf29" }
-      ]
+      ],
+      "uninstaller_file": { "name": "uninstall.sh", "source": "release", "sha256": "fb5d6e89edfe89f5c3d2597cec9a8b73a89109a01cddc2dba11cafcef3777d57" },
+      "signer": { "kind": "apple", "team_id": null, "bundle_id": "com.trycua.driver", "designated_requirement_sha256": null },
+      "e2e_evidence": []
     },
     "windows": {
-      "release_eligible": true,
+      "development_eligible": true,
+      "release_eligible": false,
       "asset": "cua-driver-rs-0.22.1-windows-x86_64.zip",
       "sha256": "b08f6a006a659e853b376f2ffca3ac9b1c25c28fb9730ebe1821defb725bb28f",
       "installer_entrypoint": "install.ps1",
       "installer_files": [
         { "name": "install.ps1", "source": "release", "sha256": "ff0bf5887f5566101c040a33b698a86f6cc94f50d18f9ca8207a0bc08549ad8a" },
         { "name": "_install-common.psm1", "source": "source_commit", "sha256": "324bca98ad19f0487d4afd36a9e2d06478fcfb8e1e20225cdd8ec8ef5150e720" }
-      ]
+      ],
+      "uninstaller_file": { "name": "uninstall.ps1", "source": "release", "sha256": "191c86cbae38b449f6ce69e833d3945691308776e7be70052866469dd52576a6" },
+      "signer": { "kind": "authenticode", "subject": null, "thumbprint": null },
+      "e2e_evidence": []
     }
   }
 }
 ```
 
-`EngineLockSchema` must be strict, validate 64-character lowercase SHA-256 values and 40-character commit IDs, reject extra platforms, reject duplicate installer filenames, and require `installer_entrypoint` to name one member of `installer_files`.
+`EngineLockSchema` must be strict, validate 64-character lowercase SHA-256 values and 40-character commit IDs, reject extra platforms, reject duplicate installer filenames, require `installer_entrypoint` to name one member of `installer_files`, and require a non-null signer identity plus at least one platform E2E evidence path whenever `release_eligible:true`.
 
 - [ ] **Step 5: Implement lock loading and release gating**
 
@@ -281,22 +306,55 @@ export const PROTOCOL_VERSION = "1.0.0" as const;
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
+const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+
 const InstallerFileSchema = z.object({
   name: z.string().min(1),
   source: z.enum(["release", "source_commit"]),
-  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  sha256: Sha256Schema,
 }).strict();
+
+const SignerSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("apple"),
+    team_id: z.string().min(1).nullable(),
+    bundle_id: z.string().min(1).nullable(),
+    designated_requirement_sha256: Sha256Schema.nullable(),
+  }).strict(),
+  z.object({
+    kind: z.literal("authenticode"),
+    subject: z.string().min(1).nullable(),
+    thumbprint: z.string().regex(/^[0-9A-Fa-f]{40}$/).nullable(),
+  }).strict(),
+]);
+
+function hasReleaseSigner(signer: z.infer<typeof SignerSchema>): boolean {
+  return signer.kind === "apple"
+    ? signer.team_id !== null && signer.bundle_id !== null && signer.designated_requirement_sha256 !== null
+    : signer.subject !== null && signer.thumbprint !== null;
+}
 
 const PlatformLockSchema = z.object({
+  development_eligible: z.boolean(),
   release_eligible: z.boolean(),
   asset: z.string().min(1),
-  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  sha256: Sha256Schema,
   installer_entrypoint: z.enum(["install.sh", "install.ps1"]),
   installer_files: z.array(InstallerFileSchema).min(1),
-}).strict();
+  uninstaller_file: InstallerFileSchema,
+  signer: SignerSchema,
+  e2e_evidence: z.array(z.string().min(1)),
+}).strict().superRefine((value, context) => {
+  if (value.release_eligible && !hasReleaseSigner(value.signer)) {
+    context.addIssue({ code: "custom", message: "release requires signer identity" });
+  }
+  if (value.release_eligible && value.e2e_evidence.length === 0) {
+    context.addIssue({ code: "custom", message: "release requires platform E2E evidence" });
+  }
+});
 
 export const EngineLockSchema = z.object({
-  schema_version: z.literal(1),
+  schema_version: z.literal(2),
   engine: z.literal("cua-driver"),
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   tag: z.string().min(1),
@@ -304,13 +362,24 @@ export const EngineLockSchema = z.object({
   required_fix_commits: z.array(z.string().regex(/^[0-9a-f]{40}$/)),
   required_tools: z.array(z.string()).min(1),
   platforms: z.object({ macos: PlatformLockSchema, windows: PlatformLockSchema }).strict(),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.platforms.macos.signer.kind !== "apple") {
+    context.addIssue({ code: "custom", message: "macos requires apple signer metadata" });
+  }
+  if (value.platforms.windows.signer.kind !== "authenticode") {
+    context.addIssue({ code: "custom", message: "windows requires authenticode signer metadata" });
+  }
+});
 
 export type EngineLock = z.infer<typeof EngineLockSchema>;
 
 export async function loadEngineLock(): Promise<EngineLock> {
   const raw = await readFile(new URL("../../engine.lock.json", import.meta.url), "utf8");
   return EngineLockSchema.parse(JSON.parse(raw));
+}
+
+export function assertDevelopmentEligible(lock: EngineLock, platform: "macos" | "windows"): void {
+  if (!lock.platforms[platform].development_eligible) throw new Error("engine_not_development_eligible");
 }
 
 export function assertReleaseEligible(lock: EngineLock, platform: "macos" | "windows"): void {
@@ -320,14 +389,14 @@ export function assertReleaseEligible(lock: EngineLock, platform: "macos" | "win
 
 - [ ] **Step 6: Install and run the contract test**
 
-Run: `cd product && corepack pnpm install && corepack pnpm exec vitest run tests/contract/engine-lock.test.ts && corepack pnpm typecheck`
+Run: `cd product && corepack pnpm install && corepack pnpm exec vitest run tests/contract/engine-lock.test.ts tests/contract/upstream-sources.test.ts && corepack pnpm typecheck`
 
-Expected: two tests pass and TypeScript exits 0.
+Expected: engine-lock and upstream-source contract tests pass and TypeScript exits 0.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add product/package.json product/pnpm-lock.yaml product/tsconfig.json product/tsconfig.test.json product/vitest.config.ts product/engine.lock.json product/README.md product/LICENSE product/src/version.ts product/src/engine/lock.ts product/tests/contract/engine-lock.test.ts
+git add product/package.json product/pnpm-lock.yaml product/tsconfig.json product/tsconfig.test.json product/vitest.config.ts product/engine.lock.json product/README.md product/LICENSE product/src/version.ts product/src/engine/lock.ts product/tests/contract/engine-lock.test.ts product/tests/contract/upstream-sources.test.ts docs/upstream-sources.md
 git commit -m "chore: establish lightweight computer use package"
 ```
 
@@ -368,7 +437,7 @@ describe("public protocol", () => {
   it("enforces bounded text, keys, wait, and duration", () => {
     expect(() => ActInputSchema.parse({ snapshot_id: "snap_12345678", action: { type: "type", text: "x".repeat(20001) } })).toThrow();
     expect(() => ActInputSchema.parse({ snapshot_id: "snap_12345678", action: { type: "keypress", keys: [] } })).toThrow();
-    expect(() => ActInputSchema.parse({ snapshot_id: "snap_12345678", action: { type: "wait", ms: 20001 } })).toThrow();
+    expect(() => ActInputSchema.parse({ snapshot_id: "snap_12345678", action: { type: "wait", ms: 15001 } })).toThrow();
     expect(() => ActInputSchema.parse({ snapshot_id: "snap_12345678", action: { type: "drag", from_x: 1, from_y: 1, to_x: 2, to_y: 2, duration_ms: 10001 } })).toThrow();
     expect(() => ActInputSchema.parse({ snapshot_id: "snap_12345678", action: { type: "scroll", x: 1, y: 1, direction: "down", amount: 51 } })).toThrow();
   });
@@ -400,7 +469,7 @@ export const ComputerActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("scroll"), x: coordinate, y: coordinate, direction: z.enum(["up", "down", "left", "right"]), amount: z.number().int().min(1).max(50), by: z.enum(["line", "page"]).optional() }).strict(),
   z.object({ type: z.literal("type"), text: z.string().max(20_000) }).strict(),
   z.object({ type: z.literal("keypress"), keys: z.array(key).min(1).max(8) }).strict(),
-  z.object({ type: z.literal("wait"), ms: z.number().int().min(0).max(20_000) }).strict(),
+  z.object({ type: z.literal("wait"), ms: z.number().int().min(0).max(15_000) }).strict(),
 ]);
 
 export const ObserveInputSchema = z.object({}).strict();
@@ -458,9 +527,9 @@ export type ActEnvelope = Readonly<{ structured: ActOutput; image: ImagePayload 
 ```ts
 // product/src/errors.ts
 export const ERROR_CODES = [
-  "runtime_missing", "runtime_unavailable", "engine_version_mismatch", "engine_not_release_eligible",
+  "runtime_missing", "runtime_unavailable", "engine_version_mismatch", "engine_not_development_eligible", "engine_not_release_eligible",
   "permission_required", "unsupported_platform", "interactive_session_required",
-  "target_privilege_mismatch", "stale_snapshot", "coordinate_out_of_bounds",
+  "stale_snapshot", "coordinate_out_of_bounds",
   "action_timeout", "action_refused", "action_failed", "capture_failed",
   "unsupported_action"
 ] as const;
@@ -614,6 +683,8 @@ git commit -m "feat: guard actions with current snapshots"
 
 ### Task 4: Define the engine port and connect to the installed Cua daemon
 
+**Pinned upstream sources:** Cua `typescript/src/index.ts`, `cua-driver-contract/src/inputs.rs`, `outputs.rs`, and the TypeScript compatibility fixture listed in `docs/upstream-sources.md`.
+
 **Files:**
 
 - Create: `product/src/engine/port.ts`
@@ -765,6 +836,8 @@ git commit -m "feat: connect to locked cua runtime"
 
 ### Task 5: Map nine actions and normalize Cua results
 
+**Pinned upstream sources:** Cua `inputs.rs`, `outputs.rs`, and sanitized formal ToolResult fixtures. Copy no generated binding code.
+
 **Files:**
 
 - Create: `product/src/engine/action-mapper.ts`
@@ -865,6 +938,8 @@ git commit -m "feat: translate lightweight actions to cua"
 ---
 
 ### Task 6: Implement observe and single-action orchestration
+
+**Pinned upstream sources:** adapt the MIT-licensed ordering and unknown-outcome pattern from Cua `examples/agent-sdks/native-tools.ts`; use OpenAI `tests/test_computer_action.py` as the action-then-screenshot test pattern.
 
 **Files:**
 
@@ -1178,15 +1253,18 @@ git commit -m "feat: expose two-tool computer use mcp"
 - Create: `product/src/cli/config.ts`
 - Create: `product/src/cli/uninstall.ts`
 - Create: `product/src/cli/main.ts`
+- Create: `product/scripts/select-engine-release.mjs`
 - Create: `product/tests/unit/cli-setup.test.ts`
 - Create: `product/tests/unit/cli-doctor.test.ts`
 - Create: `product/tests/unit/cli-config.test.ts`
+- Create: `product/tests/unit/cli-uninstall.test.ts`
+- Create: `product/tests/contract/engine-stage.test.ts`
 - Create: `docs/installation/macos.md`
 - Create: `docs/installation/windows.md`
 
 **Interfaces:**
 
-- Produces: `computer-use setup|doctor|config|uninstall|mcp`.
+- Produces: `computer-use setup [--development]|doctor|config|uninstall [--engine]|mcp` and `select-engine-release.mjs stage VERSION`.
 - Consumes: `EngineLock`, `CuaEngine.connect()`, MCP main entry point.
 
 - [ ] **Step 1: Write failing setup delegation tests**
@@ -1197,7 +1275,8 @@ Using a fake downloader and process runner, assert:
 - Windows downloads `install.ps1` from the exact release plus `_install-common.psm1` from the exact source commit into one temporary directory, verifies every SHA-256, and runs `powershell.exe -NoProfile -ExecutionPolicy Bypass -File INSTALLER_PATH -Release 0.22.1 -AutoStart`;
 - a checksum mismatch in any installer file deletes the exact temporary directory and never executes an installer;
 - unsupported OS/architecture returns `unsupported_platform`;
-- a platform whose lock has `release_eligible:false` returns `engine_not_release_eligible` before any download;
+- ordinary setup on a platform whose lock has `release_eligible:false` returns `engine_not_release_eligible` before any download;
+- `setup --development` accepts only `development_eligible:true`, still installs the exact lock, and emits a machine-readable `development_only:true` warning;
 - setup never downloads `latest` and never modifies a host config automatically.
 
 - [ ] **Step 2: Write failing doctor tests**
@@ -1206,7 +1285,9 @@ Doctor JSON must contain product/protocol/engine versions, supported platform, e
 
 - [ ] **Step 3: Run and verify failures**
 
-Run: `cd product && corepack pnpm exec vitest run tests/unit/cli-{setup,doctor,config}.test.ts`
+Write `cli-uninstall.test.ts` before implementation. Assert default uninstall never invokes the Cua uninstaller; `--engine` downloads the exact locked release uninstaller, verifies its SHA-256, passes its path as a non-interpolated process argument, and refuses execution on checksum mismatch.
+
+Run: `cd product && corepack pnpm exec vitest run tests/unit/cli-{setup,doctor,config,uninstall}.test.ts`
 
 Expected: FAIL.
 
@@ -1228,7 +1309,7 @@ Use `mkdtemp` under the OS temporary directory and remove that exact directory i
 
 Construct release-file URLs from `https://github.com/trycua/cua/releases/download/{tag}/{name}` and source-file URLs from `https://raw.githubusercontent.com/trycua/cua/{source_commit}/libs/cua-driver/scripts/{name}`. Never fetch executable installer code through `cua.ai` or a moving branch. Placing all helper files beside the entry point forces Cua's own local-helper path and avoids its network fallback.
 
-After upstream installation, verify the reported Cua version equals the lock. On macOS, require `codesign --verify --deep --strict` and a successful Gatekeeper assessment for `CuaDriver.app`; on Windows, require `Get-AuthenticodeSignature` status `Valid` for the installed executable. Then start/kick the official daemon, run doctor, and print the generic config command. macOS permission prompts are delegated to Cua's official `permissions grant` flow. Doctor performs one observation only and never sends an input action. The locked release-asset SHA is release-promotion evidence; setup does not claim to hash the archive internally downloaded by the unmodified upstream installer.
+Ordinary setup calls `assertReleaseEligible`; development setup calls `assertDevelopmentEligible` and prints a warning that cannot be suppressed. After upstream installation, verify the reported Cua version equals the lock. On macOS, require `codesign --verify --deep --strict` and a successful Gatekeeper assessment for `CuaDriver.app`; on Windows, require `Get-AuthenticodeSignature` status `Valid` for the installed executable. When the lock has a non-null signer identity, require an exact match; a release-mode setup with a missing or mismatched identity fails. Then start/kick the official daemon, run doctor, and print the generic config command. macOS permission prompts are delegated to Cua's official `permissions grant` flow. Doctor performs one observation only and never sends an input action. The locked release-asset SHA is release-promotion evidence; setup does not claim to hash the archive internally downloaded by the unmodified upstream installer.
 
 - [ ] **Step 6: Implement deterministic config output**
 
@@ -1249,26 +1330,32 @@ Codex prints `codex mcp add computer-use -- /absolute/path/to/computer-use-mcp`.
 
 - [ ] **Step 7: Implement safe uninstall semantics**
 
-Default `computer-use uninstall` removes only product-owned Skill/config links and prints whether Cua remains installed. `computer-use uninstall --engine` delegates to the exact upstream uninstaller only after an explicit flag; it does not remove user host configuration outside known product-owned entries.
+Default `computer-use uninstall` removes only product-owned Skill/config links and prints whether Cua remains installed. `computer-use uninstall --engine` downloads the lock's tag-pinned `uninstaller_file`, verifies its SHA-256, and executes that exact local file only after the explicit flag; it does not fetch a moving URL or remove user host configuration outside known product-owned entries.
 
-- [ ] **Step 8: Document platform setup**
+- [ ] **Step 8: Implement candidate engine staging before platform E2E**
+
+Write `engine-stage.test.ts` with an injected GitHub/release downloader. `select-engine-release.mjs stage VERSION` accepts one explicit SemVer release, rejects nightly tags and dirty worktrees, verifies tag ancestry contains every `required_fix_commits` commit, downloads `checksums.txt`, selects the macOS universal and Windows x64 assets, hashes release entry installers, source-commit helpers and release uninstallers, and updates `@trycua/cua-driver` to the exact same version. It sets both platforms `development_eligible:true`, clears signer/evidence fields, leaves `release_eligible:false`, and reruns lock/source contract tests. This staged state is the only input allowed for Tasks 11 and 12 candidate E2E.
+
+- [ ] **Step 9: Document platform setup**
 
 Both platform guides include prerequisites, setup, doctor, system permission/UAC limitations, host config, upgrade, uninstall, troubleshooting, and the statement “this plugin uses the host Agent's current multimodal model.”
 
-- [ ] **Step 9: Run tests and commit**
+- [ ] **Step 10: Run tests and commit**
 
-Run: `cd product && corepack pnpm exec vitest run tests/unit/cli-*.test.ts && corepack pnpm build`
+Run: `cd product && corepack pnpm exec vitest run tests/unit/cli-*.test.ts tests/contract/engine-stage.test.ts && corepack pnpm build`
 
 Expected: all delegation/diagnostic/config tests pass without downloading or installing Cua.
 
 ```bash
-git add product/src/cli product/tests/unit/cli-*.test.ts docs/installation
+git add product/src/cli product/scripts/select-engine-release.mjs product/tests/unit/cli-*.test.ts product/tests/contract/engine-stage.test.ts docs/installation
 git commit -m "feat: add computer use setup and diagnostics"
 ```
 
 ---
 
 ### Task 9: Publish the canonical Skill and initial host integrations
+
+**Pinned upstream sources:** UI-TARS `GUIAgent.ts` and `ToolCallEngine.ts`, Cua's canonical Skill, and OpenAI's minimal Computer Interface. They are design references; no model parser or internal loop is copied into the plugin.
 
 **Files:**
 
@@ -1331,67 +1418,256 @@ git commit -m "feat: package computer use skill and host configs"
 
 ---
 
-### Task 10: Build deterministic desktop and platform E2E lanes
+### Task 10: Build the deterministic cross-platform desktop fixture
 
 **Files:**
 
 - Create: `product/tests/fixtures/desktop-harness/index.html`
 - Create: `product/tests/fixtures/desktop-harness/server.mjs`
 - Create: `product/tests/e2e/shared/desktop-harness.spec.ts`
-- Create: `product/tests/e2e/macos/run.sh`
-- Create: `product/tests/e2e/macos/retina.spec.ts`
-- Create: `product/tests/e2e/windows/run.ps1`
-- Create: `product/tests/e2e/windows/dpi.spec.ts`
-- Create: `product/tests/e2e/host/codex.md`
-- Create: `product/tests/e2e/host/kimi.md`
+- Create: `product/tests/e2e/shared/fresh-snapshot.spec.ts`
 
 **Interfaces:**
 
-- Produces: repeatable evidence that the wrapper crosses MCP → Cua → OS → visible fixture and back.
-- Consumes: built CLI/MCP package and installed eligible Cua Runtime.
+- Produces: a fixed `1280x800` visual target, `/layout` coordinate manifest, `/state` external oracle, and shared E2E assertions.
+- Consumes: built `computer-use-mcp`, an unlocked interactive desktop, and an installed development- or release-eligible Cua Runtime.
 
-- [ ] **Step 1: Create the fixed visual harness before the runner**
+- [ ] **Step 1: Create the deterministic fixture**
 
-The page must contain at fixed CSS coordinates: a click counter, double/right-click counters, text input, scroll target, drag source/drop target and a visible JSON state panel. `server.mjs` exposes `/state` so tests verify external state rather than trusting an action result.
+The page uses fixed positioning and browser zoom `100%`. Give these controls stable IDs: `click-target`, `double-target`, `context-target`, `text-target`, `scroll-target`, `drag-source`, `drop-target`, `static-target`, and `state-view`. `server.mjs` binds only `127.0.0.1`, chooses a free port, resets state through `POST /reset`, returns control centers in screenshot-pixel-independent CSS coordinates through `GET /layout`, and returns counters/text/scroll/drop state through `GET /state`.
 
-- [ ] **Step 2: Write the failing shared E2E**
+- [ ] **Step 2: Write the failing action-oracle E2E**
 
-The test launches the harness in a fixed-size Chrome/Edge window, calls `computer_observe`, derives action coordinates from the fixed window placement, performs every v1 action one at a time, and reads `/state` after each action. It also proves old snapshot rejection and checks every act response includes a different PNG snapshot.
+Launch a fixed-position Chrome/Edge window, call `computer_observe`, transform the fixture's control centers by the measured browser content origin, and perform all nine actions one at a time. After each action, assert `/state` rather than trusting `action_result`. Reusing the consumed snapshot must fail with `stale_snapshot` before the fake or real engine receives a second action.
 
-- [ ] **Step 3: Add macOS runner gates**
+- [ ] **Step 3: Prove snapshot freshness without comparing image bytes**
 
-`run.sh` requires an interactive Aqua session, exact eligible Cua version, Screen Recording, Accessibility, Chrome, and a nonzero Retina backing scale. Missing prerequisites are hard failures in `CUA_E2E=1` mode. `retina.spec.ts` compares screenshot dimensions, Cua scale metadata and a click oracle on the fixed fixture.
+On `static-target`, run a `wait` while the page is motionless. Assert the response contains a valid PNG and a new `snapshot_id`; the unit/contract test also records that the engine observation count increments after the wait. Explicitly allow the PNG SHA-256 to equal the prior image SHA-256.
 
-- [ ] **Step 4: Add Windows runner gates**
+- [ ] **Step 4: Run the shared lane and commit**
 
-`run.ps1` rejects Session 0, locked/disconnected desktop, non-x64 v1 hosts and incorrect Cua version. Run the shared fixture at 100%, 125% and 150% scaling on separate configured lanes. `dpi.spec.ts` checks click and drag oracles and verifies an elevated target returns `target_privilege_mismatch` rather than silently succeeding.
+Run: `cd product && CUA_E2E=1 CUA_E2E_MODE=development corepack pnpm exec vitest run tests/e2e/shared --sequence.concurrent=false`
 
-- [ ] **Step 5: Add real-app acceptance scripts**
-
-The Codex and Kimi checklists each run “open TextEdit/Notepad and type a unique sentence” plus “calculate 37 × 19 and report the visible result.” Record host/model/OS versions, tool discovery, image delivery, natural stop and approval behavior. These are host acceptance checks, not substitutes for the deterministic fixture.
-
-- [ ] **Step 6: Run the platform lanes**
-
-macOS: `cd product && CUA_E2E=1 corepack pnpm exec vitest run tests/e2e/shared tests/e2e/macos --sequence.concurrent=false`
-
-Windows: `cd product; $env:CUA_E2E='1'; corepack pnpm exec vitest run tests/e2e/shared tests/e2e/windows --sequence.concurrent=false`
-
-Expected: all nine actions change the external fixture as expected, every old snapshot is rejected, and all screenshots use the same coordinate frame as actions.
-
-- [ ] **Step 7: Repeat the deterministic fixture 20 times per platform**
-
-Run the same suite with a repeat flag. Required plugin-seam result is 20/20 on each accepted lane; Cua refusals that are part of the declared platform limitation must be classified, not counted as success.
-
-- [ ] **Step 8: Commit**
+Expected: every control's external state changes as specified; the static screenshot test passes even when image bytes are identical.
 
 ```bash
-git add product/tests/fixtures product/tests/e2e
-git commit -m "test: prove desktop control on macos and windows"
+git add product/tests/fixtures/desktop-harness product/tests/e2e/shared
+git commit -m "test: add deterministic computer use fixture"
 ```
 
 ---
 
-### Task 11: Add remaining host wrappers, private logs and release gates
+### Task 11: Prove the macOS Retina lane
+
+**Files:**
+
+- Create: `product/tests/e2e/macos/run.sh`
+- Create: `product/tests/e2e/macos/retina.spec.ts`
+- Create: `product/tests/e2e/macos/permissions.spec.ts`
+- Create: `product/tests/e2e/macos/evidence.schema.json`
+- Create: `product/tests/e2e/macos/README.md`
+
+**Interfaces:**
+
+- Produces: signed-runtime, TCC, coordinate, 20-run Beta and signer evidence for one macOS release candidate.
+- Consumes: Task 10 fixture, exact engine lock, Apple silicon or x64 macOS 14+, Chrome, and an interactive Aqua session.
+
+- [ ] **Step 1: Write hard prerequisite gates**
+
+`run.sh` exits nonzero in `CUA_E2E=1` mode unless the session is interactive and unlocked, Cua version equals the lock, Screen Recording and Accessibility are granted, Chrome exists, screenshot dimensions are positive, and the main display backing scale is greater than `1`. `CUA_E2E_MODE=development` may run the `0.22.1` baseline for implementation feedback but labels all output non-promotable. `CUA_E2E_MODE=candidate` additionally requires a staged formal SemVer release containing every required fix commit; it deliberately runs while `release_eligible:false`, and only Task 15 may promote its evidence.
+
+- [ ] **Step 2: Verify signature and Retina coordinates**
+
+Record the installed app path, bundle identifier, TeamIdentifier/designated requirement, Gatekeeper result, engine version, OS version, hardware architecture, screenshot size and backing scale. `retina.spec.ts` clicks and drags against Task 10's external oracle and asserts the screenshot coordinate frame agrees with the action frame.
+
+- [ ] **Step 3: Verify permission and restart behavior**
+
+With permission state supplied by a controlled test fixture/fake, assert missing Screen Recording or Accessibility maps to `permission_required`. Against the real Runtime, restart Cua between observe and act and assert the old snapshot fails before action delivery.
+
+- [ ] **Step 4: Run 20 deterministic iterations and commit**
+
+Development smoke: `cd product && CUA_E2E=1 CUA_E2E_MODE=development CUA_REPEAT=1 corepack pnpm exec vitest run tests/e2e/shared tests/e2e/macos --sequence.concurrent=false`
+
+Candidate gate: `cd product && CUA_E2E=1 CUA_E2E_MODE=candidate CUA_REPEAT=20 corepack pnpm exec vitest run tests/e2e/shared tests/e2e/macos --sequence.concurrent=false`
+
+Expected: 20/20 plugin-seam passes; evidence JSON contains no screenshots, typed strings, prompts or environment values.
+
+```bash
+git add product/tests/e2e/macos
+git commit -m "test: prove macos retina computer use"
+```
+
+---
+
+### Task 12: Prove the Windows DPI and permission-reporting lanes
+
+**Files:**
+
+- Create: `product/tests/e2e/windows/run.ps1`
+- Create: `product/tests/e2e/windows/dpi.spec.ts`
+- Create: `product/tests/e2e/windows/permission-reporting.spec.ts`
+- Create: `product/tests/e2e/windows/evidence.schema.json`
+- Create: `product/tests/e2e/windows/README.md`
+
+**Interfaces:**
+
+- Produces: Windows 10/11 x64 evidence for 100%, 125% and 150% DPI, interactive-session behavior, signer identity and truthful permission results.
+- Consumes: Task 10 fixture, exact engine lock, Edge or Chrome, and a logged-in unlocked desktop.
+
+- [ ] **Step 1: Write hard prerequisite gates**
+
+`run.ps1` rejects Session 0, locked/disconnected desktops, non-x64 v1 hosts, an engine version different from the lock, and a DPI lane other than `100|125|150`. `CUA_E2E_MODE=development` produces non-promotable feedback; `candidate` requires a staged formal SemVer release and produces promotable evidence only when all lanes pass. Capture Authenticode status, signer certificate subject and thumbprint, Runtime-reported permission/integrity fields, OS build and architecture into redacted evidence.
+
+- [ ] **Step 2: Verify all action coordinates at each DPI**
+
+For each separately configured DPI lane, run click, double-click, right-click, move, drag, scroll, type, keypress and wait against Task 10. Check click and drag through `/state`, ensure all old snapshots fail, and require each successful recapture to have a new snapshot ID.
+
+- [ ] **Step 3: Test permission truthfulness without inventing target-integrity detection**
+
+Drive a normal foreground target and require success. For a controlled denied/refused result, require `action_refused` or `action_failed` with the original Cua diagnostic preserved and `status` not equal to `executed`. Do not assert `target_privilege_mismatch`, do not probe the target process token, and document UAC secure desktop as unsupported.
+
+- [ ] **Step 4: Run 20 iterations per accepted DPI lane and commit**
+
+Development smoke: `cd product; $env:CUA_E2E='1'; $env:CUA_E2E_MODE='development'; $env:CUA_REPEAT='1'; corepack pnpm exec vitest run tests/e2e/shared tests/e2e/windows --sequence.concurrent=false`
+
+Candidate gate: `cd product; $env:CUA_E2E='1'; $env:CUA_E2E_MODE='candidate'; $env:CUA_REPEAT='20'; corepack pnpm exec vitest run tests/e2e/shared tests/e2e/windows --sequence.concurrent=false`
+
+Expected: the configured lane passes 20/20; release evidence is produced separately for 100%, 125% and 150% machines/settings.
+
+```powershell
+git add product/tests/e2e/windows
+git commit -m "test: prove windows dpi computer use"
+```
+
+---
+
+### Task 13: Verify Codex, Kimi and the generic MCP contract
+
+**Files:**
+
+- Create: `product/tests/e2e/host/codex.md`
+- Create: `product/tests/e2e/host/kimi.md`
+- Create: `product/tests/e2e/host/evidence.schema.json`
+- Create: `product/tests/contract/host-evidence.test.ts`
+- Modify: `docs/host-compatibility.md`
+
+**Interfaces:**
+
+- Produces: dated, versioned proof that the host forwards MCP images to its current model, continues the loop, executes actions and stops naturally.
+- Consumes: canonical Skill, generic config generator, eligible platform Runtime and Tasks 11/12 evidence.
+
+- [ ] **Step 1: Write the evidence contract first**
+
+Require host name/version, OS/version, model identifier as reported by the host, tool list, PNG delivery, second-turn image delivery, automatic-mode behavior, task result, natural-stop result, timestamp and reviewer. The validator permits only `verified|experimental|not-compatible|not-tested` and rejects screenshots, prompts, typed test sentences and secrets.
+
+- [ ] **Step 2: Run identical host tasks**
+
+For Codex and Kimi, run one task that opens TextEdit/Notepad through visible keyboard interaction and types a generated one-use sentence, plus one task that calculates `37 × 19` in Calculator and reports the visible result `703`. Confirm only two tools are discoverable, the second screenshot reaches the same host model, the plugin shows no confirmation, and any remaining approval belongs to the host.
+
+- [ ] **Step 3: Verify generic configuration honestly**
+
+Validate that the generated stdio MCP JSON is portable and contains no model endpoint or key. Generic MCP remains `experimental` until a named host proves image forwarding and iterative tool calls; vision capability alone is not treated as compatibility evidence.
+
+- [ ] **Step 4: Test and commit**
+
+Run: `cd product && corepack pnpm exec vitest run tests/contract/host-evidence.test.ts tests/contract/integrations.test.ts`
+
+Expected: Codex and Kimi can be marked `verified` only when complete evidence files exist; otherwise their current status remains explicit.
+
+```bash
+git add product/tests/e2e/host product/tests/contract/host-evidence.test.ts docs/host-compatibility.md
+git commit -m "test: verify computer use host loops"
+```
+
+---
+
+### Task 14: Add metadata-only privacy logging
+
+**Files:**
+
+- Create: `product/src/logging/logger.ts`
+- Create: `product/src/logging/redaction.ts`
+- Create: `product/tests/unit/redaction.test.ts`
+- Create: `product/tests/contract/logging-surface.test.ts`
+
+**Interfaces:**
+
+- Produces: `createMetadataLogger()` with levels `off|metadata` and a recursively redacted structured event format.
+- Consumes: runtime action summaries and stable error codes; never consumes raw screenshots or model messages.
+
+- [ ] **Step 1: Write failing exfiltration tests**
+
+Seed events with distinctive typed text, keys, screenshot base64, clipboard text, environment secret, model prompt and nested variants. Assert none appear in emitted JSONL. Assert unknown fields are dropped rather than serialized.
+
+- [ ] **Step 2: Implement an allowlist logger**
+
+Emit only timestamp, hashed session ID, hashed snapshot ID, tool name, action type, duration, effect, route, delivery and stable error code. Hashes use a process-random salt and cannot be correlated across restarts. Default level is `metadata`; `off` emits nothing.
+
+- [ ] **Step 3: Run tests and commit**
+
+Run: `cd product && corepack pnpm exec vitest run tests/unit/redaction.test.ts tests/contract/logging-surface.test.ts`
+
+Expected: all seeded secrets are absent and the public MCP responses are unchanged.
+
+```bash
+git add product/src/logging product/tests/unit/redaction.test.ts product/tests/contract/logging-surface.test.ts
+git commit -m "feat: add private computer use metadata logs"
+```
+
+---
+
+### Task 15: Add engine promotion, Beta/Stable release gates and CI
+
+**Files:**
+
+- Create: `product/tests/contract/release.test.ts`
+- Create: `product/tests/e2e/soak/run.ts`
+- Modify: `product/scripts/select-engine-release.mjs`
+- Create: `product/scripts/verify-release.mjs`
+- Create: `product/THIRD_PARTY_NOTICES.md`
+- Create: `docs/troubleshooting.md`
+- Create: `.github/workflows/computer-use-ci.yml`
+- Create: `.github/workflows/computer-use-e2e.yml`
+
+**Interfaces:**
+
+- Produces: exact engine promotion, verified npm artifact, `beta|stable` release profiles and non-secret CI evidence.
+- Consumes: engine lock, upstream source map, Tasks 11–13 evidence, Task 14 logger and built package.
+
+- [ ] **Step 1: Write failing package and promotion tests**
+
+Assert packed contents include two-tool schemas, Skill, host configs, engine lock, MIT product license and third-party notices. Reject Cua native binaries/Rust, `.env`, screenshots, trace artifacts and model SDK dependencies. Promotion tests reject nightly tags, moving URLs, missing Retina fixes, uncommitted working trees, absent signer identity and absent platform evidence.
+
+- [ ] **Step 2: Add exact engine promotion to the existing staging command**
+
+After Tasks 11 and 12 run against that staged lock, `select-engine-release.mjs promote VERSION --mac-evidence PATH --windows-evidence PATH` verifies evidence version, asset hash and contract fingerprint match the staged candidate. It writes the normalized macOS TeamIdentifier/bundle ID/designated-requirement hash and Windows certificate subject/thumbprint, reruns contract tests, then sets each platform eligible independently. Neither command accepts nightly tags or an uncommitted working tree.
+
+- [ ] **Step 3: Implement Beta and Stable verification**
+
+`verify-release.mjs --channel beta` requires both platforms release-eligible, macOS Retina evidence, Windows 100/125/150 evidence, 20/20 deterministic results and verified Codex/Kimi evidence. `--channel stable` additionally requires 100 cumulative deterministic passes per platform plus a soak result with at least 30 minutes or 200 actions and zero plugin-seam failures. Cua/OS/model failures remain classified and cannot be recorded as plugin success.
+
+- [ ] **Step 4: Implement the soak runner**
+
+Cycle observe, click, type, keypress, scroll, drag, wait and reset against Task 10 until both the configured time and action minimum are satisfied. Stop immediately on stale-snapshot acceptance, coordinate mismatch, deadlock, unclassified timeout, malformed PNG, sensitive log output, or final MCP-process RSS more than `150 MiB` above the warmed baseline measured after the first complete action cycle.
+
+- [ ] **Step 5: Add CI and release documentation**
+
+Pull requests run unit, contract, typecheck, build and package inspection on macOS and Windows. Interactive E2E runs only on labeled logged-in machines and publishes redacted JSON evidence without screenshots. Document engine mismatch, macOS permission recovery, Retina/DPI diagnosis, locked desktop, Windows permission limitations, host approval settings, log location, development setup and locked engine uninstall.
+
+- [ ] **Step 6: Run the release gate and commit**
+
+Run: `cd product && corepack pnpm test && corepack pnpm typecheck && corepack pnpm build && corepack pnpm release:verify -- --channel beta`
+
+Expected before a Retina-fixed formal Cua promotion: all code gates pass and release verification fails only with `engine_not_release_eligible`. Expected after valid evidence promotion: Beta exits 0; Stable still fails until its longer-run evidence exists.
+
+```bash
+git add product/tests/contract/release.test.ts product/tests/e2e/soak product/scripts product/THIRD_PARTY_NOTICES.md docs/troubleshooting.md .github/workflows
+git commit -m "chore: gate computer use beta and stable releases"
+```
+
+---
+
+### Task 16: Add non-blocking WorkBuddy and DeepSeek Harness adapters
 
 **Files:**
 
@@ -1400,72 +1676,40 @@ git commit -m "test: prove desktop control on macos and windows"
 - Create: `product/integrations/deepseek-harness/package.json`
 - Create: `product/integrations/deepseek-harness/index.js`
 - Create: `product/integrations/deepseek-harness/cordis.patch.yml`
-- Create: `product/src/logging/logger.ts`
-- Create: `product/src/logging/redaction.ts`
-- Create: `product/tests/unit/redaction.test.ts`
-- Create: `product/tests/contract/release.test.ts`
-- Create: `product/scripts/select-engine-release.mjs`
-- Create: `product/scripts/verify-release.mjs`
-- Create: `docs/THIRD_PARTY_NOTICES.md`
-- Create: `docs/troubleshooting.md`
-- Create: `.github/workflows/computer-use-ci.yml`
-- Create: `.github/workflows/computer-use-e2e.yml`
+- Create: `product/tests/contract/experimental-integrations.test.ts`
+- Modify: `docs/host-compatibility.md`
 
 **Interfaces:**
 
-- Produces: remaining thin host adapters, metadata-only logs, verified npm artifact, engine promotion workflow and CI gates.
-- Consumes: canonical Skill, engine lock, built MCP binary, platform E2E commands.
+- Produces: thin launch wrappers for two additional hosts without changing the public protocol or Stable release gate.
+- Consumes: canonical Skill and the same `computer-use-mcp` executable validated in Task 13.
 
-- [ ] **Step 1: Write failing privacy and release tests**
+- [ ] **Step 1: Write wrapper contract tests**
 
-Seed fixtures with distinctive typed text, keys, screenshot base64, environment secret and model prompt. Assert none appear in log output. Release tests assert package contents, two-tool schemas, engine lock, MIT notice, absence of Cua native binaries/Rust source, and absence of model SDK dependencies.
+Assert both adapters launch only `computer-use-mcp`, expose exactly two tools, reference the canonical Skill, contain no model client/endpoint/key/image analyzer/internal loop, and default to `experimental`.
 
-- [ ] **Step 2: Run and verify failures**
+- [ ] **Step 2: Implement and test the thin wrappers**
 
-Run: `cd product && corepack pnpm exec vitest run tests/unit/redaction.test.ts tests/contract/release.test.ts`
+WorkBuddy uses `.codebuddy-plugin/plugin.json` plus `.mcp.json`. DeepSeek Harness uses its documented `dsh`/Cordis bundle shape only to start the same MCP process. Host-specific action schemas or copied loop prompts are forbidden.
 
-Expected: FAIL.
+- [ ] **Step 3: Apply the same acceptance evidence gate**
 
-- [ ] **Step 3: Implement metadata-only JSONL logging**
+Change a host to `verified` only after Task 13's image-delivery, continued-loop, automatic-mode and natural-stop evidence passes. Failure or missing image forwarding produces `not-compatible` or `experimental`, not a workaround model inside the plugin.
 
-Allow levels `off` and `metadata`, default `metadata`. Record timestamp, session ID hash, snapshot ID hash, tool name, action type, duration, effect, route, delivery and stable error code. Redaction receives structured events and drops any keys named `text`, `keys`, `data`, `dataBase64`, `clipboard`, `prompt`, `env`, or `environment` recursively.
+- [ ] **Step 4: Test and commit**
 
-- [ ] **Step 4: Build thin WorkBuddy and DeepSeek Harness wrappers**
-
-WorkBuddy uses `.codebuddy-plugin/plugin.json` plus `.mcp.json`. DeepSeek Harness follows its `dsh` bundle/Cordis shape but only starts `computer-use-mcp`; it must not include a model client, image analyzer or internal agent loop. Mark each wrapper `experimental` until its host acceptance checklist passes.
-
-- [ ] **Step 5: Implement exact engine promotion**
-
-`select-engine-release.mjs VERSION` takes one explicit semantic version argument. It must query the matching GitHub release/tag, verify the release commit contains every `required_fix_commits` commit, download `checksums.txt`, select the macOS universal and Windows x64 assets, hash the release entry installers and source-commit helper scripts, update `engine.lock.json`, update `@trycua/cua-driver` to the same exact version, run contract/unit tests, and set platform eligibility true only after platform E2E evidence paths are supplied. It refuses nightly tags and uncommitted working trees.
-
-- [ ] **Step 6: Implement release verification**
-
-`verify-release.mjs` runs package tests/typecheck/build, calls `assertReleaseEligible` for both platforms, verifies `pnpm pack --dry-run` contents, checks third-party notices, and rejects native Cua files, `.env` files, screenshots and trace artifacts.
-
-- [ ] **Step 7: Add CI**
-
-Pull requests run unit, contract, typecheck, build and package inspection on macOS and Windows. Interactive E2E runs only on labeled, logged-in machines and publishes redacted JSON results without screenshots by default. Release requires both platform E2E gates and Codex/Kimi host checklists.
-
-- [ ] **Step 8: Complete documentation and compatibility statuses**
-
-Document known v1 limits, permission recovery, engine mismatch, locked desktop, Windows elevation, Retina/DPI diagnosis, host approval settings and log location. WorkBuddy/DeepSeek status changes to `verified` only after the same image-loop-stop evidence required for Codex/Kimi.
-
-- [ ] **Step 9: Run the full release gate and commit**
-
-Run: `cd product && corepack pnpm test && corepack pnpm typecheck && corepack pnpm build && corepack pnpm release:verify`
-
-Expected: all code gates pass. Before an eligible Retina-fixed Cua release is selected, the final command must fail only with `engine_not_release_eligible`; after promotion and E2E evidence, it exits 0.
+Run: `cd product && corepack pnpm exec vitest run tests/contract/experimental-integrations.test.ts tests/contract/host-evidence.test.ts`
 
 ```bash
-git add product/integrations product/src/logging product/tests product/scripts docs .github/workflows
-git commit -m "chore: harden computer use release"
+git add product/integrations/workbuddy product/integrations/deepseek-harness product/tests/contract/experimental-integrations.test.ts docs/host-compatibility.md
+git commit -m "feat: add experimental computer use host adapters"
 ```
 
 ---
 
 ## Subagent execution order and review gates
 
-Use one fresh implementation subagent per task. Tasks 1–9 are sequential because later interfaces depend on earlier ones. Task 10 may begin only after Task 7's real stdio server works and Task 8's doctor passes on the target machine. Task 11 begins after the deterministic E2E harness exists.
+Use one fresh implementation subagent per task. Tasks 1–10 are sequential because later Interfaces depend on earlier ones. Tasks 11 and 12 begin after Task 10 and may run in parallel on their respective machines. Task 13 waits for both platform evidence; Task 14 may run after Task 7 in parallel with E2E; Task 15 waits for Tasks 11–14. Task 16 may begin after Task 9 and never blocks Beta or Stable.
 
 The primary agent performs two reviews after every task:
 
@@ -1483,11 +1727,16 @@ Any subagent that needs to edit Cua Rust/native files, change the two-tool proto
 - [ ] Action failure never triggers an automatic action retry.
 - [ ] Action and capture failures remain distinguishable.
 - [ ] Cua version/tool drift fails closed.
+- [ ] `docs/upstream-sources.md` fixes every adopted upstream file to a commit, license and adoption mode; copied/adapted snippets carry attribution.
 - [ ] No Cua Rust/native binary is copied into the repository or npm package.
 - [ ] Public release uses a formal Cua version containing the Retina fix.
-- [ ] macOS permission setup and Windows privilege mismatch are explicit.
+- [ ] Ordinary setup rejects development-only engines; `setup --development` cannot satisfy release verification.
+- [ ] Installer and uninstaller scripts are tag/commit pinned and hash checked; release-mode signer identity matches the lock.
+- [ ] A successful recapture always creates a new snapshot ID even if the PNG bytes are unchanged.
+- [ ] macOS permission setup is explicit; Windows permission/refusal results are truthful and no unsupported target-integrity promise remains.
 - [ ] macOS Retina and Windows 100/125/150% DPI lanes pass.
-- [ ] Deterministic fixture passes 20/20 on both accepted platforms.
+- [ ] Beta: deterministic fixture passes 20/20 on every accepted platform/DPI lane.
+- [ ] Stable: each platform has 100 cumulative deterministic passes plus 30 minutes or 200 actions of soak with zero plugin-seam failures and bounded RSS growth.
 - [ ] Codex and Kimi receive images, continue the loop and stop naturally.
 - [ ] Host approval limitations are documented truthfully.
 - [ ] WorkBuddy and DeepSeek Harness are never labeled verified without evidence.
