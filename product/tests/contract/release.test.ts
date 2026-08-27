@@ -314,6 +314,19 @@ async function promotedEvidenceBundle(iterations = 20) {
 }
 
 describe("release verification", () => {
+  it("builds ignored dist artifacts before tests, packing, and release verification", async () => {
+    const productDirectory = fileURLToPath(new URL("../../", import.meta.url));
+    const packageManifest = JSON.parse(
+      await readFile(join(productDirectory, "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> };
+
+    expect(packageManifest.scripts).toMatchObject({
+      pretest: "pnpm build",
+      prepack: "pnpm build",
+      "prerelease:verify": "pnpm build",
+    });
+  });
+
   it("inspects the real npm tar manifest and ships only the model-free plugin surface", async () => {
     const { inspectPackedArtifact } = await releaseModule();
     const productDirectory = fileURLToPath(new URL("../../", import.meta.url));

@@ -20,8 +20,11 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "pretest": "pnpm build",
     "test": "vitest run tests/unit tests/contract",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "prepack": "pnpm build",
+    "prerelease:verify": "pnpm build",
     "release:verify": "node scripts/verify-release.mjs"
   },
   "dependencies": {

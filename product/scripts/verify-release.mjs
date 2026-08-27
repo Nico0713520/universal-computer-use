@@ -29,7 +29,14 @@ export async function inspectPackedArtifact(directory) {
     ["pack", "--dry-run", "--json"],
     { cwd: directory, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
   );
-  const manifest = JSON.parse(stdout);
+  const jsonStart = [...stdout.matchAll(/^\[/gm)].at(-1)?.index;
+  if (jsonStart === undefined) throw new Error("package_manifest_invalid");
+  let manifest;
+  try {
+    manifest = JSON.parse(stdout.slice(jsonStart));
+  } catch {
+    throw new Error("package_manifest_invalid");
+  }
   if (!Array.isArray(manifest) || manifest.length !== 1 || !Array.isArray(manifest[0]?.files)) {
     throw new Error("package_manifest_invalid");
   }
