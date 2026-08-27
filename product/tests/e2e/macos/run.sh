@@ -197,7 +197,15 @@ export CUA_E2E_CUA_APP_PATH="${APP_PATH}"
 export CUA_E2E_CUA_EXECUTABLE="${CUA_EXECUTABLE}"
 export CUA_E2E_BACKING_SCALE="${BACKING_SCALE}"
 
-npx --yes pnpm@9.0.4 exec vitest run tests/e2e/shared tests/e2e/macos --sequence.concurrent=false
+for (( E2E_ITERATION = 1; E2E_ITERATION <= 10#${REPEAT}; E2E_ITERATION += 1 )); do
+  printf 'macOS deterministic iteration %d/%d\n' "${E2E_ITERATION}" "${REPEAT}"
+  CUA_REPEAT=1 npx --yes pnpm@9.0.4 exec vitest run tests/e2e/shared tests/e2e/macos/retina.spec.ts --sequence.concurrent=false
+done
+
+# Permission mapping and the disruptive real Runtime restart are platform
+# gates, not deterministic action iterations. Run them exactly once after all
+# full shared+Retina iterations succeed.
+CUA_REPEAT=1 npx --yes pnpm@9.0.4 exec vitest run tests/e2e/macos/permissions.spec.ts --sequence.concurrent=false
 
 export EVIDENCE_MODE="${MODE}"
 export EVIDENCE_REPEAT="${REPEAT}"

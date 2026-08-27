@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -185,6 +185,26 @@ describe("macOS E2E runner opt-in", () => {
     const [code] = await once(child, "exit");
     expect(code).toBe(0);
     expect(stdout).toMatch(/^SKIP: CUA_E2E=1 is required/m);
+  });
+
+  it("runs the complete shared nine-action lane once per declared iteration", async () => {
+    const runner = await readFile(RUNNER, "utf8");
+    const loop = "for (( E2E_ITERATION = 1; E2E_ITERATION <= 10#${REPEAT}; E2E_ITERATION += 1 )); do";
+    const completeIteration =
+      "CUA_REPEAT=1 npx --yes pnpm@9.0.4 exec vitest run tests/e2e/shared tests/e2e/macos/retina.spec.ts --sequence.concurrent=false";
+    const permissionGate =
+      "CUA_REPEAT=1 npx --yes pnpm@9.0.4 exec vitest run tests/e2e/macos/permissions.spec.ts --sequence.concurrent=false";
+    const loopIndex = runner.indexOf(loop);
+    const iterationIndex = runner.indexOf(completeIteration, loopIndex);
+    const loopEndIndex = runner.indexOf("\ndone", iterationIndex);
+    const permissionIndex = runner.indexOf(permissionGate);
+    const evidenceIndex = runner.indexOf('export EVIDENCE_MODE="${MODE}"');
+    expect(loopIndex).toBeGreaterThan(-1);
+    expect(iterationIndex).toBeGreaterThan(loopIndex);
+    expect(loopEndIndex).toBeGreaterThan(iterationIndex);
+    expect(permissionIndex).toBeGreaterThan(loopEndIndex);
+    expect(evidenceIndex).toBeGreaterThan(permissionIndex);
+    expect(runner.match(/tests\/e2e\/macos\/permissions\.spec\.ts/g)).toHaveLength(1);
   });
 });
 
