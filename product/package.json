@@ -1,0 +1,37 @@
+{
+  "name": "@universal-computer-use/plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "skills",
+    "integrations",
+    "engine.lock.json",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "packageManager": "pnpm@9.0.4",
+  "engines": { "node": ">=22.19.0" },
+  "bin": {
+    "computer-use": "dist/cli/main.js",
+    "computer-use-mcp": "dist/mcp/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run tests/unit tests/contract",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "release:verify": "node scripts/verify-release.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@trycua/cua-driver": "0.22.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "typescript": "5.7.3",
+    "vitest": "3.2.4"
+  }
+}

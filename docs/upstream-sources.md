@@ -18,7 +18,7 @@
 ## Cua Driver
 
 - 仓库：<https://github.com/trycua/cua>
-- 许可证：MIT
+- 许可证 SPDX：`MIT`
 - 开发基线 release：`cua-driver-rs-v0.22.1`
 - 开发基线 commit：`c60ef6ad2db8774fb342938843e2f17f26c68240`
 - macOS 必需修复：`90295148d34dac8e5a1307bac917e08171af5839`
@@ -38,7 +38,7 @@
 ## UI-TARS Desktop
 
 - 仓库：<https://github.com/bytedance/UI-TARS-desktop>
-- 许可证：Apache-2.0
+- 许可证 SPDX：`Apache-2.0`
 - 固定 commit：`c2ad42e3eb9b27830db41a3e6f51ca7179d9b168`
 
 | 上游文件 | 采用方式 | 我方用途 |
@@ -52,7 +52,7 @@
 ## OpenAI Agents SDK
 
 - 仓库：<https://github.com/openai/openai-agents-python>
-- 许可证：MIT
+- 许可证 SPDX：`MIT`
 - 固定 commit：`10cdae4a3c30a29c6e96c8ec14e6bf1c5f02940e`
 
 | 上游文件 | 采用方式 | 我方用途 |

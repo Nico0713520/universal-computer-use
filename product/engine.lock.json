@@ -1,0 +1,88 @@
+{
+  "schema_version": 2,
+  "engine": "cua-driver",
+  "version": "0.22.1",
+  "tag": "cua-driver-rs-v0.22.1",
+  "source_commit": "c60ef6ad2db8774fb342938843e2f17f26c68240",
+  "required_fix_commits": ["90295148d34dac8e5a1307bac917e08171af5839"],
+  "required_tools": [
+    "click",
+    "drag",
+    "end_session",
+    "get_desktop_state",
+    "hotkey",
+    "move_cursor",
+    "press_key",
+    "scroll",
+    "start_session",
+    "type_text"
+  ],
+  "platforms": {
+    "macos": {
+      "development_eligible": true,
+      "release_eligible": false,
+      "asset": "cua-driver-rs-0.22.1-darwin-universal.tar.gz",
+      "sha256": "cf4a1a74d6ad8ee7c094a381a061568028ff1353c19932e5806c6f0c1944ba7d",
+      "installer_entrypoint": "install.sh",
+      "installer_files": [
+        {
+          "name": "install.sh",
+          "source": "release",
+          "sha256": "317ba3a49fdba10f2a7f1b9f392c1bc1b7657f3aae85e1e2e43684cf17a1bf3b"
+        },
+        {
+          "name": "_install-rust.sh",
+          "source": "source_commit",
+          "sha256": "71ed3b3987020447ad7663e821f51e8d471f711d6fd9be9938ce978136c30664"
+        },
+        {
+          "name": "_install-common.sh",
+          "source": "source_commit",
+          "sha256": "5bc3aa010eb8667a099b582a9ada9a8f93001745b842cc7cf3cc6c472520cf29"
+        }
+      ],
+      "uninstaller_file": {
+        "name": "uninstall.sh",
+        "source": "release",
+        "sha256": "fb5d6e89edfe89f5c3d2597cec9a8b73a89109a01cddc2dba11cafcef3777d57"
+      },
+      "signer": {
+        "kind": "apple",
+        "team_id": null,
+        "bundle_id": "com.trycua.driver",
+        "designated_requirement_sha256": null
+      },
+      "e2e_evidence": []
+    },
+    "windows": {
+      "development_eligible": true,
+      "release_eligible": false,
+      "asset": "cua-driver-rs-0.22.1-windows-x86_64.zip",
+      "sha256": "b08f6a006a659e853b376f2ffca3ac9b1c25c28fb9730ebe1821defb725bb28f",
+      "installer_entrypoint": "install.ps1",
+      "installer_files": [
+        {
+          "name": "install.ps1",
+          "source": "release",
+          "sha256": "ff0bf5887f5566101c040a33b698a86f6cc94f50d18f9ca8207a0bc08549ad8a"
+        },
+        {
+          "name": "_install-common.psm1",
+          "source": "source_commit",
+          "sha256": "324bca98ad19f0487d4afd36a9e2d06478fcfb8e1e20225cdd8ec8ef5150e720"
+        }
+      ],
+      "uninstaller_file": {
+        "name": "uninstall.ps1",
+        "source": "release",
+        "sha256": "191c86cbae38b449f6ce69e833d3945691308776e7be70052866469dd52576a6"
+      },
+      "signer": {
+        "kind": "authenticode",
+        "subject": null,
+        "thumbprint": null
+      },
+      "e2e_evidence": []
+    }
+  }
+}
