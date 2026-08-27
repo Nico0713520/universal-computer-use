@@ -1,466 +1,406 @@
-# 跨平台 Computer Use Plugin 架构设计
+# 轻量跨平台 Computer Use Plugin 架构设计
 
-日期：2026-08-27  
-状态：用户已批准，进入实施计划
-目标平台：macOS、Windows  
+日期：2026-08-27
+状态：用户已批准新版方向
+目标平台：macOS、Windows
 
-## 1. 产品定义
+## 1. 第一性原理
 
-本项目交付一个无独立聊天 GUI、无内置模型、无模型 API Key 的本地 Computer Use Plugin。用户把插件接入已有 Agent 后，Agent 当前使用的多模态模型负责观察截图、规划、决策和终止；插件负责获取界面状态、执行动作、验证动作效果，并把新截图返回给 Agent。
+项目以三个目标约束全部技术选择：
 
-第一版默认全自动运行，不在每一步请求用户确认。macOS 首次使用仍必须完成系统要求的“屏幕录制”和“辅助功能”授权；Windows 操作管理员权限应用时，插件进程必须与目标应用保持同等权限。这些是操作系统限制，不属于运行时确认流程。
+1. 模仿成熟 Computer Use Harness 的核心设计，形成我们自己的协议、插件、安装体验和产品边界。
+2. macOS/Windows 权限、签名、截图、DPI 和原生输入等高成本能力直接复用 Cua Driver；无法低成本稳定复用的增强能力可以不进入 v1。
+3. 最终用户把插件接入自己已有的多模态 Agent 后，即可让该 Agent 看见并操作当前电脑，不需要为插件单独配置视觉模型。
 
-### 1.1 第一版必须做到
+稳定性的优先级高于功能数量。v1 先保证简单任务的完整闭环，复杂能力以可选增强形式后置。
 
-- 兼容支持本地 MCP 和图片工具结果的 Agent。
-- 直接使用 Agent 当前的视觉模型，不要求额外模型配置。
-- 在 macOS 和 Windows 暴露一致的模型侧动作协议。
-- 支持截图、点击、双击、右击、移动、拖拽、滚动、文本输入、组合键、等待。
-- 每批动作结束后返回最新截图和结构化执行结果。
-- 拒绝基于过期截图执行坐标动作。
-- 保存可关闭的本地执行轨迹，便于复盘和测试。
-- 正常运行时不弹出动作审批。
+## 2. 产品定义
 
-### 1.2 第一版明确不做
+本项目交付一个无聊天 GUI、无内置模型、无模型 API Key 的本地 MCP 插件。宿主 Agent 当前使用的多模态模型负责理解用户目标、查看截图、决定下一步动作、判断任务是否完成；插件负责观察主显示器、验证动作请求、调用 Cua Driver 执行动作，并返回新截图。
 
-- 不内置或调用任何视觉模型。
-- 不提供 TokenHub、OpenAI、Kimi、Anthropic 等模型配置。
-- 不实现独立 Agent、任务规划器或内部模型循环。
-- 不开发聊天窗口或任务管理 GUI。
-- 不解析 UI-TARS 的 `Thought/Action` 文本格式。
-- 不承诺支持不接收 MCP 图片结果的纯文本 Agent。
-- 不以支付、改密、删除重要数据、对外发布等高风险场景作为第一版验收任务。
+插件自身不实现模型循环。循环由宿主 Agent 连续调用两个工具形成：
 
-## 2. 复用与 Fork 策略
+```text
+computer_observe
+  → 宿主模型查看截图并决定一个动作
+computer_act
+  → 插件执行一个动作并返回新截图
+  → 宿主模型继续或结束
+```
 
-### 2.1 主底座
+### 2.1 v1 必须做到
 
-以 [`trycua/cua`](https://github.com/trycua/cua) 中的 Cua Driver 为唯一执行底座。Cua Driver 提供跨平台 Rust Runtime、MCP/SDK、macOS Accessibility、Windows UI Automation、截图、窗口定位、前后台输入、动作结果、验证和轨迹测试。
+- macOS 13+ 与 Windows 10 1903+/Windows 11 x64 使用同一 MCP 工具协议。
+- 兼容能运行本地 stdio MCP、接收 MCP 图片结果并调用工具的多模态 Agent。
+- 使用宿主 Agent 当前模型，不要求用户提供第二套模型、端点或 API Key。
+- 支持主显示器截图、点击、双击、右击、移动、拖拽、滚动、文本输入、单键、组合键和等待。
+- 每次动作只执行一个操作，结束后返回一张新截图。
+- 每个动作必须绑定当前 `snapshot_id`；旧截图、已消费截图和越界坐标必须拒绝。
+- 保留 Cua Driver 的动作 `effect`、`route`、`delivery` 和结构化错误，不把未知效果伪装为成功。
+- 插件自身不弹出逐步审批；宿主 Agent 自身的审批策略仍由宿主管理。
+- 提供 `setup`、`doctor`、MCP 配置生成、升级检查和卸载说明。
 
-推荐采用完整 Git 历史 Fork，而不是复制零散源文件：
+### 2.2 v1 明确不做
 
-1. 在产品组织下 Fork `trycua/cua`，保留 `upstream` 远程。
-2. 固定首个可工作的上游 tag/commit，保证构建可复现。
-3. 我方功能尽量新增在独立目录，通过 Cua Driver 的公开 Interface 调用它。
-4. 只有公开 Interface 无法满足已复现需求时，才修改 Cua Driver 内部代码。
-5. 每个底层修改保持独立提交并记录原因，方便后续同步上游。
-6. 保留 MIT License、版权声明和第三方依赖清单。
+- 不内置模型、任务规划器、OCR、目标检测或 UI-TARS 模型。
+- 不暴露 Accessibility/UIA 元素树或 `element_token`。
+- 不提供独立 `computer_verify` 工具；操作后的新截图是模型侧验证依据。
+- 不支持多动作批处理或插件内部自动重试。
+- 不承诺后台无打扰、焦点保持或窗口级隐形操作。
+- 不支持多显示器寻址；v1 只操作主显示器。
+- 不支持锁屏、Session 0、断开的 RDP 会话或无人登录桌面。
+- 不支持 Windows 管理员权限目标；遇到权限等级不匹配时明确拒绝。
+- 不制作自有原生 Runtime、TCC 权限宿主、DMG、PKG、MSI 或 GUI 安装器。
+- 不修改或重新签名 Cua Driver 的 App、EXE、DLL 或原生库。
+- 不承诺支持无法接收 MCP 图片结果的纯文本 Agent。
 
-### 2.2 只参考、不 Fork
+## 3. 方案选择
 
-- OpenAI CUA：参考结构化 `actions[]`、批量执行和操作后截图协议，不依赖 Responses API，也不复制模型调用代码。
-- Anthropic Computer Use Best Practices：参考批量失败即停、截图坐标一致性、错误分类和轨迹回放；模型缓存、上下文压缩、图片历史裁剪属于宿主 Agent，不进入插件。
-- UI-TARS Desktop：只参考 Observe–Decide–Act 思路和基础动作集合，不 Fork 其模型层、动作文本解析器或 Electron GUI。
+### 3.1 未选择：复制并裁剪 Cua 源码
 
-### 2.3 Fork 的退出条件
+复制原生代码会把 Rust、平台 API、签名、上游同步和原生测试负担带入项目。源码行数可能减少，维护面不会变小，因此不符合轻量和稳定目标。
 
-如果验证发现上游 Cua Driver 已经能直接以足够小、足够稳定的 MCP Interface 满足全部目标，则第一版可以只固定依赖并贡献 Skill/插件包装，不产生长期底层 Fork。只有出现以下情况才保留我方 Fork：
+### 3.2 未选择：完整高级适配层
 
-- 必须修改 macOS/Windows 原生执行行为；
-- 必须增加上游没有的稳定动作结果；
-- 必须修改签名、嵌入式宿主或分发流程；
-- 上游拒绝或长期未合并对产品成立的补丁。
+原方案包含三工具、AX 元素、语义验证、后台投递、多动作批处理和多窗口能力。它的长期能力上限更高，但 v1 会同时承担太多平台状态和降级路径。
 
-## 3. 总体架构
+### 3.3 选择：轻量截图驱动门面 + 原版 Cua Runtime
+
+我们拥有稳定、简洁的模型侧协议；Cua Driver 保持未修改状态，作为固定版本的黑盒执行引擎。我们的代码只做协议验证、snapshot 生命周期、单动作映射、错误归一和 MCP 图片返回。
+
+## 4. 总体架构
 
 ```text
 用户
   │ 自然语言任务
   ▼
-宿主 Agent（WorkBuddy / Kimi / Codex / DeepSeek Harness / 其他 MCP Agent）
-  │ 当前多模态模型负责观察、决策、重试和停止
-  │
-  ├── Computer Use Skill
-  │     规定 observe → decide → act → verify 循环
-  │
-  └── MCP Client
-        │
-        ▼
-Universal Computer Use MCP Module
+宿主 Agent（Codex / Kimi / WorkBuddy / DeepSeek Harness / 通用 MCP Agent）
+  │ 当前多模态模型：观察、规划、决定动作、判断完成
+  ▼
+Computer Use Skill
+  │ 规定 observe → one act → inspect → continue/stop
+  ▼
+Lightweight Computer Use MCP
   ├── computer_observe
-  ├── computer_act
-  └── computer_verify
-        │
-        ▼
-Cua Runtime Adapter
-  ├── 会话与 snapshot 映射
-  ├── OpenAI 风格动作 → Cua 工具映射
-  ├── 批量执行与失败即停
-  ├── 统一错误和效果结果
-  └── 操作后新观察
-        │
-        ▼
-Cua Driver Runtime
-  ├── macOS Adapter：ScreenCapture + Accessibility + 原生输入
-  └── Windows Adapter：截图 + UI Automation + 原生输入
+  └── computer_act
+  ▼
+Core Guard
+  ├── 当前 snapshot 管理
+  ├── 坐标边界检查
+  ├── 单动作策略
+  ├── 超时和错误归一
+  └── 操作后重新观察
+  ▼
+Cua Engine Adapter
+  │ 只调用公开 SDK/Runtime Interface
+  ▼
+未修改、已签名的 Cua Driver Runtime
+  ├── macOS：TCC、ScreenCapture、Accessibility、输入、Retina
+  └── Windows：截图、UIA/输入、DPI、交互式桌面
 ```
 
-MCP 是外部 Seam。宿主 Agent 和测试只依赖三个工具的 Interface，不需要了解 Cua Driver 内部工具数量、平台实现和进程结构。Cua Runtime Adapter 是内部 Seam：第一版只有 Cua Adapter，只有当未来真实接入第二个执行底座时才抽象为可插拔 Adapter Interface。
+## 5. 模型侧工具协议
 
-## 4. 模块与职责
+协议版本从 `1.0.0` 开始。macOS 和 Windows 使用字节一致的 JSON Schema。
 
-### 4.1 Computer Use Skill
+### 5.1 `computer_observe`
 
-Skill 不执行系统操作，只规定 Agent 的使用方法：
+用途：获取主显示器当前截图，建立唯一可执行的观察。
 
-1. 第一次操作前必须 `computer_observe`。
-2. 只使用当前观察返回的 `snapshot_id`、像素坐标或 `element_token`。
-3. 对界面变化有依赖的动作不要放进同一批次。
-4. 每批动作后检查返回的新截图和结构化结果。
-5. `suspected_noop`、`unverifiable`、过期截图或目标消失时重新观察，不盲目重复。
-6. 可用语义元素时优先 `element_token`，否则使用截图像素。
-7. 达到用户目标后直接结束回复，不调用插件内部的 `finished` 动作。
+输入：
 
-Skill 可以针对不同宿主提供薄包装，但循环规则保持单一来源。
-
-### 4.2 Universal Computer Use MCP Module
-
-这是给模型使用的深模块。第一版公开三个工具。
-
-#### `computer_observe`
-
-用途：发现当前桌面或窗口，并生成可操作观察。
-
-输入要点：
-
-- `scope`: `desktop | window | auto`，默认 `auto`；
-- 可选 `pid`、`window_id`；
-- `include_tree`: 是否返回可访问性元素，默认 `true`；
-- 可选 `query`：缩小大型可访问性树。
-
-输出要点：
-
-- MCP `ImageContent` 截图；
-- `session_id`、`snapshot_id`；
-- 当前目标应用、进程、窗口；
-- 截图宽高、坐标原点、缩放信息；
-- 可选 `element_token` 列表和精简语义树；
-- 降级原因，例如无法获取 Accessibility 但截图可用。
-
-不变量：截图像素坐标与后续像素动作使用同一坐标空间。
-
-#### `computer_act`
-
-用途：基于一个观察执行一批有序动作。
-
-输入要点：
-
-- 必填 `snapshot_id`；
-- `actions[]`，第一版最多 8 个；
-- 可选 `delivery`: `auto | background | foreground`，默认 `auto`；
-- `after`: `screenshot | state | none`，默认 `screenshot`。
-
-第一版动作集合：
-
-- `click`、`double_click`、`right_click`；
-- `move`、`drag`；
-- `scroll`；
-- `type`；
-- `keypress`；
-- `wait`；
-- `screenshot`。
-
-点击类动作允许两种目标：截图像素 `{x, y}`，或观察返回的 `{element_token}`。坐标动作必须携带生成它的 `snapshot_id`。
-
-批量语义：
-
-- 严格按数组顺序执行；
-- 首个失败、拒绝或过期目标出现后停止剩余动作；
-- 未执行动作标记为 `skipped`；
-- 默认返回操作后新截图及其新 `snapshot_id`；
-- 新截图是下一轮动作的唯一有效坐标来源。
-
-#### `computer_verify`
-
-用途：在可访问性或应用状态允许时验证结构化后置条件，不替代模型查看截图。
-
-第一版支持：
-
-- 指定元素存在或不存在；
-- 元素值或标签包含预期文本；
-- 指定窗口存在、消失或标题匹配；
-- 当前活动应用/窗口匹配。
-
-返回 `satisfied | unsatisfied | unknown`。只有 `satisfied` 能作为结构化验证成功；截图仍作为视觉证据交给 Agent 判断。
-
-### 4.3 Cua Runtime Adapter
-
-内部负责：
-
-- 建立并复用 Cua 会话；
-- 把 `snapshot_id` 映射到 Cua 的 session、窗口和元素 Token；
-- 把 OpenAI 风格动作翻译为 Cua Driver 调用；
-- 统一 Retina/DPI、窗口坐标和桌面坐标；
-- 把 Cua 的动作结果和错误映射到稳定的产品结果；
-- 批量失败即停；
-- 触发操作后观察；
-- 启停本地轨迹记录。
-
-Adapter 不做模型推理，不猜测用户目标，不把 `unverifiable` 自动改成成功。
-
-### 4.4 平台运行与分发
-
-#### macOS
-
-- 优先复用 Cua Driver 的签名 App/嵌入式宿主模式，以获得稳定 TCC 身份；
-- 首次引导用户授予 Screen Recording 和 Accessibility；
-- 首发支持 Apple Silicon；构建链稳定后增加 Universal Binary；
-- 正常窗口操作优先后台投递，必要时由动作结果提示 Agent 选择前台重试；
-- 不开发聊天 GUI，权限宿主只承担系统授权和 Runtime 生命周期。
-
-#### Windows
-
-- 首发支持 Windows 10 1903+、Windows 11、x64、交互式桌面会话；
-- 使用 Cua Driver 的 UIA/原生输入路径；
-- 遇到目标应用权限等级更高时返回明确错误，不静默失败；
-- Windows 不能保证所有输入后台完成，动作结果必须报告实际 delivery 模式。
-
-#### 发布物
-
-- `computer-use-macos-arm64`，后续增加 `macos-universal`；
-- `computer-use-windows-x64`；
-- 通用 Skill；
-- Kimi、WorkBuddy/CodeBuddy、DeepSeek Harness 的薄插件清单；
-- 通用 MCP 配置示例，供其他 Agent 手动接入。
-
-各发布物共享同一协议版本。不同宿主清单不得复制一份独立循环逻辑。
-
-## 5. 决策循环
-
-宿主 Agent 执行以下循环：
-
-```text
-Observe
-  ↓
-读取截图、目标窗口、可访问性元素和上一批动作结果
-  ↓
-Decide
-  ↓
-选择最小动作或无状态依赖的小批量动作
-  ↓
-Act
-  ↓
-插件顺序执行，失败即停，返回结果和新截图
-  ↓
-Verify
-  ├── 目标已满足：Agent 停止调用工具并总结
-  ├── 状态清晰但未完成：使用新 snapshot 继续
-  ├── 结果未知：重新 observe 或改用另一动作路径
-  └── 权限/环境阻断：报告阻断并结束
+```json
+{}
 ```
 
-插件不实现 `while` 模型循环；循环由宿主 Agent 的工具调用机制和 Skill 共同形成。这样用户切换模型时，插件自动使用新模型的视觉和推理能力。
+v1 不接受显示器选择、窗口选择或树查询参数。未知字段必须拒绝。
 
-## 6. 结果与错误契约
-
-每个动作返回：
+结构化输出：
 
 ```json
 {
-  "index": 0,
-  "status": "executed",
-  "effect": "confirmed",
-  "route": "accessibility",
-  "delivery": "background",
-  "evidence": ["value_readback"]
+  "protocol_version": "1.0.0",
+  "session_id": "ses_...",
+  "snapshot_id": "snap_...",
+  "platform": "macos",
+  "display_id": "primary",
+  "screenshot": {
+    "mime_type": "image/png",
+    "width": 2560,
+    "height": 1440
+  },
+  "engine": {
+    "name": "cua-driver",
+    "version": "<locked-version>"
+  }
 }
 ```
 
-`effect` 采用：
+MCP 内容同时包含一块 `ImageContent`。截图的像素尺寸就是后续动作的唯一坐标空间。
 
-- `confirmed`；
-- `partial`；
-- `unverifiable`；
-- `suspected_noop`；
-- `refused`。
+调用成功后，新 snapshot 成为会话中唯一有效 snapshot；此前 snapshot 立即过期。
 
-稳定错误至少包括：
+### 5.2 `computer_act`
 
-- `permission_required`；
-- `stale_snapshot`；
-- `window_not_found`；
-- `ambiguous_window`；
-- `element_not_found`；
-- `coordinate_out_of_bounds`；
-- `target_privilege_mismatch`；
-- `capture_failed`；
-- `action_timeout`；
-- `runtime_unavailable`；
-- `unsupported_action`。
+用途：基于当前截图执行一个动作，然后返回新截图。
 
-错误同时返回 `retryable` 和 `recovery`：`observe_again | choose_target | use_pixel | use_foreground | grant_permission | restart_runtime | stop`。插件只提供恢复建议，最终选择仍由 Agent 做出。
+公共输入：
 
-## 7. 自动化策略
-
-产品默认：
-
-```yaml
-approval_policy: never
-max_actions_per_batch: 8
-action_timeout_seconds: 20
-session_idle_timeout_minutes: 30
-recording: metadata
+```json
+{
+  "snapshot_id": "snap_...",
+  "action": {
+    "type": "click",
+    "x": 640,
+    "y": 420
+  }
+}
 ```
 
-运行时不弹动作确认。为了避免失控循环，保留确定性的资源限制和紧急停止能力：
+v1 动作联合类型：
 
-- 单次动作超时；
-- 批量动作上限；
-- 会话空闲清理；
-- MCP 进程终止即停止；
-- 可配置全局停止快捷键或宿主 Agent 的停止按钮；
-- 日志不记录密码字段、完整剪贴板和无必要的截图副本。
+```ts
+type ComputerAction =
+  | { type: "click"; x: number; y: number }
+  | { type: "double_click"; x: number; y: number }
+  | { type: "right_click"; x: number; y: number }
+  | { type: "move"; x: number; y: number; duration_ms?: number }
+  | { type: "drag"; from_x: number; from_y: number; to_x: number; to_y: number; duration_ms?: number }
+  | { type: "scroll"; delta_x?: number; delta_y: number }
+  | { type: "type"; text: string }
+  | { type: "keypress"; keys: string[] }
+  | { type: "wait"; ms: number };
+```
 
-这些限制不负责判断任务风险，也不改变用户选择的全自动模式。
+约束：
 
-## 8. 仓库结构建议
+- 坐标是截图像素，左上角为 `(0, 0)`。
+- `x` 必须满足 `0 <= x < screenshot.width`，`y` 同理。
+- `duration_ms` 范围 `0..10000`。
+- `wait.ms` 范围 `0..20000`。
+- `type.text` 最大 20,000 个 Unicode 字符。
+- `keypress.keys` 包含 1–8 个标准化键名。
+- 每次调用只允许一个动作，不接受 `actions[]`。
 
-在 Cua Fork 中新增独立产品目录，尽量不侵入上游实现：
+动作请求在进入引擎前就消费 snapshot。即使引擎报错，也不能用同一个 snapshot 重试，因为桌面状态可能已经发生未知变化。
+
+结构化输出：
+
+```json
+{
+  "protocol_version": "1.0.0",
+  "session_id": "ses_...",
+  "consumed_snapshot_id": "snap_old",
+  "snapshot_id": "snap_new",
+  "action_result": {
+    "status": "executed",
+    "effect": "unverifiable",
+    "route": "global_input",
+    "delivery": "foreground"
+  },
+  "screenshot": {
+    "mime_type": "image/png",
+    "width": 2560,
+    "height": 1440
+  }
+}
+```
+
+MCP 内容包含动作摘要和新 `ImageContent`。若动作失败但重新截图成功，仍返回新 snapshot，供模型看清当前状态。若重新截图也失败，会话中没有有效 snapshot，模型必须重新调用 `computer_observe`。
+
+## 6. Snapshot 与会话不变量
+
+- 每个 MCP transport 只有一个活动桌面会话。
+- 会话内最多保存一个当前 snapshot 的元数据，不持久保存图片字节。
+- `computer_observe` 替换当前 snapshot。
+- `computer_act` 在调用引擎之前原子消费当前 snapshot。
+- snapshot ID 使用加密安全随机值，不从坐标、时间戳或图片内容推导。
+- Runtime 重连、进程重启、会话结束或空闲 30 分钟后，所有 snapshot 失效。
+- 插件不允许客户端指定 Cua session 标识，避免跨 Agent 会话混用。
+
+这些规则防止模型基于已经变化的截图继续点击，同时保持实现足够小。
+
+## 7. Cua 能力复用边界
+
+| 能力 | v1 做法 | 我方不做 |
+|---|---|---|
+| macOS 权限 | 调用 Cua 权限状态和授权流程 | 不写 TCC 探针和权限 App |
+| Windows 权限 | 使用 Cua 交互式桌面输入；高权限目标明确拒绝 | 不实现 UIAccess 提权或自动 UAC |
+| 签名 | 原样安装上游已签名、公证的发布物 | 不修改、重打包或重新签名 Cua 原生文件 |
+| DPI/Retina | 使用 Cua 的主屏截图坐标契约 | 不实现平台级 DPI API；仅做截图边界校验 |
+| 原生输入 | 将九种公共动作映射到 Cua 公开工具 | 不写 CGEvent、AX、SendInput 或 UIA |
+| 安装 | `setup` 委托官方安装流程并固定已验证版本 | 不维护 Cua 安装器分支 |
+| 原生兼容测试 | 上游测试证明引擎行为 | 不复制完整 Cua Harness；只测产品接缝 |
+
+Cua Driver 是运行时依赖，不是我方源码子树。仓库不包含 Cua Rust 代码，也不建立默认 Fork。
+
+### 7.1 引擎版本锁
+
+仓库包含 `engine.lock.json`，记录：
+
+- 精确 Cua 版本；
+- 对应 release tag 和 source commit；
+- macOS/Windows 资产名称和 SHA-256；
+- 支持的协议工具清单；
+- `release_eligible` 状态。
+
+开发基线可使用 Cua `0.22.1` 验证公开 Interface，但公开 macOS 发布必须使用包含 Retina 修复提交 `90295148d34dac8e5a1307bac917e08171af5839` 的正式版本。不存在满足条件的正式版本时，构建可以生成开发包，但发布流程必须以 `engine_not_release_eligible` 失败。
+
+插件启动时检查实际引擎版本。版本或工具契约不匹配时拒绝动作，不自动切换到 `latest`。
+
+## 8. 动作映射
+
+| 公共动作 | Cua 工具 |
+|---|---|
+| `click` | `click`，`button:left`、`count:1` |
+| `double_click` | `click`，`button:left`、`count:2` |
+| `right_click` | `click`，`button:right`、`count:1` |
+| `move` | `move_cursor` |
+| `drag` | `drag` |
+| `scroll` | `scroll` |
+| `type` | `type_text` |
+| 单键 `keypress` | `press_key` |
+| 组合键 `keypress` | `hotkey` |
+| `wait` | 插件内可取消计时器，不调用 Cua |
+
+所有 Cua 调用固定 `target:{kind:"desktop",display_id:"primary"}` 和插件内部 session。v1 不把 Cua 的其他 16 个工具暴露给模型。
+
+## 9. 错误与恢复
+
+稳定错误码：
+
+- `runtime_missing`：未安装 Cua；运行 `setup`。
+- `runtime_unavailable`：Runtime 未运行或连接中断；运行 `doctor` 或重启 Runtime。
+- `engine_version_mismatch`：实际版本与锁文件不符；安装锁定版本。
+- `permission_required`：macOS 权限缺失；运行 Cua 授权流程。
+- `unsupported_platform`：当前 OS/架构不在 v1 范围。
+- `interactive_session_required`：桌面锁定、无人登录或 Session 0。
+- `target_privilege_mismatch`：Windows 权限等级不匹配；v1 停止。
+- `stale_snapshot`：snapshot 不是当前值或已消费；重新观察。
+- `coordinate_out_of_bounds`：坐标不在截图内；使用当前截图重新选择。
+- `action_timeout`：单动作超过 20 秒；重新观察，不自动重复。
+- `action_refused`：Cua 明确拒绝；根据结构化原因停止或改变动作。
+- `action_failed`：动作调用失败；检查返回的新截图。
+- `capture_failed`：无法获得操作后截图；重新调用 observe。
+- `unsupported_action`：动作不在 v1 联合类型中。
+
+插件不进行盲重试。只有 `computer_act` 末尾的操作后截图允许在捕获 API 返回明确瞬时错误时重试一次；重试仍失败则返回 `capture_failed`，且不产生新 snapshot。
+
+日志默认只记录时间、工具名、动作类型、耗时、结果分类和错误码，不记录输入文本、按键内容、截图、剪贴板或模型提示。
+
+## 10. 安装与宿主接入
+
+发布一个 Node.js CLI/MCP 包，提供：
 
 ```text
-apps/
-  universal-computer-use-mcp/     # 三工具 MCP Module
-packages/
-  computer-use-protocol/          # 输入输出 Schema、错误码、版本
-  cua-runtime-adapter/             # 动作翻译、会话、snapshot、结果映射
-skills/
-  computer-use/                    # 单一来源 Skill
-plugins/
-  kimi/
-  workbuddy/
-  deepseek-harness/
-  generic-mcp/
-packaging/
-  macos/
-  windows/
-tests/
-  contract/
-  fixtures/
-  host-compat/
+computer-use setup
+computer-use doctor --json
+computer-use mcp
+computer-use config --client generic|codex|kimi|workbuddy|deepseek-harness
+computer-use uninstall
 ```
 
-如果第一阶段仅依赖上游发布包而不 Fork，则以上产品目录留在独立仓库，Cua Driver 作为固定版本依赖。不要通过复制 Cua 源文件制造第二份 Runtime。
+### 10.1 `setup`
 
-## 9. 测试与验收
+- 检查 Node.js、OS 和架构；
+- 读取 `engine.lock.json`；
+- 调用或下载对应的官方 Cua 安装器；
+- 要求精确版本，校验已发布资产哈希；
+- 启动 Cua Runtime；
+- macOS 引导一次性 Screen Recording 和 Accessibility 授权；
+- 输出宿主配置命令，不静默修改未知宿主配置。
 
-### 9.1 协议与模块测试
+### 10.2 `doctor`
 
-- 三个 MCP 工具的输入输出 Schema 测试；
-- `actions[]` 顺序、失败即停、`skipped` 测试；
-- 过期 `snapshot_id` 必须拒绝；
-- 像素越界和坐标变换测试；
-- Cua 结果到统一结果的完整映射测试；
-- 模拟 Runtime 的超时、权限缺失、窗口消失和部分成功；
-- 插件清单和 Skill 加载测试。
+机器可读地检查：插件版本、协议版本、Cua 版本、Runtime 连通性、必需工具、交互式桌面、权限、主屏截图尺寸和一次无副作用观察。任一核心项失败时退出非零。
 
-### 9.2 macOS E2E
+### 10.3 宿主要求
 
-- Retina 主屏截图与点击一致；
-- TextEdit 输入、保存对话框导航；
-- Calculator 点击与结果读取；
-- Chrome/原生应用切换；
-- 后台操作不抢占前台的可验证路径；
-- 缺少 Screen Recording/Accessibility 时返回准确错误；
-- Runtime 重启后旧 snapshot 失效。
+宿主必须：
 
-### 9.3 Windows E2E
+1. 支持本地 stdio MCP；
+2. 把 MCP `ImageContent` 发送给当前多模态模型；
+3. 允许模型连续调用工具；
+4. 能配置 `computer_act` 自动批准，或本身支持用户选择的全自动模式。
 
-- Notepad 输入与保存对话框；
-- Calculator 点击与结果读取；
-- Chrome/原生窗口切换；
-- DPI 缩放下的截图与点击一致；
-- 管理员权限不匹配返回准确错误；
-- Runtime 重启和窗口关闭后的状态清理。
+插件自身没有动作审批，但不能绕过宿主强制策略。
 
-### 9.4 宿主兼容测试
+优先兼容顺序：通用 MCP → Codex → Kimi → WorkBuddy/CodeBuddy → DeepSeek Harness。不同宿主只保留清单和配置差异，循环规则来自同一份 Skill。
 
-每个宿主至少验证：
+## 11. 测试策略
 
-1. 能发现三个 MCP 工具；
-2. `computer_observe` 返回的 MCP 图片确实进入当前视觉模型；
-3. 模型能基于图片调用 `computer_act`；
-4. 操作后截图能触发下一轮决策；
-5. Agent 完成后能自然停止；
-6. 全自动配置下不会逐步弹审批。
+### 11.1 无桌面确定性测试
 
-优先宿主顺序：Codex → Kimi Code/Kimi Work → WorkBuddy/CodeBuddy → DeepSeek Harness → 其他通用 MCP Agent。
+- 两工具 JSON Schema 和协议快照；
+- 九种动作到 Cua 工具的精确映射；
+- 当前/过期/已消费 snapshot；
+- 坐标边界、键名、文本长度和超时；
+- Cua effect/error 到稳定产品结果的映射；
+- 操作失败但操作后截图成功；
+- 操作和截图都失败时不生成 snapshot；
+- 锁定版本、资产哈希和工具契约漂移；
+- 日志敏感信息排除。
 
-### 9.5 第一版完成标准
+### 11.2 macOS E2E
 
-- macOS 和 Windows 各有一个可安装发布物；
-- 用户无需提供模型 API Key；
-- 首次系统授权完成后，确定性任务不再弹操作确认；
-- 参考视觉 Agent 能完成“打开应用、输入文本、点击按钮、读取结果”的端到端任务；
-- 两个平台的 MCP 工具 Schema 完全一致；
-- 协议、错误映射和确定性 Runtime Fixture 测试全部通过；
-- 选定参考模型在每个平台 20 次基础 Agent 任务中成功率不低于 80%，失败均有轨迹可复盘；
-- 安装、卸载、升级和权限排查文档齐全。
+- Cua 已签名 Runtime 安装和权限状态；
+- 主屏原生截图尺寸；
+- Retina 模式下截图坐标点击一致；
+- TextEdit 输入唯一文本；
+- Calculator 点击并从截图确认结果；
+- 权限缺失返回 `permission_required`；
+- Runtime 重启使旧 snapshot 失效。
 
-## 10. 实施阶段总览
+### 11.3 Windows E2E
 
-### 阶段 0：上游验证与 Fork 决策
+- Windows 10/11 x64 交互式桌面；
+- 100%、125%、150% DPI；
+- Notepad 输入唯一文本；
+- Calculator 点击并从截图确认结果；
+- 管理员目标返回 `target_privilege_mismatch`；
+- 锁屏或 Session 0 返回 `interactive_session_required`。
 
-- 固定 Cua Driver 版本；
-- 在当前 macOS 验证截图、Accessibility、后台点击、键盘输入和 MCP 图片返回；
-- 在 Windows 测试机验证同一最小动作集合；
-- 记录公开 Interface 缺口；
-- 决定“固定依赖”还是“保留底层 Fork”。
+### 11.4 宿主兼容测试
 
-退出条件：两个平台都能通过原生 Cua Driver 完成最小确定性 Fixture。
+每个宿主验证：
 
-### 阶段 1：协议与 Adapter
+1. 发现且只发现两个公开工具；
+2. observe 图片进入当前模型；
+3. 模型能从截图生成一次 act；
+4. act 的新截图进入下一轮；
+5. 达成目标后自然停止；
+6. 插件层没有确认弹窗；
+7. 宿主若有审批，文档给出可验证的全自动配置或明确标记不兼容。
 
-- 定义三个 MCP 工具 Schema；
-- 实现 snapshot 生命周期；
-- 实现 OpenAI 风格动作到 Cua 的映射；
-- 实现批量失败即停和统一结果；
-- 使用 Fake Runtime 完成协议测试。
+## 12. v1 验收标准
 
-退出条件：不依赖真实桌面的 Contract 测试全部通过。
+- macOS 与 Windows x64 使用相同两工具 Schema。
+- 用户不配置插件模型或模型 API Key。
+- setup 后 `doctor --json` 全绿，macOS 首次系统授权除外。
+- 两个平台都能通过同一 Agent 循环完成打开应用、输入文本、点击按钮和读取可见结果。
+- 旧 snapshot、越界坐标、缺失权限、错误版本和 Windows 高权限目标均明确失败。
+- 每个平台连续运行 20 次确定性 Runtime Fixture，插件接缝成功率 100%；失败不得被记录为成功。
+- Codex 与 Kimi 完成端到端视觉循环；通用 MCP 配置可复制使用。
+- WorkBuddy 和 DeepSeek Harness 在发布矩阵中标记为已验证、实验性或不兼容，不做未经验证的承诺。
+- 安装、诊断、升级、卸载、第三方许可和故障排查文档齐全。
 
-### 阶段 2：macOS MVP
+## 13. 后续增强顺序
 
-- 接入 Cua Driver macOS Runtime；
-- 完成权限宿主、签名和安装；
-- 完成 macOS E2E Fixture；
-- 先接 Codex 与一个支持本地 MCP 图片的第二宿主。
+只有 v1 指标稳定后，按独立能力逐项评估：
 
-退出条件：macOS 安装包和端到端 Agent 任务达到第一版标准。
+1. 操作窗口选择；
+2. 多显示器；
+3. 可选 Accessibility/UIA 元素提示；
+4. `computer_verify`；
+5. 无状态依赖的短批量动作；
+6. 后台投递与明确的前台升级；
+7. Windows arm64；
+8. 自有签名安装器。
 
-### 阶段 3：Windows MVP
+每个增强必须保持坐标截图不变量，具备跨平台测试，并可在不改变 v1 基础路径的情况下关闭。
 
-- 接入 Cua Driver Windows Runtime；
-- 完成 Windows 安装、进程和权限等级处理；
-- 完成 Windows E2E Fixture；
-- 保证工具 Schema 与 macOS 无差异。
+## 14. 规模判断
 
-退出条件：Windows 安装包和端到端 Agent 任务达到第一版标准。
+预计我方生产 TypeScript、配置和脚本约 1,500–3,000 行，测试和文档约 2,000–4,000 行。核心难度从原生系统控制转移到协议正确性、Cua 版本锁、安装诊断和真实宿主验证。
 
-### 阶段 4：插件包装与宿主矩阵
-
-- 发布通用 Skill；
-- 制作 Kimi、WorkBuddy/CodeBuddy、DeepSeek Harness 薄清单；
-- 为其他 MCP Agent 提供一条配置命令或 JSON；
-- 验证图片转发、循环和无审批配置。
-
-退出条件：至少四类宿主通过兼容测试，未兼容宿主有明确原因。
-
-### 阶段 5：发布加固
-
-- 自动构建、签名、校验和、SBOM、许可证清单；
-- 安装、升级、卸载和回滚；
-- 轨迹查看和诊断命令；
-- 发布候选版回归和兼容矩阵。
-
-退出条件：macOS、Windows 发布物可复现构建并完成发布验收。
-
-## 11. 关键设计决定
-
-1. 插件没有内置模型，模型属于宿主 Agent。
-2. 循环属于宿主 Agent；插件只提供观察、动作和验证。
-3. Cua Driver 是唯一执行底座，避免自行重写 macOS/Windows 原生控制。
-4. 模型侧 Interface 采用 OpenAI 风格结构化批量动作，但通过 MCP 暴露。
-5. Accessibility 是截图驱动的增强信息，不替代视觉截图。
-6. 操作必须绑定 snapshot，不能使用无法证明坐标来源的旧截图。
-7. 第一版无逐步审批，但保留系统授权、资源上限和紧急停止。
-8. 优先固定依赖；只有验证过的能力缺口才保留底层 Fork。
+如果实现过程中开始复制 Cua Rust 平台代码、创建自有权限宿主、实现后台输入或维护原生签名流水线，应立即停止并重新审查范围；这些动作意味着项目偏离轻量 v1。
