@@ -4,7 +4,7 @@ Compatibility is evidence-based. The only status values are `verified`, `experim
 
 | Host | Status | Evidence date | OS | Host version | Image delivery | Continuous loop | Automatic mode | Limitation |
 |---|---|---|---|---|---|---|---|---|
-| Generic MCP | not-tested | — | macOS / Windows | — | not-tested | not-tested | not-tested | Static configuration contract exists; host-specific end-to-end evidence is pending. |
+| Generic MCP | experimental | — | macOS / Windows | — | not-tested | not-tested | not-tested | Portable model-free configuration is contract-tested; no named host has supplied image/loop evidence. |
 | Codex | not-tested | — | macOS / Windows | — | not-tested | not-tested | not-tested | Registration guide exists; eligible-Runtime host evidence is pending. |
 | Kimi | not-tested | — | macOS / Windows | — | not-tested | not-tested | not-tested | Registration guide exists; eligible-Runtime host evidence is pending. |
 | WorkBuddy | experimental | — | macOS / Windows | — | not-tested | not-tested | not-tested | Declaration-only adapter; host loading format and end-to-end behavior need validation against a named WorkBuddy version. |
@@ -19,6 +19,8 @@ Compatibility is evidence-based. The only status values are `verified`, `experim
 - Automatic mode records observed host behavior and any user-controlled approval setting. The plugin does not override host authorization.
 - Limitations state missing platforms, blocked permissions, secure-desktop exclusions, or other boundaries observed in the run.
 
-The generic `integrations/generic/mcp.json` file is a portable development sample that launches `computer-use-mcp` from the executable search path. Production installations should run `computer-use config --client generic` and use its absolute Node executable plus absolute MCP script configuration. Codex and Kimi installations should likewise use their generated host command and install or link the same canonical Skill shipped in `product/skills/computer-use`.
+Codex and Kimi evidence is accepted only through the strict `product/tests/e2e/host/evidence.schema.json` contract. A `verified` record must reference and hash platform E2E evidence already represented by a release-eligible engine lock, prove both PNG turns reached the same host-reported model, complete both fixed tasks, and stop naturally. Real evidence stays outside the repository; the checked-in `codex.md` and `kimi.md` files are runbooks, not pass records. With no eligible Runtime evidence available, Codex and Kimi remain explicitly `not-tested`.
+
+The generic `integrations/generic/mcp.json` file is a portable experimental sample that launches `computer-use-mcp` from the executable search path. Its static shape and the generated absolute-path configuration are contract-tested, and neither contains a model or credential. That is not proof that an unnamed host forwards images or continues a tool loop. Production installations should run `computer-use config --client generic` and use its absolute Node executable plus absolute MCP script configuration. Codex and Kimi installations should likewise use their generated host command and install or link the same canonical Skill shipped in `product/skills/computer-use`.
 
 The WorkBuddy and DeepSeek Harness directories are non-blocking experimental declarations. Both point at that same canonical Skill and launch the same `computer-use-mcp` executable; neither adds a host-specific control loop or changes the public tool protocol. Their manifest shapes are not compatibility evidence. Keep them experimental until a named host version proves loading, image delivery, repeated tool calls, automatic-mode behavior and natural stop using the evidence rules above.

@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-computer-use.invalid/schemas/host-evidence-v1.json",
+  "title": "Redacted Computer Use Host Loop Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_type",
+    "status",
+    "host",
+    "system",
+    "eligible_platform_evidence",
+    "tools",
+    "image_delivery",
+    "continuous_loop",
+    "automatic_mode",
+    "task_results",
+    "natural_stop",
+    "timestamp",
+    "reviewer"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence_type": { "const": "computer-use-host-loop" },
+    "status": {
+      "enum": ["verified", "experimental", "not-compatible", "not-tested"]
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "reported_model_id"],
+      "properties": {
+        "name": { "enum": ["codex", "kimi"] },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$"
+        },
+        "reported_model_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      }
+    },
+    "system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "os_version", "engine_version"],
+      "properties": {
+        "platform": { "enum": ["macos", "windows"] },
+        "os_version": {
+          "type": "string",
+          "pattern": "^[0-9]+(?:\\.[0-9]+){0,3}$",
+          "maxLength": 32
+        },
+        "engine_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        }
+      }
+    },
+    "eligible_platform_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "sha256", "release_eligible"],
+      "properties": {
+        "reference": {
+          "type": "string",
+          "maxLength": 240,
+          "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.json$"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "release_eligible": { "type": "boolean" }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "const": "computer_observe" },
+        { "const": "computer_act" }
+      ],
+      "items": false
+    },
+    "image_delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mime_type",
+        "byte_valid_png",
+        "first_turn_png",
+        "second_turn_png",
+        "same_host_reported_model"
+      ],
+      "properties": {
+        "mime_type": { "const": "image/png" },
+        "byte_valid_png": { "type": "boolean" },
+        "first_turn_png": { "type": "boolean" },
+        "second_turn_png": { "type": "boolean" },
+        "same_host_reported_model": { "type": "boolean" }
+      }
+    },
+    "continuous_loop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repeated_tool_calls", "turns_observed"],
+      "properties": {
+        "repeated_tool_calls": { "type": "boolean" },
+        "turns_observed": { "type": "integer", "minimum": 0, "maximum": 1000 }
+      }
+    },
+    "automatic_mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plugin_confirmation_count", "host_authorization"],
+      "properties": {
+        "plugin_confirmation_count": { "const": 0 },
+        "host_authorization": {
+          "enum": [
+            "no-host-prompt-observed",
+            "host-approval-observed",
+            "host-policy-blocked"
+          ]
+        }
+      }
+    },
+    "task_results": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visible_text_entry", "calculator"],
+      "properties": {
+        "visible_text_entry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["result", "visible_keyboard_launch", "one_use_sentence_recorded"],
+          "properties": {
+            "result": { "enum": ["passed", "failed", "not-run"] },
+            "visible_keyboard_launch": { "type": "boolean" },
+            "one_use_sentence_recorded": { "const": false }
+          }
+        },
+        "calculator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["result", "expression", "visible_result"],
+          "properties": {
+            "result": { "enum": ["passed", "failed", "not-run"] },
+            "expression": { "const": "37x19" },
+            "visible_result": { "enum": ["703", "not-observed"] }
+          }
+        }
+      }
+    },
+    "natural_stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "tool_calls_after_visible_goal"],
+      "properties": {
+        "result": { "enum": ["passed", "failed", "not-run"] },
+        "tool_calls_after_visible_goal": { "type": "integer", "minimum": 0, "maximum": 1000 }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40
+    },
+    "reviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "method"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]*$"
+        },
+        "method": { "const": "manual-host-runbook" }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "status",
+        "eligible_platform_evidence",
+        "image_delivery",
+        "continuous_loop",
+        "automatic_mode",
+        "task_results",
+        "natural_stop"
+      ],
+      "properties": {
+        "status": { "const": "verified" },
+        "eligible_platform_evidence": {
+          "type": "object",
+          "required": ["release_eligible"],
+          "properties": { "release_eligible": { "const": true } }
+        },
+        "image_delivery": {
+          "type": "object",
+          "required": [
+            "mime_type",
+            "byte_valid_png",
+            "first_turn_png",
+            "second_turn_png",
+            "same_host_reported_model"
+          ],
+          "properties": {
+            "mime_type": { "const": "image/png" },
+            "byte_valid_png": { "const": true },
+            "first_turn_png": { "const": true },
+            "second_turn_png": { "const": true },
+            "same_host_reported_model": { "const": true }
+          }
+        },
+        "continuous_loop": {
+          "type": "object",
+          "required": ["repeated_tool_calls", "turns_observed"],
+          "properties": {
+            "repeated_tool_calls": { "const": true },
+            "turns_observed": { "type": "integer", "minimum": 2 }
+          }
+        },
+        "automatic_mode": {
+          "type": "object",
+          "required": ["plugin_confirmation_count", "host_authorization"],
+          "properties": {
+            "plugin_confirmation_count": { "const": 0 },
+            "host_authorization": {
+              "enum": ["no-host-prompt-observed", "host-approval-observed"]
+            }
+          }
+        },
+        "task_results": {
+          "type": "object",
+          "required": ["visible_text_entry", "calculator"],
+          "properties": {
+            "visible_text_entry": {
+              "type": "object",
+              "required": ["result", "visible_keyboard_launch", "one_use_sentence_recorded"],
+              "properties": {
+                "result": { "const": "passed" },
+                "visible_keyboard_launch": { "const": true },
+                "one_use_sentence_recorded": { "const": false }
+              }
+            },
+            "calculator": {
+              "type": "object",
+              "required": ["result", "visible_result"],
+              "properties": {
+                "result": { "const": "passed" },
+                "visible_result": { "const": "703" }
+              }
+            }
+          }
+        },
+        "natural_stop": {
+          "type": "object",
+          "required": ["result", "tool_calls_after_visible_goal"],
+          "properties": {
+            "result": { "const": "passed" },
+            "tool_calls_after_visible_goal": { "const": 0 }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["status"],
+      "properties": { "status": { "enum": ["experimental", "not-compatible", "not-tested"] } }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}
