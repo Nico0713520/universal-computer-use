@@ -218,8 +218,10 @@ export function parseWindowList(
       ownerKey: `pid:${window.pid}`,
       app: ownerApp,
       title: window.title,
+      appName: window.app_name,
       bounds: Object.freeze({ ...window.bounds }),
       focused: ownerApp.active === true && window.z_index === highestZ,
+      ...(window.z_index === null || window.z_index === undefined ? {} : { zIndex: window.z_index }),
       ...(window.minimized === undefined ? {} : { minimized: window.minimized }),
       ...(window.is_on_screen === undefined ? {} : { isOnScreen: window.is_on_screen }),
       ...(window.on_current_space === null || window.on_current_space === undefined

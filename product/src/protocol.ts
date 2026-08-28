@@ -192,7 +192,7 @@ const WindowOutputSchema = z.object({
   app_name: z.string(),
   title: z.string(),
   bounds: BoundsSchema.extend({ coordinate_space: z.literal("desktop_logical") }).strict(),
-  is_on_screen: z.boolean(),
+  is_on_screen: z.boolean().optional(),
   // Cua 0.22.2 does not expose these fields on every platform/backend. Omit
   // unknown facts instead of fabricating false values.
   on_current_space: z.boolean().optional(),

@@ -26,6 +26,7 @@ function target(): InternalWindowTarget {
     appRef: "app_abcdefghijklmnop",
     nativeKey: "window:7",
     ownerKey: "pid:42",
+    appName: "Calculator",
     title: "Calculator",
     bounds: { x: 100, y: 100, width: 460, height: 816 },
     focused: true,

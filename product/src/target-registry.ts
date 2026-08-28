@@ -36,8 +36,10 @@ export type NativeWindowTarget = Readonly<{
   ownerKey: string;
   app: NativeAppTarget;
   title: string;
+  appName?: string;
   bounds: TargetBounds;
   focused: boolean;
+  zIndex?: number;
   minimized?: boolean;
   isOnScreen?: boolean;
   onCurrentSpace?: boolean;
@@ -46,9 +48,10 @@ export type NativeWindowTarget = Readonly<{
 }>;
 
 export type InternalAppTarget = NativeAppTarget & Readonly<{ appRef: string }>;
-export type InternalWindowTarget = Omit<NativeWindowTarget, "app"> & Readonly<{
+export type InternalWindowTarget = Omit<NativeWindowTarget, "app" | "appName"> & Readonly<{
   windowRef: string;
   appRef: string;
+  appName: string;
 }>;
 
 type Entry<T> = { target: T; lastUsedAtMs: number };
@@ -88,8 +91,10 @@ function frozenWindow(
     nativeKey: candidate.nativeKey,
     ownerKey: candidate.ownerKey,
     title: candidate.title,
+    appName: candidate.appName ?? candidate.app.displayName,
     bounds: Object.freeze({ ...candidate.bounds }),
     focused: candidate.focused,
+    ...(candidate.zIndex === undefined ? {} : { zIndex: candidate.zIndex }),
     ...(candidate.minimized === undefined ? {} : { minimized: candidate.minimized }),
     ...(candidate.isOnScreen === undefined ? {} : { isOnScreen: candidate.isOnScreen }),
     ...(candidate.onCurrentSpace === undefined ? {} : { onCurrentSpace: candidate.onCurrentSpace }),
@@ -125,7 +130,9 @@ export class TargetRegistry {
     const unique = new Map<string, NativeAppTarget>();
     for (const candidate of candidates) unique.set(candidate.nativeKey, candidate);
     const sorted = [...unique.values()].sort((left, right) =>
-      compareText(left.displayName, right.displayName) || compareText(left.nativeKey, right.nativeKey));
+      Number(right.running) - Number(left.running) ||
+      compareText(left.displayName.normalize("NFKC").toLocaleLowerCase("en-US"), right.displayName.normalize("NFKC").toLocaleLowerCase("en-US")) ||
+      compareText(left.nativeKey, right.nativeKey));
     const registered: InternalAppTarget[] = [];
     for (const candidate of sorted) {
       const target = this.registerApp(candidate);
@@ -139,7 +146,10 @@ export class TargetRegistry {
     const unique = new Map<string, NativeWindowTarget>();
     for (const candidate of candidates) unique.set(candidate.nativeKey, candidate);
     const sorted = [...unique.values()].sort((left, right) =>
-      compareText(left.app.displayName, right.app.displayName) ||
+      Number(right.onCurrentSpace === true) - Number(left.onCurrentSpace === true) ||
+      Number(right.isOnScreen === true) - Number(left.isOnScreen === true) ||
+      (right.zIndex ?? Number.NEGATIVE_INFINITY) - (left.zIndex ?? Number.NEGATIVE_INFINITY) ||
+      compareText(left.app.displayName.normalize("NFKC").toLocaleLowerCase("en-US"), right.app.displayName.normalize("NFKC").toLocaleLowerCase("en-US")) ||
       compareText(left.title, right.title) ||
       compareText(left.nativeKey, right.nativeKey));
     const registered: InternalWindowTarget[] = [];

@@ -105,6 +105,44 @@ describe("TargetRegistry", () => {
     expect(registry.resolveWindow(firstWindowRef).nativeKey).toBe("1");
   });
 
+  it("orders running apps and visible front windows before lexical fallbacks", () => {
+    let serial = 0;
+    const registry = new TargetRegistry({ token: () => `abcdefghijklmnop${serial++}` });
+    const stopped = { ...app("app:a", "Alpha"), running: false };
+    const running = app("app:z", "Zulu");
+    expect(registry.registerApps([stopped, running]).map(({ displayName }) => displayName)).toEqual([
+      "Zulu",
+      "Alpha",
+    ]);
+
+    const back = {
+      ...windowTarget("1", "pid:1", running),
+      title: "Back",
+      onCurrentSpace: true,
+      isOnScreen: true,
+      zIndex: 1,
+    };
+    const front = {
+      ...windowTarget("2", "pid:1", running),
+      title: "Front",
+      onCurrentSpace: true,
+      isOnScreen: true,
+      zIndex: 10,
+    };
+    const otherSpace = {
+      ...windowTarget("3", "pid:1", running),
+      title: "Other Space",
+      onCurrentSpace: false,
+      isOnScreen: true,
+      zIndex: 100,
+    };
+    expect(registry.registerWindows([back, otherSpace, front]).map(({ title }) => title)).toEqual([
+      "Front",
+      "Back",
+      "Other Space",
+    ]);
+  });
+
   it("expires idle refs after thirty minutes and clears the transport scope", () => {
     let now = 0;
     const tokens = [

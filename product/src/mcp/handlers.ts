@@ -55,8 +55,8 @@ export async function handleObserve(
   input: unknown,
 ): Promise<CallToolResult> {
   try {
-    ObserveInputSchema.parse(input);
-    return successToMcp(await runtime.observe());
+    const parsed = ObserveInputSchema.parse(input);
+    return successToMcp(await runtime.observe(parsed));
   } catch (error) {
     return errorToMcp(error);
   }
