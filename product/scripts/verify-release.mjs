@@ -23,10 +23,23 @@ function isSafeEvidenceReference(reference) {
     && !reference.split("/").includes("..");
 }
 
+export function npmPackInvocation(
+  platform = process.platform,
+  commandInterpreter = process.env.ComSpec,
+) {
+  const args = ["pack", "--dry-run", "--json"];
+  if (platform !== "win32") return { file: "npm", args };
+  return {
+    file: commandInterpreter || "cmd.exe",
+    args: ["/d", "/s", "/c", "npm.cmd", ...args],
+  };
+}
+
 export async function inspectPackedArtifact(directory) {
+  const invocation = npmPackInvocation();
   const { stdout } = await execFileAsync(
-    process.platform === "win32" ? "npm.cmd" : "npm",
-    ["pack", "--dry-run", "--json"],
+    invocation.file,
+    invocation.args,
     { cwd: directory, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
   );
   const jsonStart = [...stdout.matchAll(/^\[/gm)].at(-1)?.index;

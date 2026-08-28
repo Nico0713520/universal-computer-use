@@ -41,6 +41,10 @@ type SoakModule = {
 };
 
 type VerifyReleaseModule = {
+  npmPackInvocation(
+    platform: NodeJS.Platform,
+    commandInterpreter?: string,
+  ): { file: string; args: string[] };
   inspectPackedArtifact(productDirectory: string): Promise<{
     files: string[];
     dependencies: string[];
@@ -314,6 +318,19 @@ async function promotedEvidenceBundle(iterations = 20) {
 }
 
 describe("release verification", () => {
+  it("launches npm through the Windows command interpreter", async () => {
+    const { npmPackInvocation } = await releaseModule();
+
+    expect(npmPackInvocation("win32", "C:\\Windows\\System32\\cmd.exe")).toEqual({
+      file: "C:\\Windows\\System32\\cmd.exe",
+      args: ["/d", "/s", "/c", "npm.cmd", "pack", "--dry-run", "--json"],
+    });
+    expect(npmPackInvocation("darwin")).toEqual({
+      file: "npm",
+      args: ["pack", "--dry-run", "--json"],
+    });
+  });
+
   it("builds ignored dist artifacts before tests, packing, and release verification", async () => {
     const productDirectory = fileURLToPath(new URL("../../", import.meta.url));
     const packageManifest = JSON.parse(
