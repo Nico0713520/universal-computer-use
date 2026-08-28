@@ -68,7 +68,7 @@ describe("uninstall", () => {
 
     expect(edge.downloads).toHaveLength(1);
     expect(edge.downloads[0].url).toBe(
-      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.22.1/uninstall.sh",
+      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.22.2/uninstall.sh",
     );
     expect(edge.runs).toEqual([
       { command: "/bin/bash", args: [edge.downloads[0].destination] },

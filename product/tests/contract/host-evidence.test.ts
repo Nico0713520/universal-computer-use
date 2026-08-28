@@ -42,7 +42,7 @@ function completeEvidence(): JsonRecord {
     system: {
       platform: "macos",
       os_version: "15.6.1",
-      engine_version: "0.22.1",
+      engine_version: "0.22.2",
     },
     eligible_platform_evidence: {
       reference: "platform/macos-candidate.json",

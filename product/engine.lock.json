@@ -1,12 +1,14 @@
 {
   "schema_version": 2,
   "engine": "cua-driver",
-  "version": "0.22.1",
-  "tag": "cua-driver-rs-v0.22.1",
-  "source_commit": "c60ef6ad2db8774fb342938843e2f17f26c68240",
+  "version": "0.22.2",
+  "tag": "cua-driver-rs-v0.22.2",
+  "source_commit": "d114f35fec05ecd37bf529e5587be86852205b64",
   "required_fix_commits": ["90295148d34dac8e5a1307bac917e08171af5839"],
   "required_tools": [
     "click",
+    "double_click",
+    "right_click",
     "drag",
     "end_session",
     "get_desktop_state",
@@ -15,14 +17,22 @@
     "press_key",
     "scroll",
     "start_session",
-    "type_text"
+    "type_text",
+    "list_apps",
+    "list_windows",
+    "get_window_state",
+    "verify_state",
+    "launch_app",
+    "invoke_menu",
+    "set_value",
+    "health_report"
   ],
   "platforms": {
     "macos": {
       "development_eligible": true,
       "release_eligible": false,
-      "asset": "cua-driver-rs-0.22.1-darwin-universal.tar.gz",
-      "sha256": "cf4a1a74d6ad8ee7c094a381a061568028ff1353c19932e5806c6f0c1944ba7d",
+      "asset": "cua-driver-rs-0.22.2-darwin-universal.tar.gz",
+      "sha256": "a9ca5891386a3a50b595b53329127e18b0326ce1cefd4e8dcd16efff0e58f4cc",
       "installer_entrypoint": "install.sh",
       "installer_files": [
         {
@@ -32,8 +42,8 @@
         },
         {
           "name": "_install-rust.sh",
-          "source": "source_commit",
-          "sha256": "71ed3b3987020447ad7663e821f51e8d471f711d6fd9be9938ce978136c30664"
+          "source": "release",
+          "sha256": "f7483c2d081ed836ba1f9cbad943037907f098cf1be45f37a94d7a2d21303940"
         },
         {
           "name": "_install-common.sh",
@@ -57,14 +67,14 @@
     "windows": {
       "development_eligible": true,
       "release_eligible": false,
-      "asset": "cua-driver-rs-0.22.1-windows-x86_64.zip",
-      "sha256": "b08f6a006a659e853b376f2ffca3ac9b1c25c28fb9730ebe1821defb725bb28f",
+      "asset": "cua-driver-rs-0.22.2-windows-x86_64.zip",
+      "sha256": "03403da57c5e686c8bccb9b1d57a182e37cdf329c5f949eb54460aef554e6795",
       "installer_entrypoint": "install.ps1",
       "installer_files": [
         {
           "name": "install.ps1",
           "source": "release",
-          "sha256": "ff0bf5887f5566101c040a33b698a86f6cc94f50d18f9ca8207a0bc08549ad8a"
+          "sha256": "3b10252d4bc2deff83bdc5d01fc971a3448e817f083e05c1a982a02ab00048fc"
         },
         {
           "name": "_install-common.psm1",

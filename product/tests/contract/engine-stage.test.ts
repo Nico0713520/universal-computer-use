@@ -161,7 +161,7 @@ describe("candidate engine stage", () => {
     });
     expect(lock.platforms.macos.installer_files).toEqual([
       { name: "install.sh", source: "release", sha256: sha256(files["install.sh"]) },
-      { name: "_install-rust.sh", source: "source_commit", sha256: sha256(files["_install-rust.sh"]) },
+      { name: "_install-rust.sh", source: "release", sha256: sha256(files["_install-rust.sh"]) },
       { name: "_install-common.sh", source: "source_commit", sha256: sha256(files["_install-common.sh"]) },
     ]);
     expect(lock.platforms.windows.installer_files).toEqual([
@@ -181,6 +181,9 @@ describe("candidate engine stage", () => {
     expect(sourceMap).toContain(`开发基线 commit：\`${sourceCommit}\``);
     expect(edge.urls).toContain(
       `https://github.com/trycua/cua/releases/download/${tag}/checksums.txt`,
+    );
+    expect(edge.urls).toContain(
+      `https://github.com/trycua/cua/releases/download/${tag}/_install-rust.sh`,
     );
     expect(edge.urls.every((url) => !url.includes("latest"))).toBe(true);
     expect(edge.deps.isAncestor).toHaveBeenCalledWith("a".repeat(40), sourceCommit);

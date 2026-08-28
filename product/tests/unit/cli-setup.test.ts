@@ -75,12 +75,12 @@ function fakeBoundary() {
 
 const healthyDoctor = {
   ok: true,
-  product_version: "0.1.0",
-  protocol_version: "1.0.0",
+  product_version: "0.2.0",
+  protocol_version: "1.1.0",
   platform: "macos" as const,
   supported_platform: true,
-  expected_engine_version: "0.22.1",
-  reported_engine_version: "0.22.1",
+  expected_engine_version: "0.22.2",
+  reported_engine_version: "0.22.2",
   engine_connected: true,
   required_tools_present: true,
   desktop_unlocked: true,
@@ -120,9 +120,9 @@ describe("setup", () => {
     );
 
     expect(boundary.downloads.map(({ url }) => url)).toEqual([
-      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.22.1/install.sh",
-      "https://raw.githubusercontent.com/trycua/cua/c60ef6ad2db8774fb342938843e2f17f26c68240/libs/cua-driver/scripts/_install-rust.sh",
-      "https://raw.githubusercontent.com/trycua/cua/c60ef6ad2db8774fb342938843e2f17f26c68240/libs/cua-driver/scripts/_install-common.sh",
+      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.22.2/install.sh",
+      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.22.2/_install-rust.sh",
+      "https://raw.githubusercontent.com/trycua/cua/d114f35fec05ecd37bf529e5587be86852205b64/libs/cua-driver/scripts/_install-common.sh",
     ]);
     const installRun = boundary.runs[0];
     expect(installRun.command).toBe("/bin/bash");
@@ -130,7 +130,7 @@ describe("setup", () => {
     expect(installRun.args[0]).toBe(boundary.downloads[0].destination);
     expect(dirname(installRun.args[0])).toBe(dirname(boundary.downloads[1].destination));
     expect(installRun.args[1]).toBe("--autostart");
-    expect(installRun.env?.CUA_DRIVER_RS_VERSION).toBe("0.22.1");
+    expect(installRun.env?.CUA_DRIVER_RS_VERSION).toBe("0.22.2");
     expect(result).toMatchObject({ ok: true, development_only: true });
     expect(result.warning).toMatchObject({ development_only: true });
 
@@ -152,8 +152,8 @@ describe("setup", () => {
     );
 
     expect(boundary.downloads.map(({ url }) => url)).toEqual([
-      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.22.1/install.ps1",
-      "https://raw.githubusercontent.com/trycua/cua/c60ef6ad2db8774fb342938843e2f17f26c68240/libs/cua-driver/scripts/_install-common.psm1",
+      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.22.2/install.ps1",
+      "https://raw.githubusercontent.com/trycua/cua/d114f35fec05ecd37bf529e5587be86852205b64/libs/cua-driver/scripts/_install-common.psm1",
     ]);
     expect(boundary.runs[0]).toMatchObject({
       command: "powershell.exe",
@@ -164,7 +164,7 @@ describe("setup", () => {
         "-File",
         boundary.downloads[0].destination,
         "-Release",
-        "0.22.1",
+        "0.22.2",
         "-AutoStart",
       ],
     });

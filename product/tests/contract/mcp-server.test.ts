@@ -75,12 +75,12 @@ describe("computer use MCP contract", () => {
       data: "cG5nLWZpeHR1cmU=",
     });
     expect(observed.structuredContent).toMatchObject({
-      protocol_version: "1.0.0",
+      protocol_version: "1.1.0",
       session_id: "fixture-session",
       platform: "macos",
       display_id: "primary",
       screenshot: { mime_type: "image/png", width: 100, height: 80 },
-      engine: { name: "cua-driver", version: "0.22.1" },
+      engine: { name: "cua-driver", version: "0.22.2" },
     });
 
     const snapshotId = String(observed.structuredContent?.snapshot_id);
@@ -105,7 +105,7 @@ describe("computer use MCP contract", () => {
       data: "cG5nLWZpeHR1cmU=",
     });
     expect(acted.structuredContent).toMatchObject({
-      protocol_version: "1.0.0",
+      protocol_version: "1.1.0",
       session_id: "fixture-session",
       consumed_snapshot_id: snapshotId,
       action_result: {

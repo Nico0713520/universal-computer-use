@@ -32,7 +32,7 @@ function waitForAbort(signal: AbortSignal): Promise<never> {
 
 export class FakeEngine implements EnginePort {
   readonly name = "cua-driver" as const;
-  readonly version = "0.22.1";
+  readonly version = "0.22.2";
   readonly sessionId = "fixture-session";
   readonly executions: ComputerAction[] = [];
   readonly events: string[] = [];

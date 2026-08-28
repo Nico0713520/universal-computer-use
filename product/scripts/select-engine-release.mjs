@@ -335,7 +335,7 @@ export async function stageEngineRelease(options, dependencies) {
 
   const macFiles = [
     { name: "install.sh", source: "release" },
-    { name: "_install-rust.sh", source: "source_commit" },
+    { name: "_install-rust.sh", source: "release" },
     { name: "_install-common.sh", source: "source_commit" },
   ];
   const windowsFiles = [

@@ -41,16 +41,16 @@ describe("public protocol", () => {
   it("validates versioned observation and action outputs", () => {
     const screenshot = { mime_type: "image/png", width: 2560, height: 1440 };
     expect(ObservationOutputSchema.parse({
-      protocol_version: "1.0.0",
+      protocol_version: "1.1.0",
       session_id: "ses_123",
       snapshot_id: "snap_12345678",
       platform: "macos",
       display_id: "primary",
       screenshot,
-      engine: { name: "cua-driver", version: "0.22.1" },
+      engine: { name: "cua-driver", version: "0.22.2" },
     })).toBeTruthy();
     expect(ActOutputSchema.parse({
-      protocol_version: "1.0.0",
+      protocol_version: "1.1.0",
       session_id: "ses_123",
       consumed_snapshot_id: "snap_12345678",
       snapshot_id: "snap_87654321",

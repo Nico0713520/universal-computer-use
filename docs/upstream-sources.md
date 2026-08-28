@@ -19,8 +19,8 @@
 
 - 仓库：<https://github.com/trycua/cua>
 - 许可证 SPDX：`MIT`
-- 开发基线 release：`cua-driver-rs-v0.22.1`
-- 开发基线 commit：`c60ef6ad2db8774fb342938843e2f17f26c68240`
+- 开发基线 release：`cua-driver-rs-v0.22.2`（GitHub pre-release，固定 development candidate）
+- 开发基线 commit：`d114f35fec05ecd37bf529e5587be86852205b64`
 - macOS 必需修复：`90295148d34dac8e5a1307bac917e08171af5839`
 
 | 上游文件 | 采用方式 | 我方用途 |
@@ -30,7 +30,7 @@
 | `libs/cua-driver/rust/crates/cua-driver-contract/src/outputs.rs` | reference-only + contract fixture | 固定截图元数据、动作结果和拒绝 envelope 的解释规则。 |
 | `libs/cua-driver/examples/agent-sdks/native-tools.ts` | adapt | 采用“动作后必观察、动作结果未知时不盲重试、超时后重新观察”的小型编排模式。 |
 | `libs/cua-driver/rust/Skills/cua-driver/SKILL.md` | reference-only | 校对平台限制、session 生命周期和 Agent 操作说明。 |
-| `libs/cua-driver/scripts/install.sh`、`install.ps1` 与辅助脚本 | dependency | 下载固定 tag/commit、逐文件校验哈希后本地执行。 |
+| release `install.sh`、`install.ps1`、`_install-rust.sh` 与 tag source `_install-common.*` | dependency | 下载固定 release/tag、逐文件校验哈希后本地执行；0.22.2 的 release `_install-rust.sh` 修正了 tag source 中仍为 0.22.1 的 baked version。 |
 | release 中的 `uninstall.sh`、`uninstall.ps1` | dependency | 只有显式 `uninstall --engine` 才下载固定 release 文件、校验哈希并执行。 |
 | `libs/cua-driver/scripts/tests/*install*`、`*uninstall*` | test-pattern | 覆盖安装回滚、autostart、历史版本和卸载回归。 |
 | `libs/cua-driver/rust/crates/platform-*`、生成的 native bindings 和签名脚本 | forbidden | 不复制平台输入、TCC、UIA、DPI、签名或生成绑定实现。 |

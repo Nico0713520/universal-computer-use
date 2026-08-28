@@ -130,7 +130,7 @@ export async function runDoctor(
       engine_connected: true,
       required_tools_present: true,
       desktop_unlocked: true,
-      // Cua Driver 0.22.1 does not expose a portable permission-state field
+      // Cua Driver 0.22.2 does not expose a portable permission-state field
       // through EnginePort. A permission_required observation failure is
       // reported below; otherwise the status remains explicitly unknown.
       permissions: "unknown",

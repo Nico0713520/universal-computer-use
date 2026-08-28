@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,19 +8,33 @@ import {
   EngineLockSchema,
   loadEngineLock,
 } from "../../src/engine/lock.js";
+import { PRODUCT_VERSION, PROTOCOL_VERSION } from "../../src/version.js";
 
 describe("engine lock", () => {
+  it("keeps package, product, and protocol versions aligned for v0.2", async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+    ) as { version?: unknown };
+
+    expect(manifest.version).toBe("0.2.0");
+    expect(PRODUCT_VERSION).toBe("0.2.0");
+    expect(PROTOCOL_VERSION).toBe("1.1.0");
+  });
+
   it("keeps the staged Cua release internally consistent", async () => {
     const lock = await loadEngineLock();
 
     expect(lock.engine).toBe("cua-driver");
+    expect(lock.version).toBe("0.22.2");
     expect(lock.tag).toBe(`cua-driver-rs-v${lock.version}`);
-    expect(lock.source_commit).toMatch(/^[0-9a-f]{40}$/);
+    expect(lock.source_commit).toBe("d114f35fec05ecd37bf529e5587be86852205b64");
     expect(lock.required_fix_commits).toContain(
       "90295148d34dac8e5a1307bac917e08171af5839",
     );
     expect(lock.required_tools).toEqual([
       "click",
+      "double_click",
+      "right_click",
       "drag",
       "end_session",
       "get_desktop_state",
@@ -28,6 +44,14 @@ describe("engine lock", () => {
       "scroll",
       "start_session",
       "type_text",
+      "list_apps",
+      "list_windows",
+      "get_window_state",
+      "verify_state",
+      "launch_app",
+      "invoke_menu",
+      "set_value",
+      "health_report",
     ]);
     expect(lock.platforms.macos.installer_files.map(({ name }) => name)).toEqual([
       "install.sh",
@@ -46,8 +70,21 @@ describe("engine lock", () => {
     expect(lock.platforms.windows.asset).toBe(
       `cua-driver-rs-${lock.version}-windows-x86_64.zip`,
     );
+    expect(lock.platforms.macos.sha256).toBe(
+      "a9ca5891386a3a50b595b53329127e18b0326ce1cefd4e8dcd16efff0e58f4cc",
+    );
+    expect(lock.platforms.windows.sha256).toBe(
+      "03403da57c5e686c8bccb9b1d57a182e37cdf329c5f949eb54460aef554e6795",
+    );
+    expect(lock.platforms.macos.installer_files[1]).toEqual({
+      name: "_install-rust.sh",
+      source: "release",
+      sha256: "f7483c2d081ed836ba1f9cbad943037907f098cf1be45f37a94d7a2d21303940",
+    });
     expect(lock.platforms.macos.development_eligible).toBe(true);
     expect(lock.platforms.windows.development_eligible).toBe(true);
+    expect(lock.platforms.macos.release_eligible).toBe(false);
+    expect(lock.platforms.windows.release_eligible).toBe(false);
     expect(lock.platforms.macos.signer).toMatchObject({ kind: "apple" });
     expect(lock.platforms.windows.signer).toMatchObject({ kind: "authenticode" });
   });
