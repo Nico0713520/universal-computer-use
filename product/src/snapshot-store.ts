@@ -13,6 +13,11 @@ export type SnapshotElement = Readonly<{
   token: string;
   identity: ElementIdentity;
   capabilities: readonly string[];
+  observed?: Readonly<{
+    value?: string;
+    enabled?: boolean;
+    selected?: boolean;
+  }>;
 }>;
 export type SnapshotTarget =
   | Readonly<{ kind: "desktop"; displayId: "primary" }>
@@ -129,6 +134,7 @@ export class SnapshotStore {
         token: element.token,
         identity: freezeIdentity(element.identity),
         capabilities: Object.freeze([...element.capabilities]),
+        observed: Object.freeze({ ...(element.observed ?? {}) }),
       }));
     }
 

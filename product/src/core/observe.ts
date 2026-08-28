@@ -228,7 +228,7 @@ function provenActions(role: string): ProjectedElement["public"]["actions"] {
   return Object.freeze(["click", "double_click", "right_click"]);
 }
 
-function identityFor(element: EngineElement, byIndex: ReadonlyMap<number, EngineElement>): ElementIdentity {
+export function elementIdentityFor(element: EngineElement, byIndex: ReadonlyMap<number, EngineElement>): ElementIdentity {
   const parents: Array<Readonly<{ role: string; label: string }>> = [];
   const visited = new Set<number>([element.index]);
   let parentIndex = element.parentIndex;
@@ -297,8 +297,13 @@ export function projectWindowElements(
       snapshot: Object.freeze({
         elementRef,
         token: element.token,
-        identity: identityFor(element, byIndex),
+        identity: elementIdentityFor(element, byIndex),
         capabilities: actions,
+        observed: Object.freeze({
+          ...(element.value === undefined ? {} : { value: element.value }),
+          ...(element.enabled === undefined ? {} : { enabled: element.enabled }),
+          ...(element.selected === undefined ? {} : { selected: element.selected }),
+        }),
       }),
     });
   });

@@ -3,7 +3,7 @@
  * https://github.com/trycua/cua/blob/c60ef6ad2db8774fb342938843e2f17f26c68240/libs/cua-driver/examples/agent-sdks/native-tools.ts
  * Upstream SPDX-License-Identifier: MIT
  */
-import type { EngineAction, EngineDiscovery, EnginePort, EngineWindowAction } from "../engine/port.js";
+import type { EngineAction, EngineDiscovery, EngineExecution, EnginePort, EngineWindowAction } from "../engine/port.js";
 import type { ActEnvelope, ActInput, ObservationEnvelope, ObserveInput } from "../protocol.js";
 import { SnapshotStore } from "../snapshot-store.js";
 import { TargetRegistry, type NativeAppTarget, type NativeWindowTarget } from "../target-registry.js";
@@ -27,6 +27,12 @@ import {
   withTimeout,
 } from "./observe.js";
 import { SerialExecutor } from "./serial-executor.js";
+import {
+  expectationSatisfied,
+  verifyWindowState,
+  type VerificationExpectation,
+  type VerificationResult,
+} from "./verifier.js";
 
 export class ComputerUseRuntime {
   private readonly serial = new SerialExecutor();
@@ -205,6 +211,7 @@ export class ComputerUseRuntime {
   private async actUnlocked(input: ActInput): Promise<ActEnvelope> {
     const snapshot = this.snapshots.requireCurrent(input.snapshot_id);
     assertCoordinates(input.action, snapshot);
+    const verificationExpectation = this.resolveVerificationExpectation(input, snapshot);
     const engineAction = this.resolveEngineAction(input, snapshot);
     this.snapshots.consume(input.snapshot_id);
 
@@ -236,24 +243,53 @@ export class ComputerUseRuntime {
       const window = this.targets.resolveWindow(snapshot.target.windowRef);
       const options = snapshot.observeOptions;
       let observed;
+      let verification: VerificationResult = { status: "not_requested" };
+      let transitioned = false;
       try {
-        observed = await observeWindowWithOneTransientRetry(this.engine, {
+        const observe = () => observeWindowWithOneTransientRetry(this.engine, {
           target: { kind: "window", window },
           includeScreenshot: options.includeScreenshot,
           ...(options.query === undefined ? {} : { query: options.query }),
           maxElements: options.maxElements,
           maxDepth: options.maxDepth,
         }, this.lifecycle.signal);
+        if (verificationExpectation === undefined) {
+          observed = await observe();
+        } else {
+          const verified = await verifyWindowState({
+            observe,
+            expectation: verificationExpectation.expectation,
+            timeoutMs: verificationExpectation.timeoutMs,
+            signal: this.lifecycle.signal,
+          });
+          observed = verified.observation;
+          verification = verified.verification;
+          transitioned = verified.transitioned;
+        }
       } catch (error) {
         if (error instanceof ComputerUseError && error.code === "window_owner_changed") {
           this.targets.invalidateWindow(window.windowRef);
         }
         if (error instanceof ComputerUseError &&
             (error.code === "capture_failed" || error.code === "target_lost" || error.code === "window_owner_changed")) {
-          return toUnavailableActEnvelope(this.engine, snapshot.id, actionResult, error.code);
+          return toUnavailableActEnvelope(
+            this.engine,
+            snapshot.id,
+            actionResult,
+            error.code,
+            verificationExpectation === undefined
+              ? { status: "not_requested" }
+              : { status: "unknown", reason: "observation_unavailable" },
+          );
         }
         throw error;
       }
+      actionResult = this.applyVerification(
+        actionResult,
+        verification,
+        transitioned,
+        verificationExpectation?.setValue === true,
+      );
       const projected = projectWindowElements(observed, options.maxElements);
       const visual = observed.visualStatus === "available" && observed.image !== undefined
         ? { status: "available" as const, width: observed.image.width, height: observed.image.height }
@@ -273,7 +309,7 @@ export class ComputerUseRuntime {
         elements: projected.elements.map((element) => element.snapshot),
         observeOptions: options,
       });
-      return toWindowActEnvelope(this.engine, snapshot.id, next, actionResult, observed, projected);
+      return toWindowActEnvelope(this.engine, snapshot.id, next, actionResult, observed, projected, verification);
     }
 
     let observed;
@@ -426,6 +462,73 @@ export class ComputerUseRuntime {
       ...(["set_value", "invoke_menu", "wait"].includes(mapped.type)
         ? {}
         : { delivery: input.delivery ?? "background" }),
+    };
+  }
+
+  private resolveVerificationExpectation(
+    input: ActInput,
+    snapshot: ReturnType<SnapshotStore["requireCurrent"]>,
+  ): Readonly<{ expectation: VerificationExpectation; timeoutMs: number; setValue: boolean }> | undefined {
+    const setValueAction = input.action.type === "set_value" ? input.action : undefined;
+    if (input.expect === undefined && setValueAction === undefined) return undefined;
+    if (snapshot.target.kind !== "window") {
+      throw new ComputerUseError("element_target_conflict", "Verification requires a window snapshot", "observe_again", false);
+    }
+    if (setValueAction !== undefined && input.expect !== undefined &&
+        input.expect.element.element_ref !== setValueAction.element_ref) {
+      throw new ComputerUseError("element_target_conflict", "set_value expectation targets another element", "observe_again", false);
+    }
+    const elementRef = setValueAction?.element_ref ?? input.expect!.element.element_ref;
+    const element = this.snapshots.resolveElement(snapshot.id, elementRef);
+    const assertion = {
+      ...(setValueAction !== undefined
+        ? { valueEquals: setValueAction.value }
+        : input.expect?.element.value_equals === undefined
+          ? {}
+          : { valueEquals: input.expect.element.value_equals }),
+      ...(input.expect?.element.enabled === undefined ? {} : { enabled: input.expect.element.enabled }),
+      ...(input.expect?.element.selected === undefined ? {} : { selected: input.expect.element.selected }),
+    };
+    const observed = element.observed ?? {};
+    const trustworthy = (assertion.valueEquals === undefined || observed.value !== undefined) &&
+      (assertion.enabled === undefined || observed.enabled !== undefined) &&
+      (assertion.selected === undefined || observed.selected !== undefined);
+    return {
+      expectation: {
+        identity: element.identity,
+        ...assertion,
+        preSatisfied: trustworthy ? expectationSatisfied(assertion, observed) : "unknown",
+      },
+      timeoutMs: input.expect?.timeout_ms ?? 5_000,
+      setValue: setValueAction !== undefined,
+    };
+  }
+
+  private applyVerification(
+    result: EngineExecution,
+    verification: VerificationResult,
+    transitioned: boolean,
+    setValue: boolean,
+  ): EngineExecution {
+    if (verification.status === "not_requested" || result.status !== "executed") return result;
+    const evidence = new Set(result.evidence ?? []);
+    let effect = result.effect;
+    let errorCode = result.errorCode;
+    if (verification.status === "satisfied" && transitioned) {
+      evidence.add("predicate_satisfied");
+      if (setValue) evidence.add("value_readback");
+      effect = "confirmed";
+      errorCode = undefined;
+    } else if (verification.status === "unsatisfied") {
+      errorCode = "verification_unsatisfied";
+    } else if (verification.status === "unknown") {
+      errorCode = "verification_unknown";
+    }
+    return {
+      ...result,
+      effect,
+      evidence: [...evidence],
+      ...(errorCode === undefined ? { errorCode: undefined } : { errorCode }),
     };
   }
 

@@ -3,6 +3,7 @@ import type { EngineDesktopObservation, EngineExecution, EnginePort, EngineWindo
 import { ActOutputSchema, type ActionResult, type ActEnvelope, type ComputerAction } from "../protocol.js";
 import type { SnapshotRecord } from "../snapshot-store.js";
 import type { ProjectedElement } from "./observe.js";
+import type { VerificationResult } from "./verifier.js";
 import { PROTOCOL_VERSION } from "../version.js";
 
 export function assertCoordinates(
@@ -77,10 +78,13 @@ function publicActionErrorCode(
 }
 
 export function toActionResult(result: EngineExecution): ActionResult {
+  const trustedEvidence = new Set([
+    "value_readback", "selection_readback", "predicate_satisfied", "process_running", "window_ready", "focus_preserved",
+  ]);
   const common = {
     route: result.route,
     delivery: result.delivery,
-    evidence: [...(result.evidence ?? [])] as ActionResult["evidence"],
+    evidence: (result.evidence ?? []).filter((value) => trustedEvidence.has(value)) as ActionResult["evidence"],
     ...(result.deliveredCount === undefined ? {} : { delivered_count: result.deliveredCount }),
     ...(result.escalation === undefined
       ? {}
@@ -122,6 +126,7 @@ export function toWindowActEnvelope(
   result: EngineExecution,
   value: EngineWindowObservation,
   projected: Readonly<{ elements: readonly ProjectedElement[]; truncated: boolean }>,
+  verification: VerificationResult = { status: "not_requested" },
 ): ActEnvelope {
   const screenshot = value.visualStatus === "available" && value.image !== undefined
     ? { mime_type: "image/png" as const, width: value.image.width, height: value.image.height }
@@ -141,7 +146,7 @@ export function toWindowActEnvelope(
     },
     coordinate_space: "window_screenshot_pixels",
     action_result: toActionResult(result),
-    verification: { status: "not_requested" },
+    verification,
     visual_status: value.visualStatus,
     ...(screenshot === undefined ? {} : { screenshot }),
     elements: projected.elements.map((element) => element.public),
@@ -188,6 +193,7 @@ export function toUnavailableActEnvelope(
   consumedId: string,
   result: EngineExecution,
   code: "target_lost" | "capture_failed" | "window_owner_changed",
+  verification: VerificationResult = { status: "not_requested" },
 ): ActEnvelope {
   return {
     structured: {
@@ -196,7 +202,7 @@ export function toUnavailableActEnvelope(
       session_id: engine.sessionId,
       consumed_snapshot_id: consumedId,
       action_result: toActionResult(result),
-      verification: { status: "not_requested" },
+      verification,
       next_observation_error: { code, recovery: "observe_desktop" },
     },
   };

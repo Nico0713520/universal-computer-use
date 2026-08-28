@@ -19,7 +19,12 @@ class WindowFixtureEngine implements EnginePort {
   readonly version = "0.22.2";
   readonly sessionId = "window-fixture-session";
   readonly executions: EngineAction[] = [];
-  constructor(private readonly visualStatus: EngineWindowObservation["visualStatus"] = "available") {}
+  constructor(
+    private readonly visualStatus: EngineWindowObservation["visualStatus"] = "available",
+    private readonly values: string[] = ["7"],
+    private readonly elementRole = "AXButton",
+    private readonly elementLabel = "7",
+  ) {}
 
   async discover(_input: EngineDiscoverInput, _signal: AbortSignal): Promise<EngineDiscovery> {
     const app = {
@@ -63,6 +68,7 @@ class WindowFixtureEngine implements EnginePort {
         image: { mimeType: "image/png", dataBase64: "ZGVza3RvcA==", width: 1920, height: 1080 },
       };
     }
+    const value = this.values.length > 1 ? this.values.shift()! : this.values[0]!;
     const base = {
       platform: "macos" as const,
       target: input.target.window,
@@ -71,8 +77,9 @@ class WindowFixtureEngine implements EnginePort {
       elements: [{
         index: 0,
         token: "private-element-token",
-        role: "AXButton",
-        label: "7",
+        role: this.elementRole,
+        label: this.elementLabel,
+        value,
         frame: { x: 110, y: 610, width: 100, height: 80 },
         depth: 0,
         enabled: true,
@@ -201,5 +208,67 @@ describe("window observation runtime", () => {
       elements: [{ role: "button", label: "7" }],
     });
     await runtime.close();
+  });
+
+  it("auto-verifies set_value by readback without repeating the mutation", async () => {
+    const engine = new WindowFixtureEngine("available", ["old", "new"], "AXTextField", "Name");
+    const runtime = new ComputerUseRuntime(engine);
+    const windowRef = await discoverCalculator(runtime);
+    const observed = await runtime.observe({ target: { kind: "window", window_ref: windowRef } });
+    if (!("elements" in observed.structured)) throw new Error("expected window elements");
+
+    const acted = await runtime.act({
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "set_value", element_ref: observed.structured.elements[0]!.element_ref, value: "new" },
+    });
+
+    expect(engine.executions).toHaveLength(1);
+    expect(acted.structured).toMatchObject({
+      action_result: {
+        status: "executed",
+        effect: "confirmed",
+        evidence: expect.arrayContaining(["value_readback", "predicate_satisfied"]),
+      },
+      verification: { status: "satisfied" },
+    });
+    await runtime.close();
+  });
+
+  it("does not upgrade an already-satisfied predicate or retry an unsatisfied mutation", async () => {
+    const preSatisfiedEngine = new WindowFixtureEngine("available", ["new", "new"], "AXTextField", "Name");
+    const firstRuntime = new ComputerUseRuntime(preSatisfiedEngine);
+    const firstRef = await discoverCalculator(firstRuntime);
+    const first = await firstRuntime.observe({ target: { kind: "window", window_ref: firstRef } });
+    if (!("elements" in first.structured)) throw new Error("expected window elements");
+    const firstElement = first.structured.elements[0]!.element_ref;
+    const preSatisfied = await firstRuntime.act({
+      snapshot_id: first.structured.snapshot_id,
+      action: { type: "click", element_ref: firstElement },
+      expect: { element: { element_ref: firstElement, value_equals: "new" }, timeout_ms: 0 },
+    });
+    expect(preSatisfied.structured).toMatchObject({
+      action_result: { effect: "unverifiable", evidence: [] },
+      verification: { status: "satisfied" },
+    });
+    expect(preSatisfiedEngine.executions).toHaveLength(1);
+    await firstRuntime.close();
+
+    const unsatisfiedEngine = new WindowFixtureEngine("available", ["old", "old"], "AXTextField", "Name");
+    const secondRuntime = new ComputerUseRuntime(unsatisfiedEngine);
+    const secondRef = await discoverCalculator(secondRuntime);
+    const second = await secondRuntime.observe({ target: { kind: "window", window_ref: secondRef } });
+    if (!("elements" in second.structured)) throw new Error("expected window elements");
+    const secondElement = second.structured.elements[0]!.element_ref;
+    const unsatisfied = await secondRuntime.act({
+      snapshot_id: second.structured.snapshot_id,
+      action: { type: "set_value", element_ref: secondElement, value: "new" },
+      expect: { element: { element_ref: secondElement, value_equals: "new" }, timeout_ms: 0 },
+    });
+    expect(unsatisfied.structured).toMatchObject({
+      action_result: { status: "executed", effect: "unverifiable", error_code: "verification_unsatisfied" },
+      verification: { status: "unsatisfied", reason: "predicate_unsatisfied" },
+    });
+    expect(unsatisfiedEngine.executions).toHaveLength(1);
+    await secondRuntime.close();
   });
 });
