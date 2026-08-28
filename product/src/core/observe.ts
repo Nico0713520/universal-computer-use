@@ -338,7 +338,7 @@ export function publicWindow(target: InternalWindowTarget): PublicWindowDiscover
     capabilities: Object.freeze({
       elements: target.capabilities.includes("observe") ? "available" : "unavailable",
       window_screenshot: platform === "macos" ? "available" : platform === "windows" ? "unavailable" : "unknown",
-      background_actions: platform === "windows" ? "unavailable" : "unknown",
+      background_actions: platform === "macos" ? "available" : platform === "windows" ? "unavailable" : "unknown",
     }),
   });
 }

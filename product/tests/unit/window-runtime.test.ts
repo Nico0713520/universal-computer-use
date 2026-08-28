@@ -151,7 +151,7 @@ async function discoverCalculator(runtime: ComputerUseRuntime): Promise<string> 
       capabilities: {
         elements: "available",
         window_screenshot: "available",
-        background_actions: "unknown",
+        background_actions: "available",
       },
     }],
     apps_truncated: false,
