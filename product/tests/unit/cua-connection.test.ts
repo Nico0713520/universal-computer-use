@@ -428,4 +428,44 @@ describe("Cua daemon connection", () => {
       argumentsJson: JSON.stringify({ include: ["binary_version", "platform_supported", "session_active"] }),
     }]);
   });
+
+  it("launches one opaque app through the background Cua route", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: {
+        launch_app: result({
+          pid: 42,
+          bundle_id: "com.apple.calculator",
+          name: "Calculator",
+          launch_state: { requested: true, process_running: true, window_ready: false },
+          windows: [],
+        }),
+      },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock);
+    const registry = new TargetRegistry({ token: () => "abcdefghijklmnop" });
+    const [app] = registry.registerApps([{
+      nativeKey: "bundle:com.apple.calculator",
+      displayName: "Calculator",
+      running: false,
+      capabilities: ["launch", "windows"],
+      native: { platform: "macos", bundle_id: "com.apple.calculator", name: "Calculator" },
+    }]);
+
+    await expect(engine.execute({
+      target: { kind: "app", app: app! },
+      action: { type: "launch_app" },
+    }, new AbortController().signal)).resolves.toMatchObject({
+      status: "executed",
+      effect: "partial",
+      evidence: ["process_running"],
+      errorCode: "window_not_ready",
+    });
+    expect(sdk.callToolCalls).toEqual([{
+      name: "launch_app",
+      argumentsJson: JSON.stringify({ session: engine.sessionId, bundle_id: "com.apple.calculator" }),
+    }]);
+  });
 });

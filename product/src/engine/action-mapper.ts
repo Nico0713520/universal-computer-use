@@ -232,7 +232,18 @@ export function mapAction(action: ComputerAction | EngineAction, session: string
     return mapDesktopAction((engineAction as Extract<EngineAction, { target: { kind: "desktop" } }>).action, session);
   }
   if (engineAction.target.kind === "app") {
-    return unsupported((engineAction as Extract<EngineAction, { target: { kind: "app" } }>).action.type);
+    const launch = engineAction as Extract<EngineAction, { target: { kind: "app" } }>;
+    const native = launch.target.app.native;
+    const bundleId = native.bundle_id;
+    const name = native.name;
+    if (typeof bundleId !== "string" && typeof name !== "string") return unsupported(launch.action.type);
+    return {
+      tool: "launch_app",
+      args: {
+        session,
+        ...(typeof bundleId === "string" ? { bundle_id: bundleId } : { name }),
+      },
+    };
   }
   const windowAction = engineAction as Extract<EngineAction, { target: { kind: "window" } }>;
   return mapWindowAction(windowAction.action, windowAction.target, windowAction.delivery ?? "background", session);

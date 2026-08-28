@@ -2,7 +2,7 @@ import { ComputerUseError } from "../errors.js";
 import type { EngineDesktopObservation, EngineExecution, EnginePort, EngineWindowObservation } from "../engine/port.js";
 import { ActOutputSchema, type ActionResult, type ActEnvelope, type ComputerAction } from "../protocol.js";
 import type { SnapshotRecord } from "../snapshot-store.js";
-import type { ProjectedElement } from "./observe.js";
+import type { ProjectedElement, PublicWindowDiscovery } from "./observe.js";
 import type { VerificationResult } from "./verifier.js";
 import { PROTOCOL_VERSION } from "../version.js";
 
@@ -166,24 +166,29 @@ export function toActEnvelope(
   snapshot: SnapshotRecord,
   result: EngineExecution,
   value: EngineDesktopObservation,
+  discovery: Readonly<{ windows?: readonly PublicWindowDiscovery[]; windowsTruncated?: boolean }> = {},
 ): ActEnvelope {
-  return {
-    structured: {
-      next_state: "available",
-      protocol_version: PROTOCOL_VERSION,
-      session_id: engine.sessionId,
-      consumed_snapshot_id: consumedId,
-      snapshot_id: snapshot.id,
-      target: { kind: "desktop", display_id: "primary" },
-      coordinate_space: "desktop_screenshot_pixels",
-      action_result: toActionResult(result),
-      verification: { status: "not_requested" },
-      screenshot: {
-        mime_type: "image/png",
-        width: value.image.width,
-        height: value.image.height,
-      },
+  const structured = ActOutputSchema.parse({
+    next_state: "available",
+    protocol_version: PROTOCOL_VERSION,
+    session_id: engine.sessionId,
+    consumed_snapshot_id: consumedId,
+    snapshot_id: snapshot.id,
+    target: { kind: "desktop", display_id: "primary" },
+    coordinate_space: "desktop_screenshot_pixels",
+    action_result: toActionResult(result),
+    verification: { status: "not_requested" },
+    screenshot: {
+      mime_type: "image/png",
+      width: value.image.width,
+      height: value.image.height,
     },
+    ...(discovery.windows === undefined
+      ? {}
+      : { windows: discovery.windows, windows_truncated: discovery.windowsTruncated ?? false }),
+  });
+  return {
+    structured,
     image: { mimeType: "image/png", dataBase64: value.image.dataBase64 },
   };
 }

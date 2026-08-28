@@ -352,6 +352,8 @@ const DesktopActOutputSchema = ActOutputBaseSchema.extend({
   target: z.object({ kind: z.literal("desktop"), display_id: z.literal("primary") }).strict(),
   coordinate_space: z.literal("desktop_screenshot_pixels"),
   screenshot: ScreenshotSchema,
+  windows: z.array(WindowOutputSchema).max(30).optional(),
+  windows_truncated: z.boolean().optional(),
 }).strict();
 const WindowActOutputBaseSchema = ActOutputBaseSchema.extend({
   next_state: z.literal("available"),
@@ -403,6 +405,8 @@ export const ActMcpOutputSchema = z.object({
   ]).optional(),
   coordinate_space: z.enum(["desktop_screenshot_pixels", "window_screenshot_pixels"]).optional(),
   screenshot: ScreenshotSchema.optional(),
+  windows: z.array(WindowOutputSchema).max(30).optional(),
+  windows_truncated: z.boolean().optional(),
   elements: z.array(ElementOutputSchema).max(150).optional(),
   elements_truncated: z.boolean().optional(),
   visual_status: z.enum(["available", "not_requested", "capture_unavailable", "pixel_frame_unproven"]).optional(),

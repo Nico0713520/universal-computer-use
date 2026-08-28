@@ -117,6 +117,12 @@ export type EngineExecution = Readonly<{
     reason: "background_unavailable" | "foreground_required" | "effect_unconfirmed" | "window_not_ready" | "window_target_ambiguous";
     suggestedDelivery?: "foreground";
   }>;
+  launch?: Readonly<{
+    requested: boolean;
+    processRunning: boolean;
+    windowReady: boolean;
+    windows: readonly NativeWindowTarget[];
+  }>;
 }>;
 
 export interface EnginePort {

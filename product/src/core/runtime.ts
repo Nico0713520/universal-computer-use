@@ -38,6 +38,7 @@ export class ComputerUseRuntime {
   private readonly serial = new SerialExecutor();
   private readonly lifecycle = new AbortController();
   private closePromise?: Promise<void>;
+  private engineUnhealthy = false;
 
   constructor(
     private readonly engine: EnginePort,
@@ -210,6 +211,18 @@ export class ComputerUseRuntime {
 
   private async actUnlocked(input: ActInput): Promise<ActEnvelope> {
     const snapshot = this.snapshots.requireCurrent(input.snapshot_id);
+    if (this.engineUnhealthy) {
+      const healthy = await withTimeout(
+        (signal) => this.engine.health(signal),
+        5_000,
+        "capture_failed",
+        this.lifecycle.signal,
+      );
+      if (!healthy) {
+        throw new ComputerUseError("engine_unhealthy", "Cua health checks have not recovered", "doctor", true);
+      }
+      this.engineUnhealthy = false;
+    }
     assertCoordinates(input.action, snapshot);
     const verificationExpectation = this.resolveVerificationExpectation(input, snapshot);
     const engineAction = this.resolveEngineAction(input, snapshot);
@@ -228,6 +241,9 @@ export class ComputerUseRuntime {
         error instanceof ComputerUseError &&
         ["action_timeout", "engine_contract_changed", "engine_unhealthy"].includes(error.code)
       ) {
+        if (error.code === "engine_contract_changed" || error.code === "engine_unhealthy") {
+          this.engineUnhealthy = true;
+        }
         throw new ComputerUseError(
           error.code,
           error.message,
@@ -237,6 +253,10 @@ export class ComputerUseRuntime {
         );
       }
       actionResult = failedExecution(error);
+    }
+
+    if (engineAction.target.kind === "app") {
+      return this.finishLaunch(snapshot.id, actionResult);
     }
 
     if (snapshot.target.kind === "window") {
@@ -340,6 +360,73 @@ export class ComputerUseRuntime {
       observed.image.height,
     );
     return toActEnvelope(this.engine, snapshot.id, next, actionResult, observed);
+  }
+
+  private async finishLaunch(consumedId: string, result: EngineExecution): Promise<ActEnvelope> {
+    const candidates = result.launch === undefined
+      ? []
+      : this.targets.registerWindows(result.launch.windows).slice(0, 30);
+    if (result.status === "executed" && result.launch?.windowReady === true && candidates.length === 1) {
+      const window = candidates[0]!;
+      try {
+        const observed = await observeWindowWithOneTransientRetry(this.engine, {
+          target: { kind: "window", window },
+          includeScreenshot: true,
+          maxElements: 150,
+          maxDepth: 12,
+        }, this.lifecycle.signal);
+        const projected = projectWindowElements(observed, 150);
+        const visual = observed.visualStatus === "available" && observed.image !== undefined
+          ? { status: "available" as const, width: observed.image.width, height: observed.image.height }
+          : { status: observed.visualStatus as Exclude<typeof observed.visualStatus, "available"> };
+        const next = this.snapshots.create({
+          sessionId: this.engine.sessionId,
+          target: { kind: "window", windowRef: window.windowRef },
+          visual,
+          coordinateSpace: "window_screenshot_pixels",
+          ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
+          windowTarget: {
+            windowRef: window.windowRef,
+            appRef: window.appRef,
+            nativeKey: window.nativeKey,
+            ownerKey: window.ownerKey,
+          },
+          elements: projected.elements.map((element) => element.snapshot),
+          observeOptions: { includeScreenshot: true, maxElements: 150, maxDepth: 12 },
+        });
+        return toWindowActEnvelope(this.engine, consumedId, next, result, observed, projected);
+      } catch (error) {
+        if (!(error instanceof ComputerUseError) ||
+            !["capture_failed", "target_lost", "window_owner_changed"].includes(error.code)) throw error;
+        result = {
+          ...result,
+          effect: "partial",
+          evidence: (result.evidence ?? []).filter((evidence) => evidence !== "window_ready"),
+          errorCode: "window_not_ready",
+          escalation: { reason: "window_not_ready" },
+        };
+      }
+    }
+
+    const observed = await observeWithOneTransientRetry(this.engine, this.lifecycle.signal);
+    const next = this.snapshots.create({
+      sessionId: this.engine.sessionId,
+      target: { kind: "desktop" },
+      visual: { status: "available", width: observed.image.width, height: observed.image.height },
+      coordinateSpace: "desktop_screenshot_pixels",
+      elements: [],
+      observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
+    });
+    return toActEnvelope(
+      this.engine,
+      consumedId,
+      next,
+      result,
+      observed,
+      candidates.length > 1
+        ? { windows: candidates.map(publicWindow), windowsTruncated: result.launch!.windows.length > candidates.length }
+        : {},
+    );
   }
 
   private resolveEngineAction(input: ActInput, snapshot: ReturnType<SnapshotStore["requireCurrent"]>): EngineAction {

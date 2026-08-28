@@ -238,6 +238,24 @@ describe("Cua action mapping", () => {
       tool: "invoke_menu",
       args: { session, pid: 42, window_id: 7, path: ["File", "New"] },
     },
+    {
+      input: {
+        target: {
+          kind: "app",
+          app: {
+            appRef: "app_abcdefghijklmnop",
+            nativeKey: "bundle:com.apple.calculator",
+            displayName: "Calculator",
+            running: false,
+            capabilities: ["launch", "windows"],
+            native: { platform: "macos", bundle_id: "com.apple.calculator", name: "Calculator" },
+          },
+        },
+        action: { type: "launch_app" },
+      },
+      tool: "launch_app",
+      args: { session, bundle_id: "com.apple.calculator" },
+    },
   ] satisfies Array<{ input: EngineAction; tool: string; args: Record<string, unknown> }>) (
     "maps one precise window $input.action.type without a focus-helper call",
     ({ input, tool, args }) => {

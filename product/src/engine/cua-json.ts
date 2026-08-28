@@ -2,10 +2,11 @@ import type { ToolResult } from "@trycua/cua-driver";
 import { z } from "zod";
 
 import { ComputerUseError } from "../errors.js";
-import type { InternalWindowTarget, NativeAppTarget, NativeWindowTarget } from "../target-registry.js";
+import type { InternalAppTarget, InternalWindowTarget, NativeAppTarget, NativeWindowTarget } from "../target-registry.js";
 import type {
   EngineDesktopObservation,
   EngineElement,
+  EngineExecution,
   EngineWindowObservation,
 } from "./port.js";
 
@@ -97,6 +98,18 @@ const HealthSchema = z.object({
     status: z.enum(["pass", "fail", "skip"]),
     message: z.string(),
   }).passthrough()).max(100),
+}).passthrough();
+
+const LaunchSchema = z.object({
+  pid: positiveInteger.optional(),
+  bundle_id: z.string().nullable().optional(),
+  name: z.string().optional(),
+  windows: z.array(WindowSchema).max(100),
+  launch_state: z.object({
+    requested: z.boolean(),
+    process_running: z.boolean(),
+    window_ready: z.boolean(),
+  }).passthrough(),
 }).passthrough();
 
 function contractError(message: string): ComputerUseError {
@@ -355,4 +368,71 @@ export function parseHealth(result: ToolResult, expectedVersion: string): boolea
   const required = new Map(parsed.data.checks.map((check) => [check.name, check.status]));
   return parsed.data.overall !== "failed" &&
     ["binary_version", "platform_supported", "session_active"].every((name) => required.get(name) === "pass");
+}
+
+export function parseLaunchResult(
+  result: ToolResult,
+  target: InternalAppTarget,
+): EngineExecution {
+  if (result.isError) throw new ComputerUseError("action_failed", "Cua launch_app failed", "observe_again", false);
+  const parsed = parseWith(LaunchSchema, structured(result, "launch result"), "launch result");
+  const platform = target.native.platform;
+  if (platform !== "macos" && platform !== "windows") throw contractError("Launch target has an unknown platform");
+  if (parsed.launch_state.process_running && parsed.pid === undefined) {
+    throw contractError("Cua launch result omitted the running process id");
+  }
+  if (parsed.launch_state.window_ready !== (parsed.windows.length > 0) ||
+      (!parsed.launch_state.process_running && parsed.windows.length > 0)) {
+    throw contractError("Cua launch result contains contradictory readiness proof");
+  }
+  const expectedBundleId = target.native.bundle_id;
+  if (typeof expectedBundleId === "string" && parsed.bundle_id !== null && parsed.bundle_id !== undefined &&
+      parsed.bundle_id !== expectedBundleId) {
+    throw contractError("Cua launch result changed application identity");
+  }
+  const launchedApp: NativeAppTarget = Object.freeze({
+    nativeKey: target.nativeKey,
+    displayName: parsed.name ?? target.displayName,
+    running: parsed.launch_state.process_running,
+    capabilities: Object.freeze([...target.capabilities]),
+    native: Object.freeze({
+      ...target.native,
+      ...(parsed.pid === undefined ? {} : { pid: parsed.pid }),
+      ...(parsed.bundle_id === null || parsed.bundle_id === undefined ? {} : { bundle_id: parsed.bundle_id }),
+    }),
+  });
+  const windows = parseWindowList({
+    text: result.text,
+    images: [],
+    structuredJson: JSON.stringify({ windows: parsed.windows }),
+    isError: false,
+    degraded: result.degraded,
+    rawJson: result.rawJson,
+  }, [launchedApp], platform);
+  const processRunning = parsed.launch_state.process_running;
+  const windowReady = parsed.launch_state.window_ready && windows.length > 0;
+  const ambiguous = windows.length > 1;
+  return {
+    status: "executed",
+    effect: windowReady && !ambiguous ? "confirmed" : processRunning ? "partial" : "unverifiable",
+    route: "system_api",
+    delivery: "background",
+    evidence: [
+      ...(processRunning ? ["process_running"] : []),
+      ...(windowReady && !ambiguous ? ["window_ready"] : []),
+    ],
+    ...(!processRunning
+      ? {}
+      : ambiguous
+        ? { errorCode: "window_target_ambiguous", escalation: { reason: "window_target_ambiguous" as const } }
+        : !windowReady
+          ? { errorCode: "window_not_ready", escalation: { reason: "window_not_ready" as const } }
+          : {}),
+    launch: {
+      requested: parsed.launch_state.requested,
+      processRunning,
+      windowReady,
+      windows,
+    },
+  };
 }

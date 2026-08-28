@@ -4,10 +4,11 @@ import { describe, expect, it } from "vitest";
 import {
   parseAppList,
   parseHealth,
+  parseLaunchResult,
   parseWindowList,
   parseWindowState,
 } from "../../src/engine/cua-json.js";
-import type { InternalWindowTarget } from "../../src/target-registry.js";
+import type { InternalAppTarget, InternalWindowTarget } from "../../src/target-registry.js";
 
 function result(value: unknown, images: ToolResult["images"] = []): ToolResult {
   return {
@@ -34,6 +35,17 @@ function target(): InternalWindowTarget {
     onCurrentSpace: true,
     capabilities: ["observe", "click"],
     native: { platform: "macos", pid: 42, window_id: 7 },
+  };
+}
+
+function appTarget(): InternalAppTarget {
+  return {
+    appRef: "app_abcdefghijklmnop",
+    nativeKey: "bundle:com.apple.calculator",
+    displayName: "Calculator",
+    running: false,
+    capabilities: ["launch", "windows"],
+    native: { platform: "macos", bundle_id: "com.apple.calculator", name: "Calculator" },
   };
 }
 
@@ -188,5 +200,35 @@ describe("Cua 0.22.2 raw JSON parsers", () => {
     expect(parseHealth(health("pass"), "0.22.2")).toBe(true);
     expect(parseHealth(health("fail"), "0.22.2")).toBe(false);
     expect(parseHealth(health("pass"), "0.22.3")).toBe(false);
+  });
+
+  it("normalizes launch proof and exact window candidates", () => {
+    const launched = parseLaunchResult(result({
+      pid: 42,
+      bundle_id: "com.apple.calculator",
+      name: "Calculator",
+      launch_state: { requested: true, process_running: true, window_ready: true },
+      windows: [{
+        window_id: 7,
+        pid: 42,
+        app_name: "Calculator",
+        title: "Calculator",
+        bounds: { x: 100, y: 100, width: 460, height: 816 },
+        z_index: 4,
+        is_on_screen: true,
+        on_current_space: true,
+      }],
+    }), appTarget());
+
+    expect(launched).toMatchObject({
+      status: "executed",
+      effect: "confirmed",
+      evidence: ["process_running", "window_ready"],
+      launch: {
+        processRunning: true,
+        windowReady: true,
+        windows: [{ native: { pid: 42, window_id: 7 } }],
+      },
+    });
   });
 });

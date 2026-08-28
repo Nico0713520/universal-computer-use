@@ -20,6 +20,8 @@ export type FakeEngineOptions = Readonly<{
   platform?: "macos" | "windows";
   observationSequence?: readonly ObservationStep[];
   actionError?: ComputerUseErrorCode | Error;
+  actionErrorSequence?: readonly (ComputerUseErrorCode | Error | undefined)[];
+  healthSequence?: readonly boolean[];
   hangAction?: boolean;
   ignoreActionAbort?: boolean;
 }>;
@@ -45,9 +47,13 @@ export class FakeEngine implements EnginePort {
   closes = 0;
 
   private readonly observationSequence: ObservationStep[];
+  private readonly actionErrorSequence: Array<ComputerUseErrorCode | Error | undefined>;
+  private readonly healthSequence: boolean[];
 
   constructor(private readonly options: FakeEngineOptions = {}) {
     this.observationSequence = [...(options.observationSequence ?? [])];
+    this.actionErrorSequence = [...(options.actionErrorSequence ?? [])];
+    this.healthSequence = [...(options.healthSequence ?? [])];
   }
 
   async discover(_input: EngineDiscoverInput, _signal: AbortSignal): Promise<EngineDiscovery> {
@@ -92,7 +98,7 @@ export class FakeEngine implements EnginePort {
   }
 
   async health(_signal: AbortSignal): Promise<boolean> {
-    return true;
+    return this.healthSequence.shift() ?? true;
   }
 
   async execute(
@@ -103,11 +109,14 @@ export class FakeEngine implements EnginePort {
     this.events.push(`execute:${action.action.type}`);
     if (this.options.ignoreActionAbort) return new Promise<never>(() => undefined);
     if (this.options.hangAction) return waitForAbort(signal);
-    if (this.options.actionError instanceof Error) throw this.options.actionError;
-    if (this.options.actionError !== undefined) {
+    const actionError = this.actionErrorSequence.length > 0
+      ? this.actionErrorSequence.shift()
+      : this.options.actionError;
+    if (actionError instanceof Error) throw actionError;
+    if (actionError !== undefined) {
       throw new ComputerUseError(
-        this.options.actionError,
-        this.options.actionError,
+        actionError,
+        actionError,
         "observe_again",
         true,
       );

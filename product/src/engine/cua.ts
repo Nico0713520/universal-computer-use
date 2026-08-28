@@ -13,6 +13,7 @@ import {
   parseAppList,
   parseDesktopObservation,
   parseHealth,
+  parseLaunchResult,
   parseWindowList,
   parseWindowState,
 } from "./cua-json.js";
@@ -230,6 +231,9 @@ export class CuaEngine implements EnginePort {
       JSON.stringify(mapped.args),
       { signal },
     );
+    if (action.target.kind === "app" && !result.isError) {
+      return parseLaunchResult(result, action.target.app);
+    }
     return mapCuaResult(result);
   }
 

@@ -24,6 +24,7 @@ class WindowFixtureEngine implements EnginePort {
     private readonly values: string[] = ["7"],
     private readonly elementRole = "AXButton",
     private readonly elementLabel = "7",
+    private readonly launchWindowCount = 1,
   ) {}
 
   async discover(_input: EngineDiscoverInput, _signal: AbortSignal): Promise<EngineDiscovery> {
@@ -96,6 +97,39 @@ class WindowFixtureEngine implements EnginePort {
 
   async execute(action: EngineAction, _signal: AbortSignal): Promise<EngineExecution> {
     this.executions.push(action);
+    if (action.target.kind === "app") {
+      const launchedApp = action.target.app;
+      const windows = Array.from({ length: this.launchWindowCount }, (_, index) => ({
+        nativeKey: `window:${index + 7}`,
+        ownerKey: "pid:42",
+        app: launchedApp,
+        title: `Calculator${index === 0 ? "" : ` ${index + 1}`}`,
+        bounds: { x: 100 + index * 20, y: 100, width: 460, height: 816 },
+        focused: false,
+        isOnScreen: true,
+        onCurrentSpace: true,
+        capabilities: ["observe", "click"] as const,
+        native: { platform: "macos", pid: 42, window_id: index + 7 },
+      }));
+      return {
+        status: "executed",
+        effect: windows.length === 1 ? "confirmed" : windows.length > 1 ? "partial" : "partial",
+        route: "system_api",
+        delivery: "background",
+        evidence: ["process_running", ...(windows.length === 1 ? ["window_ready"] : [])],
+        ...(windows.length === 0
+          ? { errorCode: "window_not_ready" }
+          : windows.length > 1
+            ? { errorCode: "window_target_ambiguous" }
+            : {}),
+        launch: {
+          requested: true,
+          processRunning: true,
+          windowReady: windows.length > 0,
+          windows,
+        },
+      };
+    }
     return { status: "executed", effect: "unverifiable", route: "unknown", delivery: "unknown" };
   }
 
@@ -270,5 +304,62 @@ describe("window observation runtime", () => {
     });
     expect(unsatisfiedEngine.executions).toHaveLength(1);
     await secondRuntime.close();
+  });
+
+  it("launches by opaque app ref and migrates only one unambiguous ready window", async () => {
+    const engine = new WindowFixtureEngine();
+    const runtime = new ComputerUseRuntime(engine);
+    const desktop = await runtime.observe({ target: { kind: "desktop" }, discover: { apps: true } });
+    if (!("apps" in desktop.structured)) throw new Error("expected apps");
+
+    const launched = await runtime.act({
+      snapshot_id: desktop.structured.snapshot_id,
+      action: { type: "launch_app", app_ref: desktop.structured.apps![0]!.app_ref },
+    });
+
+    expect(engine.executions).toHaveLength(1);
+    expect(launched.structured).toMatchObject({
+      target: { kind: "window", app_name: "Calculator" },
+      action_result: {
+        status: "executed",
+        effect: "confirmed",
+        evidence: expect.arrayContaining(["process_running", "window_ready"]),
+      },
+    });
+    await runtime.close();
+  });
+
+  it("returns a fresh desktop and bounded candidates when launch has zero or multiple windows", async () => {
+    const zeroEngine = new WindowFixtureEngine("available", ["7"], "AXButton", "7", 0);
+    const zeroRuntime = new ComputerUseRuntime(zeroEngine);
+    const zeroDesktop = await zeroRuntime.observe({ target: { kind: "desktop" }, discover: { apps: true } });
+    if (!("apps" in zeroDesktop.structured)) throw new Error("expected apps");
+    const zero = await zeroRuntime.act({
+      snapshot_id: zeroDesktop.structured.snapshot_id,
+      action: { type: "launch_app", app_ref: zeroDesktop.structured.apps![0]!.app_ref },
+    });
+    expect(zero.structured).toMatchObject({
+      target: { kind: "desktop" },
+      action_result: { effect: "partial", error_code: "window_not_ready", evidence: ["process_running"] },
+    });
+    expect(zeroEngine.executions).toHaveLength(1);
+    await zeroRuntime.close();
+
+    const manyEngine = new WindowFixtureEngine("available", ["7"], "AXButton", "7", 2);
+    const manyRuntime = new ComputerUseRuntime(manyEngine);
+    const manyDesktop = await manyRuntime.observe({ target: { kind: "desktop" }, discover: { apps: true } });
+    if (!("apps" in manyDesktop.structured)) throw new Error("expected apps");
+    const many = await manyRuntime.act({
+      snapshot_id: manyDesktop.structured.snapshot_id,
+      action: { type: "launch_app", app_ref: manyDesktop.structured.apps![0]!.app_ref },
+    });
+    expect(many.structured).toMatchObject({
+      target: { kind: "desktop" },
+      action_result: { effect: "partial", error_code: "window_target_ambiguous" },
+      windows: [{ app_name: "Calculator" }, { app_name: "Calculator" }],
+      windows_truncated: false,
+    });
+    expect(manyEngine.executions).toHaveLength(1);
+    await manyRuntime.close();
   });
 });

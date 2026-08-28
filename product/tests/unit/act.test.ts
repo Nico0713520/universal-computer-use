@@ -309,6 +309,31 @@ describe("ComputerUseRuntime.act", () => {
     ]);
   });
 
+  it("does not consume or mutate while unhealthy and resumes only after health passes", async () => {
+    const { runtime, engine } = fixtureRuntime({
+      actionErrorSequence: ["engine_contract_changed", undefined],
+      healthSequence: [false, true],
+    });
+    const first = await runtime.observe();
+    await expect(runtime.act({
+      snapshot_id: first.structured.snapshot_id,
+      action: { type: "click", x: 10, y: 10 },
+    })).rejects.toMatchObject({ code: "engine_contract_changed", snapshotConsumed: true });
+
+    const fresh = await runtime.observe();
+    const input: ActInput = {
+      snapshot_id: fresh.structured.snapshot_id,
+      action: { type: "click", x: 10, y: 10 },
+    };
+    await expect(runtime.act(input)).rejects.toMatchObject({ code: "engine_unhealthy" });
+    expect(engine.executions).toHaveLength(1);
+
+    await expect(runtime.act(input)).resolves.toMatchObject({
+      structured: { action_result: { status: "executed" } },
+    });
+    expect(engine.executions).toHaveLength(2);
+  });
+
   it("closes idempotently through the FIFO and aborts the active lifecycle", async () => {
     vi.useFakeTimers();
     const { runtime, engine } = fixtureRuntime({ hangAction: true });
