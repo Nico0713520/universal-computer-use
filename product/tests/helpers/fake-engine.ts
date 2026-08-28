@@ -3,7 +3,11 @@ import { ComputerUseRuntime } from "../../src/core/runtime.js";
 import type { ComputerAction } from "../../src/protocol.js";
 import type {
   EngineExecution,
+  EngineDesktopObservation,
+  EngineDiscoverInput,
+  EngineDiscovery,
   EngineObservation,
+  EngineObserveInput,
   EnginePort,
 } from "../../src/engine/port.js";
 
@@ -46,7 +50,21 @@ export class FakeEngine implements EnginePort {
     this.observationSequence = [...(options.observationSequence ?? [])];
   }
 
-  async observe(signal: AbortSignal): Promise<EngineObservation> {
+  async discover(_input: EngineDiscoverInput, _signal: AbortSignal): Promise<EngineDiscovery> {
+    return { apps: [], windows: [] };
+  }
+
+  async observe(signal: AbortSignal): Promise<EngineDesktopObservation>;
+  async observe(input: EngineObserveInput, signal: AbortSignal): Promise<EngineObservation>;
+  async observe(
+    inputOrSignal: EngineObserveInput | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<EngineObservation> {
+    const signal = "aborted" in inputOrSignal ? inputOrSignal : maybeSignal;
+    if (signal === undefined) throw new TypeError("observe signal is required");
+    if (!("aborted" in inputOrSignal) && inputOrSignal.target.kind === "window") {
+      throw new ComputerUseError("unsupported_action", "Fixture has no window observation", "stop", false);
+    }
     if (signal.aborted) throw abortError();
     this.observations += 1;
     this.events.push("observe");
@@ -71,6 +89,10 @@ export class FakeEngine implements EnginePort {
       platform: this.options.platform ?? "macos",
       scaleFactor: 1,
     };
+  }
+
+  async health(_signal: AbortSignal): Promise<boolean> {
+    return true;
   }
 
   async execute(

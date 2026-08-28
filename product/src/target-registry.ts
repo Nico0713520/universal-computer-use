@@ -12,7 +12,8 @@ export type TargetCapability =
   | "type_text"
   | "keypress"
   | "invoke_menu"
-  | "launch";
+  | "launch"
+  | "windows";
 
 export type TargetBounds = Readonly<{
   x: number;
@@ -25,6 +26,7 @@ export type NativeAppTarget = Readonly<{
   nativeKey: string;
   displayName: string;
   running: boolean;
+  active?: boolean;
   capabilities: readonly TargetCapability[];
   native: Readonly<Record<string, unknown>>;
 }>;
@@ -36,7 +38,9 @@ export type NativeWindowTarget = Readonly<{
   title: string;
   bounds: TargetBounds;
   focused: boolean;
-  minimized: boolean;
+  minimized?: boolean;
+  isOnScreen?: boolean;
+  onCurrentSpace?: boolean;
   capabilities: readonly TargetCapability[];
   native: Readonly<Record<string, unknown>>;
 }>;
@@ -67,6 +71,7 @@ function frozenApp(candidate: NativeAppTarget, appRef: string): InternalAppTarge
     nativeKey: candidate.nativeKey,
     displayName: candidate.displayName,
     running: candidate.running,
+    ...(candidate.active === undefined ? {} : { active: candidate.active }),
     capabilities: Object.freeze([...candidate.capabilities]),
     native: Object.freeze({ ...candidate.native }),
   });
@@ -85,7 +90,9 @@ function frozenWindow(
     title: candidate.title,
     bounds: Object.freeze({ ...candidate.bounds }),
     focused: candidate.focused,
-    minimized: candidate.minimized,
+    ...(candidate.minimized === undefined ? {} : { minimized: candidate.minimized }),
+    ...(candidate.isOnScreen === undefined ? {} : { isOnScreen: candidate.isOnScreen }),
+    ...(candidate.onCurrentSpace === undefined ? {} : { onCurrentSpace: candidate.onCurrentSpace }),
     capabilities: Object.freeze([...candidate.capabilities]),
     native: Object.freeze({ ...candidate.native }),
   });

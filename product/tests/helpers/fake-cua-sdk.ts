@@ -18,6 +18,7 @@ type FakeSdkOptions = Readonly<{
   desktopUnlocked?: boolean;
   effectiveScope?: EffectiveScope;
   toolResult?: ToolResult;
+  toolResults?: Readonly<Record<string, ToolResult | readonly ToolResult[]>>;
 }>;
 
 export type FakeCuaSdk = CuaSdkLike & {
@@ -30,6 +31,12 @@ export function fakeSdk(options: FakeSdkOptions): FakeCuaSdk {
   const startSessionCalls: StartSessionInput[] = [];
   const callToolCalls: Array<Readonly<{ name: string; argumentsJson: string }>> = [];
   const endSessionCalls: EndSessionInput[] = [];
+  const perToolResults = new Map<string, ToolResult[]>(
+    Object.entries(options.toolResults ?? {}).map(([name, value]) => [
+      name,
+      Array.isArray(value) ? [...value] : [value as ToolResult],
+    ]),
+  );
 
   return {
     startSessionCalls,
@@ -64,6 +71,8 @@ export function fakeSdk(options: FakeSdkOptions): FakeCuaSdk {
     },
     async callTool(name: string, argumentsJson: string): Promise<ToolResult> {
       callToolCalls.push({ name, argumentsJson });
+      const queued = perToolResults.get(name);
+      if (queued !== undefined && queued.length > 0) return queued.shift()!;
       if (options.toolResult !== undefined) return options.toolResult;
       throw new Error("unexpected_sdk_call");
     },

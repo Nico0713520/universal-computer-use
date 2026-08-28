@@ -1,5 +1,5 @@
 import { ComputerUseError } from "../errors.js";
-import type { EngineExecution, EngineObservation, EnginePort } from "../engine/port.js";
+import type { EngineDesktopObservation, EngineExecution, EnginePort } from "../engine/port.js";
 import type { ActionResult, ActEnvelope, ComputerAction } from "../protocol.js";
 import type { SnapshotRecord } from "../snapshot-store.js";
 import { PROTOCOL_VERSION } from "../version.js";
@@ -61,13 +61,14 @@ function publicActionErrorCode(
   switch (code) {
     case "action_refused":
     case "action_failed":
-    case "action_timeout":
-    case "unsupported_action":
-    case "element_unavailable":
     case "background_unavailable":
     case "foreground_required":
-    case "window_owner_changed":
-    case "target_lost":
+    case "window_not_ready":
+    case "window_target_ambiguous":
+    case "permission_required":
+    case "interactive_session_required":
+    case "verification_unsatisfied":
+    case "verification_unknown":
       return code;
     default:
       return fallback;
@@ -107,7 +108,7 @@ export function toActEnvelope(
   consumedId: string,
   snapshot: SnapshotRecord,
   result: EngineExecution,
-  value: EngineObservation,
+  value: EngineDesktopObservation,
 ): ActEnvelope {
   return {
     structured: {

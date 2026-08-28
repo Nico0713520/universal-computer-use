@@ -5,33 +5,34 @@ import {
   CuaDriver,
   EffectiveScope,
   type CuaDriverLike,
-  type ToolResult,
 } from "@trycua/cua-driver";
 
 import { ComputerUseError } from "../errors.js";
 import type { ComputerAction } from "../protocol.js";
 import { mapAction } from "./action-mapper.js";
+import {
+  parseAppList,
+  parseDesktopObservation,
+  parseHealth,
+  parseWindowList,
+  parseWindowState,
+} from "./cua-json.js";
 import type { EngineLock } from "./lock.js";
-import type { EngineExecution, EngineObservation, EnginePort } from "./port.js";
+import type {
+  EngineDesktopObservation,
+  EngineDiscoverInput,
+  EngineDiscovery,
+  EngineExecution,
+  EngineObservation,
+  EngineObserveInput,
+  EnginePort,
+} from "./port.js";
 import { mapCuaResult } from "./result-mapper.js";
 
 export type CuaSdkLike = Pick<
   CuaDriverLike,
   "metadata" | "listToolsJson" | "startSession" | "callTool" | "endSession"
 >;
-
-type DesktopStateJson = {
-  platform: "macos" | "windows";
-  screenshot_width: number;
-  screenshot_height: number;
-  screen_width: number;
-  screen_height: number;
-  scale_factor: number;
-};
-
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value > 0;
-}
 
 function abortError(): DOMException {
   return new DOMException("The operation was aborted", "AbortError");
@@ -54,70 +55,10 @@ function cancellableWait(waitMs: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-function parseDesktopObservation(result: ToolResult): EngineObservation {
-  if (result.isError) {
-    throw new ComputerUseError(
-      "capture_failed",
-      "Cua failed to capture the desktop",
-      "observe_again",
-      true,
-    );
-  }
-
-  let desktop: DesktopStateJson;
-  try {
-    desktop = JSON.parse(result.structuredJson ?? "") as DesktopStateJson;
-  } catch {
-    throw new ComputerUseError(
-      "capture_failed",
-      "Cua returned malformed desktop metadata",
-      "observe_again",
-      true,
-    );
-  }
-  if (
-    typeof desktop !== "object" ||
-    desktop === null ||
-    (desktop.platform !== "macos" && desktop.platform !== "windows") ||
-    !isPositiveInteger(desktop.screenshot_width) ||
-    !isPositiveInteger(desktop.screenshot_height) ||
-    !isPositiveInteger(desktop.screen_width) ||
-    !isPositiveInteger(desktop.screen_height) ||
-    typeof desktop.scale_factor !== "number" ||
-    !Number.isFinite(desktop.scale_factor) ||
-    desktop.scale_factor <= 0
-  ) {
-    throw new ComputerUseError(
-      "capture_failed",
-      "Cua returned invalid desktop metadata",
-      "observe_again",
-      true,
-    );
-  }
-  const image = result.images.length === 1 ? result.images[0] : undefined;
-  if (
-    image === undefined ||
-    image.mimeType !== "image/png" ||
-    image.dataBase64.length === 0
-  ) {
-    throw new ComputerUseError(
-      "capture_failed",
-      "Cua did not return exactly one screenshot image",
-      "observe_again",
-      true,
-    );
-  }
-
-  return {
-    image: {
-      mimeType: "image/png",
-      dataBase64: image.dataBase64,
-      width: desktop.screenshot_width,
-      height: desktop.screenshot_height,
-    },
-    platform: desktop.platform,
-    scaleFactor: desktop.scale_factor,
-  };
+function supportedPlatform(): "macos" | "windows" {
+  if (process.platform === "darwin") return "macos";
+  if (process.platform === "win32") return "windows";
+  throw new ComputerUseError("unsupported_platform", "Unsupported host platform", "stop", false);
 }
 
 export class CuaEngine implements EnginePort {
@@ -213,13 +154,63 @@ export class CuaEngine implements EnginePort {
     return new CuaEngine(sdk, lock.version, started.state.session);
   }
 
-  async observe(signal: AbortSignal): Promise<EngineObservation> {
+  async discover(input: EngineDiscoverInput, signal: AbortSignal): Promise<EngineDiscovery> {
+    if (!input.apps && !input.windows) return { apps: [], windows: [] };
+    const platform = supportedPlatform();
+    const appsResult = await this.sdk.callTool("list_apps", "{}", { signal });
+    const apps = parseAppList(appsResult, platform);
+    if (!input.windows) return { apps: input.apps ? apps : [], windows: [] };
+    const windowsResult = await this.sdk.callTool("list_windows", "{}", { signal });
+    const windows = parseWindowList(windowsResult, apps, platform);
+    return { apps: input.apps ? apps : [], windows };
+  }
+
+  async observe(signal: AbortSignal): Promise<EngineDesktopObservation>;
+  async observe(input: EngineObserveInput, signal: AbortSignal): Promise<EngineObservation>;
+  async observe(
+    inputOrSignal: EngineObserveInput | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<EngineObservation> {
+    if (inputOrSignal instanceof AbortSignal) {
+      const result = await this.sdk.callTool(
+        "get_desktop_state",
+        JSON.stringify({ session: this.sessionId }),
+        { signal: inputOrSignal },
+      );
+      return parseDesktopObservation(result);
+    }
+    const signal = maybeSignal;
+    if (signal === undefined) throw new TypeError("observe signal is required");
+    const input = inputOrSignal as EngineObserveInput;
+    if (input.target.kind === "desktop") {
+      const result = await this.sdk.callTool(
+        "get_desktop_state",
+        JSON.stringify({ session: this.sessionId }),
+        { signal },
+      );
+      return parseDesktopObservation(result);
+    }
+    const windowInput = input as Extract<EngineObserveInput, { target: { kind: "window" } }>;
+    const native = windowInput.target.window.native;
+    const pid = native.pid;
+    const windowId = native.window_id;
+    if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(windowId)) {
+      throw new ComputerUseError("engine_contract_changed", "Window target has invalid native identifiers", "doctor", false);
+    }
     const result = await this.sdk.callTool(
-      "get_desktop_state",
-      JSON.stringify({ session: this.sessionId }),
+      "get_window_state",
+      JSON.stringify({
+        session: this.sessionId,
+        pid,
+        window_id: windowId,
+        include_screenshot: windowInput.includeScreenshot,
+        ...(windowInput.query === undefined ? {} : { query: windowInput.query }),
+        max_elements: windowInput.maxElements,
+        max_depth: windowInput.maxDepth,
+      }),
       { signal },
     );
-    return parseDesktopObservation(result);
+    return parseWindowState(result, windowInput.target.window, windowInput.includeScreenshot);
   }
 
   async execute(action: ComputerAction, signal: AbortSignal): Promise<EngineExecution> {
@@ -240,6 +231,15 @@ export class CuaEngine implements EnginePort {
       { signal },
     );
     return mapCuaResult(result);
+  }
+
+  async health(signal: AbortSignal): Promise<boolean> {
+    const result = await this.sdk.callTool(
+      "health_report",
+      JSON.stringify({ include: ["binary_version", "platform_supported", "session_active"] }),
+      { signal },
+    );
+    return parseHealth(result, this.version);
   }
 
   async close(): Promise<void> {

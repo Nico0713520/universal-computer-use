@@ -53,6 +53,14 @@ describe("computer use MCP contract", () => {
       idempotentHint: false,
       openWorldHint: true,
     });
+    expect(tools[0]?.inputSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        target: expect.any(Object),
+        discover: expect.any(Object),
+      },
+    });
   });
 
   it("returns matching structured data and one PNG image for observe and act", async () => {

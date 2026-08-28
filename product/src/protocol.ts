@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ERROR_CODES } from "./errors.js";
 import { PROTOCOL_VERSION } from "./version.js";
 
 const coordinate = z.number().finite().min(0);
@@ -48,6 +49,8 @@ export const ComputerActionSchema = z.union([
   z.object({ type: z.literal("scroll"), element_ref: ElementRefSchema, ...ScrollFields }).strict(),
   z.object({ type: z.literal("set_value"), element_ref: ElementRefSchema, value: boundedText }).strict(),
   z.object({ type: z.literal("type"), text: boundedText }).strict(),
+  z.object({ type: z.literal("type"), element_ref: ElementRefSchema, text: boundedText }).strict(),
+  z.object({ type: z.literal("type"), x: coordinate, y: coordinate, text: boundedText }).strict(),
   z.object({ type: z.literal("type_text"), text: boundedText }).strict(),
   z.object({ type: z.literal("type_text"), element_ref: ElementRefSchema, text: boundedText }).strict(),
   z.object({ type: z.literal("type_text"), x: coordinate, y: coordinate, text: boundedText }).strict(),
@@ -78,21 +81,28 @@ const DiscoverInputSchema = z.object({
   }
 });
 
-const DesktopObserveInputSchema = z.object({
-  target: DesktopTargetInputSchema.optional(),
+export const ObserveInputSchema = z.object({
+  target: z.union([DesktopTargetInputSchema, WindowTargetInputSchema]).optional(),
   discover: DiscoverInputSchema.optional(),
-}).strict();
-const WindowObserveInputSchema = z.object({
-  target: WindowTargetInputSchema,
   include_screenshot: z.boolean().optional(),
   elements: z.object({
     query: query.optional(),
     max_elements: z.number().int().min(1).max(150).optional(),
     max_depth: z.number().int().min(1).max(12).optional(),
   }).strict().optional(),
-}).strict();
-
-export const ObserveInputSchema = z.union([WindowObserveInputSchema, DesktopObserveInputSchema]);
+}).strict().superRefine((value, context) => {
+  const targetKind = value.target?.kind ?? "desktop";
+  if (targetKind === "desktop") {
+    if (value.include_screenshot !== undefined) {
+      context.addIssue({ code: "custom", path: ["include_screenshot"], message: "include_screenshot requires a window target" });
+    }
+    if (value.elements !== undefined) {
+      context.addIssue({ code: "custom", path: ["elements"], message: "elements requires a window target" });
+    }
+  } else if (value.discover !== undefined) {
+    context.addIssue({ code: "custom", path: ["discover"], message: "discover is only available with a desktop target" });
+  }
+});
 
 const ElementExpectationSchema = z.object({
   element_ref: ElementRefSchema,
@@ -167,32 +177,37 @@ const BoundsSchema = z.object({
   width: z.number().finite().nonnegative(),
   height: z.number().finite().nonnegative(),
 }).strict();
-const CapabilitySchema = z.enum([
-  "observe", "click", "double_click", "right_click", "scroll", "set_value", "type_text", "keypress", "invoke_menu", "launch",
-]);
+const AppCapabilitySchema = z.enum(["launch", "windows"]);
+const CapabilityStatusSchema = z.enum(["available", "unavailable", "unknown"]);
 
 const AppOutputSchema = z.object({
   app_ref: AppRefSchema,
   display_name: z.string(),
   running: z.boolean(),
-  capabilities: z.array(CapabilitySchema).max(10),
-  window_count: z.number().int().nonnegative().optional(),
+  capabilities: z.array(AppCapabilitySchema).max(2),
 }).strict();
 const WindowOutputSchema = z.object({
   window_ref: WindowRefSchema,
   app_ref: AppRefSchema,
+  app_name: z.string(),
   title: z.string(),
-  bounds: BoundsSchema,
-  coordinate_space: z.literal("desktop_logical_points"),
-  focused: z.boolean(),
-  minimized: z.boolean(),
-  capabilities: z.array(CapabilitySchema).max(10),
+  bounds: BoundsSchema.extend({ coordinate_space: z.literal("desktop_logical") }).strict(),
+  is_on_screen: z.boolean(),
+  // Cua 0.22.2 does not expose these fields on every platform/backend. Omit
+  // unknown facts instead of fabricating false values.
+  on_current_space: z.boolean().optional(),
+  minimized: z.boolean().optional(),
+  capabilities: z.object({
+    elements: CapabilityStatusSchema,
+    window_screenshot: CapabilityStatusSchema,
+    background_actions: CapabilityStatusSchema,
+  }).strict(),
 }).strict();
 const ElementOutputSchema = z.object({
   element_ref: ElementRefSchema,
   role: z.string(),
-  label: z.string().optional(),
-  value: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
+  label: z.string(),
+  value: z.union([z.string(), z.number(), z.boolean()]).optional(),
   bounds: BoundsSchema.optional(),
   enabled: z.boolean().optional(),
   selected: z.boolean().optional(),
@@ -212,9 +227,9 @@ const DesktopOutputSchema = ObservationBaseSchema.extend({
   target: z.object({ kind: z.literal("desktop"), display_id: z.literal("primary") }).strict(),
   coordinate_space: z.literal("desktop_screenshot_pixels"),
   screenshot: ScreenshotSchema,
-  apps: z.array(AppOutputSchema).max(200).optional(),
+  apps: z.array(AppOutputSchema).max(50).optional(),
   apps_truncated: z.boolean().optional(),
-  windows: z.array(WindowOutputSchema).max(200).optional(),
+  windows: z.array(WindowOutputSchema).max(30).optional(),
   windows_truncated: z.boolean().optional(),
 }).strict();
 const WindowOutputBaseSchema = ObservationBaseSchema.extend({
@@ -222,6 +237,7 @@ const WindowOutputBaseSchema = ObservationBaseSchema.extend({
     kind: z.literal("window"),
     window_ref: WindowRefSchema,
     app_ref: AppRefSchema,
+    app_name: z.string(),
     title: z.string(),
   }).strict(),
   coordinate_space: z.literal("window_screenshot_pixels"),
@@ -255,13 +271,13 @@ export const ObservationMcpOutputSchema = z.object({
   display_id: z.literal("primary").optional(),
   target: z.union([
     z.object({ kind: z.literal("desktop"), display_id: z.literal("primary") }).strict(),
-    z.object({ kind: z.literal("window"), window_ref: WindowRefSchema, app_ref: AppRefSchema, title: z.string() }).strict(),
+    z.object({ kind: z.literal("window"), window_ref: WindowRefSchema, app_ref: AppRefSchema, app_name: z.string(), title: z.string() }).strict(),
   ]),
   coordinate_space: z.enum(["desktop_screenshot_pixels", "window_screenshot_pixels"]),
   screenshot: ScreenshotSchema.optional(),
-  apps: z.array(AppOutputSchema).max(200).optional(),
+  apps: z.array(AppOutputSchema).max(50).optional(),
   apps_truncated: z.boolean().optional(),
-  windows: z.array(WindowOutputSchema).max(200).optional(),
+  windows: z.array(WindowOutputSchema).max(30).optional(),
   windows_truncated: z.boolean().optional(),
   elements: z.array(ElementOutputSchema).max(150).optional(),
   elements_truncated: z.boolean().optional(),
@@ -274,17 +290,20 @@ export const ObservationMcpOutputSchema = z.object({
 });
 
 const EvidenceSchema = z.enum([
-  "driver_accepted", "accessibility_action_returned", "value_readback_matched", "element_state_matched", "post_action_observation_available", "app_launch_reported",
+  "value_readback", "selection_readback", "predicate_satisfied", "process_running", "window_ready", "focus_preserved",
 ]);
 const ActionErrorCodeSchema = z.enum([
-  "action_refused", "action_failed", "action_timeout", "unsupported_action", "element_unavailable", "background_unavailable", "foreground_required", "window_owner_changed", "target_lost",
+  "action_refused", "action_failed", "permission_required", "interactive_session_required", "background_unavailable", "foreground_required", "window_not_ready", "window_target_ambiguous", "verification_unsatisfied", "verification_unknown",
 ]);
 const ActionResultCommonSchema = z.object({
   route: z.enum(["accessibility", "synthetic_events", "global_input", "system_api", "dom", "trusted_input", "unknown"]),
   delivery: z.enum(["background", "foreground", "not_applicable", "unknown"]),
   evidence: z.array(EvidenceSchema).max(8),
   delivered_count: z.number().int().nonnegative().optional(),
-  escalation: z.enum(["none", "foreground"]).optional(),
+  escalation: z.object({
+    reason: z.enum(["background_unavailable", "foreground_required", "effect_unconfirmed", "window_not_ready", "window_target_ambiguous"]),
+    suggested_delivery: z.literal("foreground").optional(),
+  }).strict().optional(),
 }).strict();
 const ExecutedActionResultSchema = ActionResultCommonSchema.extend({
   status: z.literal("executed"),
@@ -317,7 +336,7 @@ const VerificationSchema = z.union([
   z.object({ status: z.literal("satisfied") }).strict(),
   z.object({
     status: z.enum(["unsatisfied", "unknown"]),
-    reason: z.enum(["element_missing", "value_mismatch", "state_mismatch", "observation_unavailable", "verification_timeout"]),
+    reason: z.enum(["predicate_unsatisfied", "element_not_unique", "element_missing", "observation_unavailable", "timeout", "untrusted_source"]),
   }).strict(),
 ]);
 const ActOutputBaseSchema = z.object({
@@ -341,6 +360,7 @@ const WindowActOutputBaseSchema = ActOutputBaseSchema.extend({
     kind: z.literal("window"),
     window_ref: WindowRefSchema,
     app_ref: AppRefSchema,
+    app_name: z.string(),
     title: z.string(),
   }).strict(),
   coordinate_space: z.literal("window_screenshot_pixels"),
@@ -379,7 +399,7 @@ export const ActMcpOutputSchema = z.object({
   snapshot_id: SnapshotIdSchema.optional(),
   target: z.union([
     z.object({ kind: z.literal("desktop"), display_id: z.literal("primary") }).strict(),
-    z.object({ kind: z.literal("window"), window_ref: WindowRefSchema, app_ref: AppRefSchema, title: z.string() }).strict(),
+    z.object({ kind: z.literal("window"), window_ref: WindowRefSchema, app_ref: AppRefSchema, app_name: z.string(), title: z.string() }).strict(),
   ]).optional(),
   coordinate_space: z.enum(["desktop_screenshot_pixels", "window_screenshot_pixels"]).optional(),
   screenshot: ScreenshotSchema.optional(),
@@ -398,10 +418,10 @@ export const ActMcpOutputSchema = z.object({
 });
 
 export const McpErrorOutputSchema = z.object({
-  code: z.string(),
+  code: z.enum(ERROR_CODES),
   recovery: z.enum(["setup", "doctor", "observe_again", "discover_again", "grant_permission", "use_element", "use_foreground", "stop"]),
   retryable: z.boolean(),
-  snapshot_consumed: z.boolean().optional(),
+  snapshot_consumed: z.literal(true).optional(),
 }).strict();
 
 export type ObservationOutput = z.infer<typeof ObservationOutputSchema>;

@@ -169,6 +169,108 @@ describe("public protocol", () => {
     expect(() => ObservationOutputSchema.parse({ protocol_version: "2.0.0" })).toThrow();
   });
 
+  it("publishes only bounded opaque discovery metadata", () => {
+    const output = {
+      protocol_version: "1.1.0",
+      session_id: "ses_123",
+      snapshot_id: "snap_12345678",
+      platform: "macos",
+      display_id: "primary",
+      target: { kind: "desktop", display_id: "primary" },
+      coordinate_space: "desktop_screenshot_pixels",
+      screenshot: { mime_type: "image/png", width: 1920, height: 1080 },
+      engine: { name: "cua-driver", version: "0.22.2" },
+      apps: [{
+        app_ref: "app_abcdefghijklmnop",
+        display_name: "Calculator",
+        running: true,
+        capabilities: ["launch", "windows"],
+      }],
+      apps_truncated: false,
+      windows: [{
+        window_ref: "win_abcdefghijklmnop",
+        app_ref: "app_abcdefghijklmnop",
+        app_name: "Calculator",
+        title: "Calculator",
+        bounds: { x: 100, y: 100, width: 460, height: 816, coordinate_space: "desktop_logical" },
+        is_on_screen: true,
+        on_current_space: true,
+        capabilities: {
+          elements: "available",
+          window_screenshot: "available",
+          background_actions: "unknown",
+        },
+      }],
+      windows_truncated: false,
+    } as const;
+
+    expect(ObservationOutputSchema.parse(output)).toEqual(output);
+    expect(() => ObservationOutputSchema.parse({
+      ...output,
+      windows: [{ ...output.windows[0], pid: 42 }],
+    })).toThrow();
+    expect(() => ObservationOutputSchema.parse({
+      ...output,
+      windows: [{ ...output.windows[0], capabilities: ["click"] }],
+    })).toThrow();
+  });
+
+  it("requires honest element and action-result evidence", () => {
+    const windowObservation = {
+      protocol_version: "1.1.0",
+      session_id: "ses_123",
+      snapshot_id: "snap_12345678",
+      platform: "macos",
+      target: {
+        kind: "window",
+        window_ref: "win_abcdefghijklmnop",
+        app_ref: "app_abcdefghijklmnop",
+        app_name: "Calculator",
+        title: "Calculator",
+      },
+      coordinate_space: "window_screenshot_pixels",
+      visual_status: "not_requested",
+      elements: [{
+        element_ref: "el_abcdefghijklmnop",
+        role: "button",
+        label: "7",
+        actions: ["click"],
+      }],
+      elements_truncated: false,
+      engine: { name: "cua-driver", version: "0.22.2" },
+    } as const;
+    expect(ObservationOutputSchema.parse(windowObservation)).toEqual(windowObservation);
+    expect(() => ObservationOutputSchema.parse({
+      ...windowObservation,
+      elements: [{ ...windowObservation.elements[0], label: undefined }],
+    })).toThrow();
+    expect(() => ObservationOutputSchema.parse({
+      ...windowObservation,
+      elements: [{ ...windowObservation.elements[0], value: null }],
+    })).toThrow();
+
+    const baseAction = {
+      next_state: "unavailable",
+      protocol_version: "1.1.0",
+      session_id: "ses_123",
+      consumed_snapshot_id: "snap_12345678",
+      action_result: {
+        status: "executed",
+        effect: "confirmed",
+        route: "accessibility",
+        delivery: "background",
+        evidence: ["value_readback"],
+      },
+      verification: { status: "satisfied" },
+      next_observation_error: { code: "target_lost", recovery: "observe_desktop" },
+    } as const;
+    expect(ActOutputSchema.parse(baseAction)).toEqual(baseAction);
+    expect(() => ActOutputSchema.parse({
+      ...baseAction,
+      action_result: { ...baseAction.action_result, evidence: ["cua_said_ok"] },
+    })).toThrow();
+  });
+
   it("enforces bounded coordinates, text, keys, wait, scroll, and drag duration", () => {
     const parseAction = (action: unknown) => ActInputSchema.parse({
       snapshot_id: "snap_12345678",

@@ -18,7 +18,9 @@ describe("public tool JSON Schema", () => {
 
     const observe = PUBLIC_TOOL_SCHEMAS[0]?.inputSchema as ObjectJsonSchema;
     const act = PUBLIC_TOOL_SCHEMAS[1]?.inputSchema as ObjectJsonSchema;
-    expect(observe).toHaveProperty("anyOf");
+    expect(observe.additionalProperties).toBe(false);
+    expect(observe.properties).toHaveProperty("target");
+    expect(observe.properties).toHaveProperty("discover");
     expect(act.additionalProperties).toBe(false);
     expect(act.required).toEqual(["snapshot_id", "action"]);
     expect(act.properties).toHaveProperty("snapshot_id");
@@ -30,35 +32,69 @@ describe("public tool JSON Schema", () => {
         {
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
-            "anyOf": [
-              {
+            "additionalProperties": false,
+            "properties": {
+              "discover": {
                 "additionalProperties": false,
                 "properties": {
-                  "elements": {
+                  "apps": {
+                    "type": "boolean",
+                  },
+                  "query": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                  "window_app_ref": {
+                    "pattern": "^app_[A-Za-z0-9_-]{16,}$",
+                    "type": "string",
+                  },
+                  "windows": {
+                    "type": "boolean",
+                  },
+                },
+                "type": "object",
+              },
+              "elements": {
+                "additionalProperties": false,
+                "properties": {
+                  "max_depth": {
+                    "maximum": 12,
+                    "minimum": 1,
+                    "type": "integer",
+                  },
+                  "max_elements": {
+                    "maximum": 150,
+                    "minimum": 1,
+                    "type": "integer",
+                  },
+                  "query": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "type": "object",
+              },
+              "include_screenshot": {
+                "type": "boolean",
+              },
+              "target": {
+                "anyOf": [
+                  {
                     "additionalProperties": false,
                     "properties": {
-                      "max_depth": {
-                        "maximum": 12,
-                        "minimum": 1,
-                        "type": "integer",
-                      },
-                      "max_elements": {
-                        "maximum": 150,
-                        "minimum": 1,
-                        "type": "integer",
-                      },
-                      "query": {
-                        "maxLength": 200,
-                        "minLength": 1,
+                      "kind": {
+                        "const": "desktop",
                         "type": "string",
                       },
                     },
+                    "required": [
+                      "kind",
+                    ],
                     "type": "object",
                   },
-                  "include_screenshot": {
-                    "type": "boolean",
-                  },
-                  "target": {
+                  {
                     "additionalProperties": false,
                     "properties": {
                       "kind": {
@@ -76,53 +112,10 @@ describe("public tool JSON Schema", () => {
                     ],
                     "type": "object",
                   },
-                },
-                "required": [
-                  "target",
                 ],
-                "type": "object",
               },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "discover": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "apps": {
-                        "type": "boolean",
-                      },
-                      "query": {
-                        "maxLength": 200,
-                        "minLength": 1,
-                        "type": "string",
-                      },
-                      "window_app_ref": {
-                        "pattern": "^app_[A-Za-z0-9_-]{16,}$",
-                        "type": "string",
-                      },
-                      "windows": {
-                        "type": "boolean",
-                      },
-                    },
-                    "type": "object",
-                  },
-                  "target": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "kind": {
-                        "const": "desktop",
-                        "type": "string",
-                      },
-                    },
-                    "required": [
-                      "kind",
-                    ],
-                    "type": "object",
-                  },
-                },
-                "type": "object",
-              },
-            ],
+            },
+            "type": "object",
           },
           "name": "computer_observe",
         },
@@ -441,6 +434,57 @@ describe("public tool JSON Schema", () => {
                     },
                     "required": [
                       "type",
+                      "text",
+                    ],
+                    "type": "object",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "element_ref": {
+                        "pattern": "^el_[A-Za-z0-9_-]{16,}$",
+                        "type": "string",
+                      },
+                      "text": {
+                        "maxLength": 20000,
+                        "type": "string",
+                      },
+                      "type": {
+                        "const": "type",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "type",
+                      "element_ref",
+                      "text",
+                    ],
+                    "type": "object",
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "text": {
+                        "maxLength": 20000,
+                        "type": "string",
+                      },
+                      "type": {
+                        "const": "type",
+                        "type": "string",
+                      },
+                      "x": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                      "y": {
+                        "minimum": 0,
+                        "type": "number",
+                      },
+                    },
+                    "required": [
+                      "type",
+                      "x",
+                      "y",
                       "text",
                     ],
                     "type": "object",

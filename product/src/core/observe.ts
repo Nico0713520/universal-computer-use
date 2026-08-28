@@ -1,5 +1,5 @@
 import { ComputerUseError } from "../errors.js";
-import type { EngineObservation, EnginePort } from "../engine/port.js";
+import type { EngineDesktopObservation, EnginePort } from "../engine/port.js";
 import type { ObservationEnvelope } from "../protocol.js";
 import type { SnapshotRecord } from "../snapshot-store.js";
 import { PROTOCOL_VERSION } from "../version.js";
@@ -70,7 +70,7 @@ export async function withTimeout<T>(
 export async function observeWithOneTransientRetry(
   engine: EnginePort,
   lifecycleSignal: AbortSignal,
-): Promise<EngineObservation> {
+): Promise<EngineDesktopObservation> {
   try {
     return await withTimeout(
       (signal) => engine.observe(signal),
@@ -98,7 +98,7 @@ export async function observeWithOneTransientRetry(
 export function toObservationEnvelope(
   engine: EnginePort,
   snapshot: SnapshotRecord,
-  value: EngineObservation,
+  value: EngineDesktopObservation,
 ): ObservationEnvelope {
   return {
     structured: {
