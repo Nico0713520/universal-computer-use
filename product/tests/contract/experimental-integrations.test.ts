@@ -26,7 +26,10 @@ const canonicalSkillReference = "../../skills/computer-use/SKILL.md";
 
 async function readArtifacts() {
   const entries = await Promise.all(
-    Object.entries(artifactUrls).map(async ([name, url]) => [name, await readFile(url, "utf8")]),
+    Object.entries(artifactUrls).map(async ([name, url]) => [
+      name,
+      (await readFile(url, "utf8")).replace(/\r\n/g, "\n"),
+    ]),
   );
   return Object.fromEntries(entries) as Record<keyof typeof artifactUrls, string>;
 }

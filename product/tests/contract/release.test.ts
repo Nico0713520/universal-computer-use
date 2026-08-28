@@ -321,9 +321,9 @@ describe("release verification", () => {
     ) as { scripts?: Record<string, string> };
 
     expect(packageManifest.scripts).toMatchObject({
-      pretest: "pnpm build",
-      prepack: "pnpm build",
-      "prerelease:verify": "pnpm build",
+      pretest: "npm run build",
+      prepack: "npm run build",
+      "prerelease:verify": "npm run build",
     });
   });
 

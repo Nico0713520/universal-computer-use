@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const skillUrl = new URL("../../skills/computer-use/SKILL.md", import.meta.url);
 
 async function readSkill(): Promise<string> {
-  return readFile(skillUrl, "utf8");
+  return (await readFile(skillUrl, "utf8")).replace(/\r\n/g, "\n");
 }
 
 describe("canonical computer-use Skill policy", () => {
