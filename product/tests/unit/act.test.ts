@@ -6,6 +6,7 @@ import { fixtureRuntime } from "../helpers/fake-engine.js";
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("ComputerUseRuntime.act", () => {
@@ -92,6 +93,21 @@ describe("ComputerUseRuntime.act", () => {
 
     expect(result.structured.action_result.status).toBe("executed");
     expect(engine.executions).toEqual([action]);
+  });
+
+  it("recaptures immediately without an implicit post-action delay", async () => {
+    const timer = vi.spyOn(globalThis, "setTimeout");
+    const { runtime, engine } = fixtureRuntime();
+    const observed = await runtime.observe();
+    timer.mockClear();
+
+    await runtime.act({
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "click", x: 10, y: 10 },
+    });
+
+    expect(engine.events).toEqual(["observe", "execute:click", "observe"]);
+    expect(timer.mock.calls.map((call) => call[1])).toEqual([20_000, 20_000]);
   });
 
   it("maps an unknown action throw to a failed result and still recaptures", async () => {

@@ -34,6 +34,18 @@ describe("canonical computer-use Skill policy", () => {
     expect(skill).toMatch(/never request[\s\S]*plugin model key/i);
   });
 
+  it("prevents avoidable latency and screenshot-coordinate misses", async () => {
+    const skill = await readSkill();
+
+    expect(skill).toMatch(
+      /screenshot returned by `computer_act`[\s\S]*do not call `computer_observe` again/i,
+    );
+    expect(skill).toMatch(/never insert a fixed wait[\s\S]*visible evidence/i);
+    expect(skill).toMatch(/interior center[\s\S]*(edge|gap)/i);
+    expect(skill).toMatch(/currently visible[\s\S]*background window/i);
+    expect(skill).toMatch(/complete text[\s\S]*single `type` action/i);
+  });
+
   it("documents all public actions and actionable recovery without expanding the protocol", async () => {
     const skill = await readSkill();
 

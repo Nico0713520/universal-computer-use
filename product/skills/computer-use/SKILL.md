@@ -18,6 +18,16 @@ Use the host's current vision model to inspect returned PNG images. Never reques
 
 Never blindly repeat a failed or uncertain action. First inspect the returned screenshot; if none is available, observe again. Change the action, report a blocker, or stop according to the evidence. Report permission or runtime blockers instead of pretending the task succeeded.
 
+## Speed and targeting
+
+The screenshot returned by `computer_act` is already the next observation. Whenever its response includes a new screenshot and `snapshot_id`, do not call `computer_observe` again before the next action; doing so adds a capture and invalidates the usable snapshot that was just returned.
+
+Never insert a fixed wait after a routine click, keypress, scroll, or type action. Use `wait` only when the newest screenshot contains visible evidence that loading, animation, or another UI transition is still in progress, and choose the shortest reasonable duration. Prefer a shortcut or one complete text entry when it is equivalent and focus is visually confirmed; send complete text in a single `type` action instead of one action per character.
+
+For pixel actions, use the exact returned image rather than coordinates from a resized preview. Aim at the interior center of a clearly identified control and avoid its edge, border, or the gap between adjacent controls. If the result is wrong, inspect the new screenshot and choose a corrected point; never add a hidden coordinate offset or blind tolerance retry.
+
+Desktop v1 observes and controls only the primary display's currently visible surface; it cannot address a background window. If another app or window becomes visible in front, geometry from the previous surface is no longer a valid target. Continue only from the newest screenshot.
+
 ## Action schema
 
 Coordinates use the returned screenshot's pixel space, with `(0, 0)` at top left.

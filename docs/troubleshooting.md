@@ -28,6 +28,16 @@ The MCP server exposes only `computer_observe` and `computer_act`. The plugin ne
 
 If a host sees text but not the screenshot, it does not support MCP `ImageContent` on this route. Keep it `experimental` or `not-compatible`; do not add a second vision model inside the plugin.
 
+## Slow or inaccurate loops
+
+- Measure a native host connection, not a temporary shell bridge. The MCP server must remain one long-running stdio process because snapshot state is process-local. Do not add a fixed post-action sleep: `computer_act` already captures and returns the next screenshot as soon as the engine call completes.
+- Use the screenshot and `snapshot_id` returned by `computer_act` for the next decision, even when the reported effect is uncertain. Calling `computer_observe` again performs a redundant capture and replaces that valid snapshot.
+- Prefer one `type` action for complete text and a confirmed-focus shortcut when they are equivalent to several visual clicks. This reduces model round trips without batching input or weakening the one-use snapshot rule.
+- Select the interior center of a visible control in the exact returned PNG. Avoid borders and gaps. A point that works after the model adjusts its aim is not evidence of a DPI transform bug; a transform defect requires a repeatable offset measured at several known points.
+- v1 is primary-display desktop control. It observes the currently visible surface and does not target a background window. If the foreground changes, discard geometry inferred from the previous surface and continue from the new screenshot.
+
+The locked Cua Runtime also exposes window-scoped capture, accessibility element handles and background delivery, but v1 intentionally does not expose those contracts through its two-tool desktop protocol. Adding them requires a separately versioned protocol and platform evidence; they must not be silently mixed into desktop coordinates.
+
 ## Logs and privacy
 
 Runtime metadata logs are JSONL on the MCP process's standard error. They contain only timestamp, per-process hashes, tool/action type, duration, route/effect/delivery and stable error code. They must not contain screenshot bytes, typed text, key contents, clipboard data, model prompts or environment values. Standard output is reserved for MCP frames.

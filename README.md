@@ -56,7 +56,7 @@ The npm package name is reserved in the project metadata but is not published ye
 
 ## Current status
 
-- Unit and contract tests: 199 passing.
+- Unit and contract tests: 203 passing.
 - Deterministic cross-platform fixture contracts are implemented.
 - Generic MCP configuration is experimental.
 - Codex and Kimi integration guides exist but real eligible-runtime host evidence is pending.
