@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { ComputerUseError } from "../../src/errors.js";
 import { SnapshotStore } from "../../src/snapshot-store.js";
 
+const identity = (role: string, label: string) => ({
+  role,
+  label,
+  parentChain: [{ role: "window", label: "Calculator" }],
+});
+
 describe("SnapshotStore", () => {
   it("keeps exactly one current snapshot", () => {
     const tokens = ["token_a", "token_b"];
@@ -88,5 +94,89 @@ describe("SnapshotStore", () => {
       "Snapshot dimensions must be positive integers",
     );
     expect(store.requireCurrent(current.id)).toBe(current);
+  });
+
+  it("keeps private window and element targets inside one snapshot lifetime", () => {
+    const store = new SnapshotStore(() => 1_000, () => "snapshot_token");
+    const snapshot = store.create({
+      sessionId: "ses_a",
+      target: { kind: "window", windowRef: "win_abcdefghijklmnop" },
+      visual: { status: "available", width: 460, height: 816 },
+      coordinateSpace: "window_screenshot_pixels",
+      upstreamSnapshotId: "cua-private-snapshot",
+      windowTarget: {
+        windowRef: "win_abcdefghijklmnop",
+        appRef: "app_abcdefghijklmnop",
+        nativeKey: "7",
+        ownerKey: "pid:42",
+      },
+      elements: [{
+        elementRef: "el_abcdefghijklmnop",
+        token: "cua-private-element",
+        identity: identity("button", "7"),
+        capabilities: ["click"],
+      }],
+      observeOptions: {
+        includeScreenshot: true,
+        maxElements: 150,
+        maxDepth: 12,
+      },
+    });
+
+    expect(store.resolveElement(snapshot.id, "el_abcdefghijklmnop")).toMatchObject({
+      token: "cua-private-element",
+      identity: { role: "button", label: "7" },
+    });
+    expect(snapshot).toMatchObject({
+      visualStatus: "available",
+      width: 460,
+      height: 816,
+      upstreamSnapshotId: "cua-private-snapshot",
+    });
+
+    store.consume(snapshot.id);
+    expect(() => store.resolveElement(snapshot.id, "el_abcdefghijklmnop")).toThrowError("stale_snapshot");
+  });
+
+  it("supports semantic-only window snapshots but rejects pixel assumptions", () => {
+    const store = new SnapshotStore(() => 1_000, () => "semantic_token");
+    const snapshot = store.create({
+      sessionId: "ses_a",
+      target: { kind: "window", windowRef: "win_abcdefghijklmnop" },
+      visual: { status: "capture_unavailable" },
+      coordinateSpace: "window_screenshot_pixels",
+      elements: [],
+      observeOptions: {
+        includeScreenshot: true,
+        maxElements: 100,
+        maxDepth: 10,
+      },
+    });
+
+    expect(snapshot).toMatchObject({ visualStatus: "capture_unavailable" });
+    expect(snapshot.width).toBeUndefined();
+    expect(snapshot.height).toBeUndefined();
+  });
+
+  it("rejects unknown or duplicate element refs without replacing the current snapshot", () => {
+    const store = new SnapshotStore(() => 1_000, () => "elements_token");
+    const current = store.create("ses_a", 100, 80);
+    const duplicate = {
+      elementRef: "el_abcdefghijklmnop",
+      token: "private",
+      identity: identity("button", "7"),
+      capabilities: ["click"] as const,
+    };
+
+    expect(() => store.create({
+      sessionId: "ses_a",
+      target: { kind: "window", windowRef: "win_abcdefghijklmnop" },
+      visual: { status: "available", width: 100, height: 80 },
+      coordinateSpace: "window_screenshot_pixels",
+      elements: [duplicate, duplicate],
+      observeOptions: { includeScreenshot: true, maxElements: 100, maxDepth: 10 },
+    })).toThrow("Duplicate element_ref");
+    expect(store.requireCurrent(current.id)).toBe(current);
+    expect(() => store.resolveElement(current.id, "el_abcdefghijklmnop")).toThrowError("stale_element_ref");
   });
 });

@@ -22,8 +22,18 @@ export function assertCoordinates(
         ? [[action.x, action.y]]
         : [];
 
+  if (points.length > 0 &&
+      (snapshot.visualStatus !== "available" || snapshot.width === undefined || snapshot.height === undefined)) {
+    throw new ComputerUseError(
+      "pixel_frame_unproven",
+      "The current snapshot has no proven pixel frame",
+      "use_element",
+      false,
+    );
+  }
+
   for (const [x, y] of points) {
-    if (x < 0 || y < 0 || x >= snapshot.width || y >= snapshot.height) {
+    if (x < 0 || y < 0 || x >= snapshot.width! || y >= snapshot.height!) {
       throw new ComputerUseError(
         "coordinate_out_of_bounds",
         "Coordinate is outside the current screenshot",
