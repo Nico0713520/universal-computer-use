@@ -3,8 +3,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ComputerUseRuntime } from "../core/runtime.js";
 import {
   ActInputSchema,
-  ActOutputSchema,
-  ObservationOutputSchema,
+  ActMcpOutputSchema,
+  ObservationMcpOutputSchema,
   ObserveInputSchema,
 } from "../protocol.js";
 import { PRODUCT_VERSION } from "../version.js";
@@ -22,7 +22,7 @@ export function createComputerUseServer(runtime: ComputerUseRuntime): McpServer 
       description:
         "Capture the primary display and establish the only current actionable snapshot.",
       inputSchema: ObserveInputSchema,
-      outputSchema: ObservationOutputSchema,
+      outputSchema: ObservationMcpOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -39,7 +39,7 @@ export function createComputerUseServer(runtime: ComputerUseRuntime): McpServer 
       description:
         "Execute one screenshot-bound desktop action and return a fresh primary-display screenshot.",
       inputSchema: ActInputSchema,
-      outputSchema: ActOutputSchema,
+      outputSchema: ActMcpOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,

@@ -39,6 +39,7 @@ describe("metadata logging public surface", () => {
       expect(Object.keys(observed).sort()).toEqual(["content", "structuredContent"]);
       expect(observed.content.map(({ type }) => type)).toEqual(["text", "image"]);
       expect(Object.keys(observed.structuredContent ?? {}).sort()).toEqual([
+        "coordinate_space",
         "display_id",
         "engine",
         "platform",
@@ -46,6 +47,7 @@ describe("metadata logging public surface", () => {
         "screenshot",
         "session_id",
         "snapshot_id",
+        "target",
       ]);
       expect(JSON.stringify(observed)).not.toContain("session_id_hash");
       expect(JSON.stringify(observed)).not.toContain("timestamp");

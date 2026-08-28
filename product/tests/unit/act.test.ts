@@ -65,8 +65,11 @@ describe("ComputerUseRuntime.act", () => {
       effect: "unverifiable",
       route: "unknown",
       delivery: "unknown",
+      evidence: [],
       error_code: "action_failed",
     });
+    expect(result.structured.next_state).toBe("available");
+    if (result.structured.next_state !== "available") throw new Error("expected next observation");
     expect(result.structured.snapshot_id).not.toBe(observed.structured.snapshot_id);
     await expect(
       runtime.act({
@@ -120,6 +123,8 @@ describe("ComputerUseRuntime.act", () => {
     });
 
     expect(result.structured.action_result.error_code).toBe("action_failed");
+    expect(result.structured.next_state).toBe("available");
+    if (result.structured.next_state !== "available") throw new Error("expected next observation");
     expect(result.structured.snapshot_id).not.toBe(observed.structured.snapshot_id);
   });
 
@@ -134,6 +139,8 @@ describe("ComputerUseRuntime.act", () => {
       action: { type: "click", x: 10, y: 10 },
     });
 
+    expect(result.structured.next_state).toBe("available");
+    if (result.structured.next_state !== "available") throw new Error("expected next observation");
     expect(result.structured.snapshot_id).not.toBe(observed.structured.snapshot_id);
     expect(engine.observations).toBe(3);
     expect(engine.executions).toHaveLength(1);
@@ -219,6 +226,7 @@ describe("ComputerUseRuntime.act", () => {
       effect: "unverifiable",
       route: "unknown",
       delivery: "unknown",
+      evidence: [],
       error_code: "action_timeout",
     });
     expect(engine.executions).toHaveLength(1);

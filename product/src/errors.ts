@@ -14,6 +14,23 @@ export const ERROR_CODES = [
   "action_failed",
   "capture_failed",
   "unsupported_action",
+  "stale_app_ref",
+  "app_not_found",
+  "window_not_found",
+  "window_not_ready",
+  "window_target_ambiguous",
+  "window_owner_changed",
+  "target_lost",
+  "stale_element_ref",
+  "element_target_conflict",
+  "element_unavailable",
+  "pixel_frame_unproven",
+  "background_unavailable",
+  "foreground_required",
+  "verification_unsatisfied",
+  "verification_unknown",
+  "engine_unhealthy",
+  "engine_contract_changed",
 ] as const;
 
 export type ComputerUseErrorCode = typeof ERROR_CODES[number];
@@ -22,8 +39,17 @@ export class ComputerUseError extends Error {
   constructor(
     public readonly code: ComputerUseErrorCode,
     message: string,
-    public readonly recovery: "setup" | "doctor" | "observe_again" | "grant_permission" | "stop",
+    public readonly recovery:
+      | "setup"
+      | "doctor"
+      | "observe_again"
+      | "discover_again"
+      | "grant_permission"
+      | "use_element"
+      | "use_foreground"
+      | "stop",
     public readonly retryable: boolean,
+    public readonly snapshotConsumed = false,
   ) {
     super(message);
   }

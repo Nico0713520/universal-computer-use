@@ -90,6 +90,8 @@ export function toObservationEnvelope(
       snapshot_id: snapshot.id,
       platform: value.platform,
       display_id: "primary",
+      target: { kind: "desktop", display_id: "primary" },
+      coordinate_space: "desktop_screenshot_pixels",
       screenshot: {
         mime_type: "image/png",
         width: value.image.width,

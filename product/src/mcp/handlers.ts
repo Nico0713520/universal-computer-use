@@ -12,14 +12,17 @@ import {
 type SuccessEnvelope = ObservationEnvelope | ActEnvelope;
 
 function successToMcp(value: SuccessEnvelope): CallToolResult {
+  const imageContent = value.image === undefined
+    ? []
+    : [{
+        type: "image" as const,
+        mimeType: value.image.mimeType,
+        data: value.image.dataBase64,
+      }];
   return {
     content: [
       { type: "text", text: JSON.stringify(value.structured) },
-      {
-        type: "image",
-        mimeType: value.image.mimeType,
-        data: value.image.dataBase64,
-      },
+      ...imageContent,
     ],
     structuredContent: value.structured,
   };

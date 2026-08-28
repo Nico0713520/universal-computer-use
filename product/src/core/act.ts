@@ -1,6 +1,6 @@
 import { ComputerUseError } from "../errors.js";
 import type { EngineExecution, EngineObservation, EnginePort } from "../engine/port.js";
-import type { ActEnvelope, ComputerAction } from "../protocol.js";
+import type { ActionResult, ActEnvelope, ComputerAction } from "../protocol.js";
 import type { SnapshotRecord } from "../snapshot-store.js";
 import { PROTOCOL_VERSION } from "../version.js";
 
@@ -14,11 +14,11 @@ export function assertCoordinates(
           [action.from_x, action.from_y],
           [action.to_x, action.to_y],
         ]
-      : action.type === "click" ||
+      : (action.type === "click" ||
           action.type === "double_click" ||
           action.type === "right_click" ||
           action.type === "move" ||
-          action.type === "scroll"
+          action.type === "scroll") && "x" in action
         ? [[action.x, action.y]]
         : [];
 
@@ -44,6 +44,26 @@ export function failedExecution(error: unknown): EngineExecution {
   };
 }
 
+function publicActionErrorCode(
+  code: string | undefined,
+  fallback: "action_refused" | "action_failed",
+): NonNullable<ActionResult["error_code"]> {
+  switch (code) {
+    case "action_refused":
+    case "action_failed":
+    case "action_timeout":
+    case "unsupported_action":
+    case "element_unavailable":
+    case "background_unavailable":
+    case "foreground_required":
+    case "window_owner_changed":
+    case "target_lost":
+      return code;
+    default:
+      return fallback;
+  }
+}
+
 export function toActEnvelope(
   engine: EnginePort,
   consumedId: string,
@@ -51,19 +71,43 @@ export function toActEnvelope(
   result: EngineExecution,
   value: EngineObservation,
 ): ActEnvelope {
+  const common = {
+    route: result.route,
+    delivery: result.delivery,
+    evidence: [],
+  };
+  const actionResult: ActionResult = result.status === "executed"
+    ? {
+        ...common,
+        status: "executed" as const,
+        effect: result.effect === "refused" ? "unverifiable" as const : result.effect,
+        ...(result.errorCode === undefined ? {} : { error_code: publicActionErrorCode(result.errorCode, "action_failed") }),
+      }
+    : result.status === "refused"
+      ? {
+          ...common,
+          status: "refused" as const,
+          effect: "refused" as const,
+          error_code: publicActionErrorCode(result.errorCode, "action_refused"),
+        }
+      : {
+          ...common,
+          status: "failed" as const,
+          effect: "unverifiable" as const,
+          error_code: publicActionErrorCode(result.errorCode, "action_failed"),
+        };
+
   return {
     structured: {
+      next_state: "available",
       protocol_version: PROTOCOL_VERSION,
       session_id: engine.sessionId,
       consumed_snapshot_id: consumedId,
       snapshot_id: snapshot.id,
-      action_result: {
-        status: result.status,
-        effect: result.effect,
-        route: result.route,
-        delivery: result.delivery,
-        ...(result.errorCode === undefined ? {} : { error_code: result.errorCode }),
-      },
+      target: { kind: "desktop", display_id: "primary" },
+      coordinate_space: "desktop_screenshot_pixels",
+      action_result: actionResult,
+      verification: { status: "not_requested" },
       screenshot: {
         mime_type: "image/png",
         width: value.image.width,

@@ -14,7 +14,8 @@ describe("ComputerUseRuntime.observe", () => {
     const first = await runtime.observe();
     const second = await runtime.observe();
 
-    expect(first.image.dataBase64).toBe("cG5n");
+    expect(first.image?.dataBase64).toBe("cG5n");
+    if (!("screenshot" in second.structured)) throw new Error("expected visual observation");
     expect(second.structured.screenshot).toEqual({
       mime_type: "image/png",
       width: 100,
