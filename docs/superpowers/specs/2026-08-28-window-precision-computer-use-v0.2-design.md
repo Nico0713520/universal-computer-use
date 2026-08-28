@@ -1,8 +1,10 @@
 # Universal Computer Use v0.2：窗口精准与后台控制设计
 
+> **实现修正（2026-08-28）：** 对锁定的 Cua 0.22.2 做源码级审计后确认，`list_apps`、`list_windows`、`get_window_state` 在 macOS 有可用实现，但 Windows 端仍是 stub。因此 v0.2 的窗口精准能力只在 macOS 实现；Windows 保留 v0.1 主桌面路径，对精准发现/窗口请求稳定返回 `unsupported_platform`。下文更广泛的 Windows window/UIA 描述属于目标架构，不代表 0.22.2 已交付；必须等后续锁定 Runtime 加上 100%/125%/150% 真机证据后才能晋级。
+
 日期：2026-08-28
 
-状态：修订后规格，待用户最终复核
+状态：已批准并实施；真实平台证据待补
 
 产品版本：`0.2.0`
 

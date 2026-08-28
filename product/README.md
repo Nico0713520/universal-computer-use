@@ -6,8 +6,8 @@ Cua Driver is a separate MIT-licensed runtime dependency. Its Rust and native pl
 
 The MCP surface contains exactly two tools:
 
-- `computer_observe` captures the main display and returns a PNG plus a one-use `snapshot_id`.
-- `computer_act` validates one action against that snapshot, executes it serially, consumes the snapshot even on failure, and returns a fresh observation.
+- `computer_observe` captures the main display, can discover opaque app/window targets, and on macOS can return an exact window PNG plus bounded Accessibility elements.
+- `computer_act` validates one action against that one-use snapshot, prefers precise element handles, supports explicit background/foreground window delivery, verifies bounded postconditions, and returns the next state without a redundant observe call.
 
 The plugin has no model, provider endpoint, API key, internal planner, OCR service, per-action dialog, or GUI. Host approval and safety policy still apply.
 
@@ -24,7 +24,7 @@ node dist/cli/main.js doctor --json
 node dist/cli/main.js config --client generic
 ```
 
-`setup --development` downloads only the checksummed Cua Runtime artifacts pinned in `engine.lock.json`, verifies the installed identity, starts the runtime, and opens the operating-system permission flow. On macOS, grant Screen Recording and Accessibility to the stable `CuaDriver.app` identity. The final command prints the stdio MCP configuration to add to the Agent host.
+`setup --development` downloads the exact verified upstream installer siblings pinned in `engine.lock.json`, runs the locked install path, verifies the installed identity, starts the runtime, and opens the operating-system permission flow. On macOS, grant Screen Recording and Accessibility to the stable `CuaDriver.app` identity. The final command prints the stdio MCP configuration to add to the Agent host.
 
 Use `config --client codex` or `config --client kimi` for the documented host-specific status and configuration. WorkBuddy and DeepSeek Harness adapters are included as experimental declarations; they are not represented as verified integrations.
 
@@ -36,4 +36,9 @@ npx --yes pnpm@9.0.4 typecheck
 npm pack --dry-run --json
 ```
 
-The initial `0.1.0` lock is development-eligible but not release-eligible. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed real macOS Retina, Windows 100%/125%/150% DPI, host-loop, and soak evidence gates. See `../docs/troubleshooting.md` for permissions, evidence, and release details.
+## Current platform scope
+
+- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background delivery, pixel fallback, bounded verification, and safe app launch are implemented. Real Retina and host-loop evidence is still required before Beta.
+- Windows with Cua 0.22.2: primary-desktop screenshot/input compatibility remains implemented. The pinned upstream `list_apps`, `list_windows`, and `get_window_state` entries are stubs, so window precision/background mode is intentionally not advertised as available. Windows 100%/125%/150% DPI evidence remains a release blocker.
+
+The `0.2.0` lock is development-eligible but not release-eligible. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. See `../docs/troubleshooting.md` for permissions, evidence, and release details.

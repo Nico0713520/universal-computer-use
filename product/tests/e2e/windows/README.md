@@ -2,6 +2,8 @@
 
 This lane produces Windows 10/11 x64 evidence for exactly one separately configured display scale: `100`, `125`, or `150` percent. It is not a simulator. With `CUA_E2E` unset, the real-desktop tests skip; the schema and controlled permission-classification tests still run on any development OS.
 
+This pinned Cua 0.22.2 lane proves only the primary-desktop compatibility path. Its Windows `list_apps`, `list_windows`, and `get_window_state` tools are upstream stubs, so these runs must not be cited as window discovery, semantic targeting, or background-window evidence. Those capabilities require a later reviewed runtime lock and new real-DPI assertions.
+
 `run.ps1` is the only supported evidence entrypoint. It fails before moving the mouse when the host is not Windows x64, the process is in Session 0, WTS reports a non-active session, the input desktop is locked or secure, the OS is older than build 18362, the actual system DPI differs from the selected lane, the browser/build/Runtime is missing, Cua differs from `engine.lock.json`, or the calibration is missing or stale. RDP must remain connected and the desktop unlocked for the whole run.
 
 ## Why content-origin calibration is required
@@ -84,4 +86,4 @@ The runner executes the exact `CUA_RUNTIME_EXE --version` command and requires t
 
 It does not contain screenshots, screenshot bytes, typed strings, key values, model prompts, environment dumps, paths, Cua `rawJson`, or free-form diagnostic text. Real evidence and calibration files must stay outside the repository and must not be committed.
 
-The normal foreground fixture must succeed. `permission-reporting.spec.ts` uses controlled Cua boundary results to prove that denials become `action_refused` or `action_failed` and never `executed`. The public v1 protocol does not expose raw Cua diagnostics; the evidence records only stable classifications and a hash of the allowlisted doctor report. The plugin does not detect `target_privilege_mismatch`, inspect target process tokens, automate UAC, or support the UAC secure desktop.
+The normal foreground fixture must succeed. `permission-reporting.spec.ts` uses controlled Cua boundary results to prove that denials become `action_refused` or `action_failed` and never `executed`. Protocol 1.1 does not expose raw Cua diagnostics; the evidence records only stable classifications and a hash of the allowlisted doctor report. The plugin does not detect `target_privilege_mismatch`, inspect target process tokens, automate UAC, or support the UAC secure desktop.

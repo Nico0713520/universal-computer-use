@@ -13,7 +13,7 @@ This lane proves the product seam on one controlled macOS 14+ Retina machine. A 
 
 The development lane is diagnostic and always non-promotable. The candidate lane accepts only a formally staged SemVer whose source commit contains every locked required fix; it deliberately requires `release_eligible:false`. Task 15 alone may validate and promote candidate evidence.
 
-`CUA_REPEAT` counts complete deterministic iterations. Each iteration starts fresh fixture/browser/MCP processes, executes Task 10's full nine-action shared lane and its freshness assertion, then runs the Retina click/drag coordinate checks once. The controlled permission contract and disruptive real Runtime restart lane run once after all deterministic iterations. Evidence is written only if every iteration and both platform gates pass.
+`CUA_REPEAT` counts complete deterministic iterations. Each iteration starts fresh fixture/browser/MCP processes, executes the full nine-action desktop lane and its freshness assertion, then runs the Retina click/drag checks plus one exact-window discovery, semantic-element background click, fresh-window-state assertion, and bounded window-area check. The controlled permission contract and disruptive real Runtime restart lane run once after all deterministic iterations. Evidence is written only if every iteration and both platform gates pass.
 
 ## Measure the content origin
 

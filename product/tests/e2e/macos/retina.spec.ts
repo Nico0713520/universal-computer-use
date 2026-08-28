@@ -295,4 +295,69 @@ describe.skipIf(!REAL_E2E)("macOS Retina screenshot/action coordinate frame", ()
       );
     }
   }, 300_000);
+
+  it("discovers the exact fixture window and clicks its semantic element in background mode", async () => {
+    if (client === undefined) throw new Error("MCP client is not connected");
+    const desktop = CallToolResultSchema.parse(await client.callTool({
+      name: "computer_observe",
+      arguments: {
+        target: { kind: "desktop" },
+        discover: { windows: true, query: "Computer Use Deterministic Desktop Harness" },
+      },
+    }));
+    expect(desktop.isError).not.toBe(true);
+    png(desktop);
+    const desktopState = desktop.structuredContent as {
+      screenshot?: { width?: unknown; height?: unknown };
+      windows?: Array<{ window_ref?: unknown; title?: unknown }>;
+    };
+    const candidates = (desktopState.windows ?? []).filter((window) =>
+      typeof window.title === "string" && window.title.includes("Computer Use Deterministic Desktop Harness"));
+    expect(candidates).toHaveLength(1);
+    const windowRef = candidates[0]?.window_ref;
+    if (typeof windowRef !== "string") throw new Error("window discovery omitted window_ref");
+
+    const windowState = CallToolResultSchema.parse(await client.callTool({
+      name: "computer_observe",
+      arguments: {
+        target: { kind: "window", window_ref: windowRef },
+        include_screenshot: true,
+        elements: { query: "Single click", max_elements: 100, max_depth: 10 },
+      },
+    }));
+    expect(windowState.isError).not.toBe(true);
+    png(windowState);
+    const precise = windowState.structuredContent as {
+      snapshot_id?: unknown;
+      screenshot?: { width?: unknown; height?: unknown };
+      elements?: Array<{ element_ref?: unknown; label?: unknown }>;
+    };
+    if (typeof precise.screenshot?.width !== "number" || typeof precise.screenshot.height !== "number" ||
+        typeof desktopState.screenshot?.width !== "number" || typeof desktopState.screenshot.height !== "number") {
+      throw new Error("window/desktop screenshot dimensions are missing");
+    }
+    expect(precise.screenshot.width * precise.screenshot.height).toBeLessThanOrEqual(
+      desktopState.screenshot.width * desktopState.screenshot.height * 0.5,
+    );
+    const element = precise.elements?.find((candidate) => candidate.label === "Single click");
+    if (typeof precise.snapshot_id !== "string" || typeof element?.element_ref !== "string") {
+      throw new Error("semantic fixture element was not discovered");
+    }
+    const before = await json<HarnessState>("/state");
+    const acted = CallToolResultSchema.parse(await client.callTool({
+      name: "computer_act",
+      arguments: {
+        snapshot_id: precise.snapshot_id,
+        action: { type: "click", element_ref: element.element_ref },
+        delivery: "background",
+      },
+    }));
+    expect(acted.isError).not.toBe(true);
+    png(acted);
+    expect(acted.structuredContent).toMatchObject({
+      target: { kind: "window", window_ref: windowRef },
+      action_result: { delivery: "background" },
+    });
+    await waitForState((state) => state.clicks === before.clicks + 1);
+  }, 120_000);
 });

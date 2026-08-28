@@ -4,7 +4,7 @@
 
 - macOS 14 or newer on Apple silicon or Intel x64.
 - Node.js 22.19.0 or newer and an npm-compatible package manager.
-- An unlocked, foreground login session. The v1 plugin does not operate the login window, FileVault unlock screen, screen saver lock screen, or a background session.
+- An unlocked, foreground login session. The v0.2 plugin does not operate the login window, FileVault unlock screen, screen saver lock screen, or a disconnected background session.
 - A host Agent that supports local stdio MCP, forwards MCP image content to its current multimodal model, and can continue tool calls until the visible task is complete.
 
 Model rule: this plugin uses the host Agent's current multimodal model. It does not include a model, model API key, planner, or private vision service.

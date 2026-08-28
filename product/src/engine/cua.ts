@@ -62,6 +62,17 @@ function supportedPlatform(): "macos" | "windows" {
   throw new ComputerUseError("unsupported_platform", "Unsupported host platform", "stop", false);
 }
 
+export function assertPreciseWindowSupport(platform: "macos" | "windows"): void {
+  if (platform === "windows") {
+    throw new ComputerUseError(
+      "unsupported_platform",
+      "Precise app and window tools are unavailable on Windows in locked Cua 0.22.2",
+      "stop",
+      false,
+    );
+  }
+}
+
 export class CuaEngine implements EnginePort {
   readonly name = "cua-driver" as const;
 
@@ -158,6 +169,7 @@ export class CuaEngine implements EnginePort {
   async discover(input: EngineDiscoverInput, signal: AbortSignal): Promise<EngineDiscovery> {
     if (!input.apps && !input.windows) return { apps: [], windows: [] };
     const platform = supportedPlatform();
+    assertPreciseWindowSupport(platform);
     const appsResult = await this.sdk.callTool("list_apps", "{}", { signal });
     const apps = parseAppList(appsResult, platform);
     if (!input.windows) return { apps: input.apps ? apps : [], windows: [] };
@@ -192,6 +204,7 @@ export class CuaEngine implements EnginePort {
       return parseDesktopObservation(result);
     }
     const windowInput = input as Extract<EngineObserveInput, { target: { kind: "window" } }>;
+    assertPreciseWindowSupport(supportedPlatform());
     const native = windowInput.target.window.native;
     const pid = native.pid;
     const windowId = native.window_id;

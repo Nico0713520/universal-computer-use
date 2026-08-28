@@ -8,6 +8,14 @@
 
 **Tech Stack:** TypeScript 5.7, Node.js 22.19+, Zod 4.4, MCP SDK 1.30, Vitest 3.2, `@trycua/cua-driver` 0.22.2.
 
+## Implementation status (2026-08-28)
+
+- Tasks 1–9 and Task 10's policy, documentation, automated tests, and package verification are implemented.
+- Automated result: 30 test files / 258 tests pass; typecheck and `npm pack --dry-run --json` pass.
+- macOS precise-window E2E coverage is authored but remains development evidence until run with `CUA_E2E=1` on an authorized Retina machine.
+- Source audit changed one assumption: Cua 0.22.2's Windows app/window/state tools are stubs. Windows therefore keeps the desktop compatibility path and actively returns `unsupported_platform` for precise requests. The originally planned Windows precision harness is deferred rather than replaced with fake evidence.
+- Runtime 0.22.2 remains `release_eligible:false`; no Beta/Stable promotion is implied by automated tests.
+
 ## Global Constraints
 
 - Public MCP tools remain exactly `computer_observe` and `computer_act`.

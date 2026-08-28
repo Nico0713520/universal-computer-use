@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Windows 10 or Windows 11 on x64. Windows ARM64 and 32-bit Windows are outside the v1 release matrix.
+- Windows 10 or Windows 11 on x64. Windows ARM64 and 32-bit Windows are outside the v0.2 release matrix.
 - Node.js 22.19.0 or newer and an npm-compatible package manager.
 - Windows PowerShell and an unlocked, interactive user desktop. Session 0, a disconnected RDP desktop, the lock screen, and the UAC secure desktop are not supported.
 - A host Agent that supports local stdio MCP, forwards MCP image content to its current multimodal model, and can continue tool calls until the visible task is complete.

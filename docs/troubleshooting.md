@@ -13,7 +13,8 @@ Run `computer-use doctor --json`. A healthy report has `ok:true`, the exact engi
 - Grant both Screen Recording and Accessibility to the signed `CuaDriver.app` through System Settings. If capture or input remains denied, remove the stale permission entry, reopen the unchanged signed app, grant both permissions again, then rerun doctor.
 - `codesign --verify --deep --strict /Applications/CuaDriver.app` and `spctl --assess --type execute /Applications/CuaDriver.app` must succeed for release evidence. A changed bundle, TeamIdentifier or designated requirement is a different identity and must not reuse old evidence.
 - Retina is correct only when the Runtime reports a backing scale greater than `1` and Task 10's visible marker measurement proves screenshot-pixel clicks and drags. Do not compensate by multiplying coordinates in the plugin or by guessing a browser title-bar offset.
-- The current console user must own an unlocked Aqua session. Lock screen, loginwindow and disconnected remote sessions are outside v1.
+- The current console user must own an unlocked Aqua session. Lock screen, loginwindow and disconnected remote sessions are outside v0.2.
+- v0.2 window mode converts trusted Accessibility frames from desktop logical points into the exact window PNG pixel frame. If Cua cannot prove that frame, the plugin omits screenshot/bounds and keeps semantic elements; do not reconstruct coordinates yourself.
 
 ## Windows 10 1903+ / Windows 11 x64
 
@@ -21,6 +22,7 @@ Run `computer-use doctor --json`. A healthy report has `ok:true`, the exact engi
 - Session 0, a locked or disconnected desktop and the UAC secure desktop are unsupported. Keep a logged-in interactive session attached for the whole run.
 - The plugin does not inspect target process integrity, elevate itself, bypass UAC or promise control of an administrator application from a lower-integrity process. Cua refusals remain `action_refused` or `action_failed`; they are never rewritten as success.
 - A release candidate requires one valid Authenticode subject/thumbprint that is identical in the 100%, 125% and 150% evidence files.
+- The pinned Cua 0.22.2 Windows discovery/window-state implementations are upstream stubs. Use the desktop compatibility path only; Windows window precision and background targeting remain unavailable until a later reviewed lock supplies real implementations and all DPI lanes pass.
 
 ## Host Agent behavior
 
@@ -33,10 +35,10 @@ If a host sees text but not the screenshot, it does not support MCP `ImageConten
 - Measure a native host connection, not a temporary shell bridge. The MCP server must remain one long-running stdio process because snapshot state is process-local. Do not add a fixed post-action sleep: `computer_act` already captures and returns the next screenshot as soon as the engine call completes.
 - Use the screenshot and `snapshot_id` returned by `computer_act` for the next decision, even when the reported effect is uncertain. Calling `computer_observe` again performs a redundant capture and replaces that valid snapshot.
 - Prefer one `type` action for complete text and a confirmed-focus shortcut when they are equivalent to several visual clicks. This reduces model round trips without batching input or weakening the one-use snapshot rule.
-- Select the interior center of a visible control in the exact returned PNG. Avoid borders and gaps. A point that works after the model adjusts its aim is not evidence of a DPI transform bug; a transform defect requires a repeatable offset measured at several known points.
-- v1 is primary-display desktop control. It observes the currently visible surface and does not target a background window. If the foreground changes, discard geometry inferred from the previous surface and continue from the new screenshot.
-
-The locked Cua Runtime also exposes window-scoped capture, accessibility element handles and background delivery, but v1 intentionally does not expose those contracts through its two-tool desktop protocol. Adding them requires a separately versioned protocol and platform evidence; they must not be silently mixed into desktop coordinates.
+- Discover an app/window and prefer `element_ref` for standard controls. This avoids guessing a button center and can act on a macOS background window. Use the exact window PNG only for custom-drawn surfaces; discovery bounds are desktop-logical metadata, never action coordinates.
+- Select the interior center of a custom control in the exact returned PNG. Avoid borders and gaps. A point that works after the model adjusts its aim is not evidence of a DPI transform bug; a transform defect requires a repeatable offset measured at several known points.
+- `visual_status:"capture_unavailable"` or `"pixel_frame_unproven"` is a semantic-only snapshot: element actions remain possible, but coordinates are intentionally refused.
+- Background `effect:"unverifiable"` is not permission to resend. Inspect the fresh window state, and use explicit foreground delivery only when non-delivery is proved and retrying is safe. Never repeat append-style text on uncertainty.
 
 ## Logs and privacy
 

@@ -24,9 +24,9 @@ describe("canonical computer-use Skill policy", () => {
 
     expect(skill.match(/^## Control loop$/gm)).toHaveLength(1);
     expect(skill).toMatch(/first action[\s\S]*computer_observe/i);
-    expect(skill).toMatch(/newest screenshot[\s\S]*before[\s\S]*next action/i);
+    expect(skill).toMatch(/fresh state returned by `computer_act`[\s\S]*before[\s\S]*next action/i);
     expect(skill).toMatch(/only[\s\S]*newest `snapshot_id`/i);
-    expect(skill).toMatch(/one action[\s\S]*each `computer_act`/i);
+    expect(skill).toMatch(/exactly one smallest useful action[\s\S]*each `computer_act`/i);
     expect(skill).toMatch(/never[\s\S]*blindly repeat[\s\S]*(failed|uncertain)/i);
     expect(skill).toMatch(/visible goal[\s\S]*satisfied[\s\S]*stop/i);
     expect(skill).toMatch(/report[\s\S]*(permission|runtime)[\s\S]*blocker/i);
@@ -38,12 +38,16 @@ describe("canonical computer-use Skill policy", () => {
     const skill = await readSkill();
 
     expect(skill).toMatch(
-      /screenshot returned by `computer_act`[\s\S]*do not call `computer_observe` again/i,
+      /new snapshot[\s\S]*next observation[\s\S]*do not call `computer_observe` again/i,
     );
-    expect(skill).toMatch(/never insert a fixed wait[\s\S]*visible evidence/i);
+    expect(skill).toMatch(/never insert a fixed post-action wait[\s\S]*fresh evidence/i);
     expect(skill).toMatch(/interior center[\s\S]*(edge|gap)/i);
-    expect(skill).toMatch(/currently visible[\s\S]*background window/i);
-    expect(skill).toMatch(/complete text[\s\S]*single `type` action/i);
+    expect(skill).toMatch(/discover apps and windows before guessing coordinates/i);
+    expect(skill).toMatch(/prefer `element_ref`/i);
+    expect(skill).toMatch(/do not repeat unverifiable text input/i);
+    expect(skill).toMatch(/complete text once/i);
+    expect(skill).not.toMatch(/sleep 3/i);
+    expect(skill).not.toContain("bring_to_front");
   });
 
   it("documents all public actions and actionable recovery without expanding the protocol", async () => {
@@ -57,7 +61,11 @@ describe("canonical computer-use Skill policy", () => {
       "drag",
       "scroll",
       "type",
+      "type_text",
       "keypress",
+      "set_value",
+      "invoke_menu",
+      "launch_app",
       "wait",
     ]) {
       expect(skill).toContain(`\`${action}\``);
