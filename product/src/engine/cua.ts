@@ -8,7 +8,6 @@ import {
 } from "@trycua/cua-driver";
 
 import { ComputerUseError } from "../errors.js";
-import type { ComputerAction } from "../protocol.js";
 import { mapAction } from "./action-mapper.js";
 import {
   parseAppList,
@@ -20,6 +19,7 @@ import {
 import type { EngineLock } from "./lock.js";
 import type {
   EngineDesktopObservation,
+  EngineAction,
   EngineDiscoverInput,
   EngineDiscovery,
   EngineExecution,
@@ -213,7 +213,7 @@ export class CuaEngine implements EnginePort {
     return parseWindowState(result, windowInput.target.window, windowInput.includeScreenshot);
   }
 
-  async execute(action: ComputerAction, signal: AbortSignal): Promise<EngineExecution> {
+  async execute(action: EngineAction, signal: AbortSignal): Promise<EngineExecution> {
     const mapped = mapAction(action, this.sessionId);
     if ("waitMs" in mapped) {
       await cancellableWait(mapped.waitMs, signal);

@@ -1,4 +1,5 @@
 import { ComputerUseError } from "../errors.js";
+import type { EngineAction, EngineWindowAction, EngineWindowAddress } from "./port.js";
 import type { ComputerAction } from "../protocol.js";
 
 export type CuaCall = Readonly<{
@@ -26,7 +27,104 @@ function unsupported(type: string): never {
   );
 }
 
-export function mapAction(action: ComputerAction, session: string): MappedAction {
+function windowAddressArgs(
+  address: EngineWindowAddress | undefined,
+  target: Readonly<{ pid: number; windowId: number }>,
+  delivery: "background" | "foreground",
+): Record<string, unknown> {
+  if (address?.kind === "element") {
+    return {
+      ...(delivery === "foreground" ? { pid: target.pid, window_id: target.windowId } : {}),
+      element_token: address.token,
+      delivery_mode: delivery,
+    };
+  }
+  return {
+    pid: target.pid,
+    window_id: target.windowId,
+    ...(address === undefined ? {} : { x: address.x, y: address.y }),
+    delivery_mode: delivery,
+  };
+}
+
+function mapWindowAction(
+  action: EngineWindowAction,
+  target: Readonly<{ pid: number; windowId: number }>,
+  delivery: "background" | "foreground",
+  session: string,
+): MappedAction {
+  switch (action.type) {
+    case "click":
+    case "double_click":
+    case "right_click": {
+      const elementAddressed = action.address.kind === "element";
+      const tool = elementAddressed
+        ? action.type === "click" ? "click" : action.type
+        : "click";
+      const button = action.type === "right_click" ? "right" : "left";
+      const count = action.type === "double_click" ? 2 : 1;
+      return {
+        tool,
+        args: {
+          session,
+          ...windowAddressArgs(action.address, target, delivery),
+          ...(elementAddressed ? {} : { button, count }),
+        },
+      };
+    }
+    case "drag":
+      return {
+        tool: "drag",
+        args: {
+          session,
+          pid: target.pid,
+          window_id: target.windowId,
+          from_x: action.fromX,
+          from_y: action.fromY,
+          to_x: action.toX,
+          to_y: action.toY,
+          ...(action.durationMs === undefined ? {} : { duration_ms: action.durationMs }),
+          delivery_mode: delivery,
+        },
+      };
+    case "scroll":
+      return {
+        tool: "scroll",
+        args: {
+          session,
+          ...windowAddressArgs(action.address, target, delivery),
+          direction: action.direction,
+          amount: action.amount,
+          by: action.by ?? "line",
+        },
+      };
+    case "set_value":
+      return {
+        tool: "set_value",
+        args: { session, element_token: action.address.token, value: action.value },
+      };
+    case "type_text":
+      return {
+        tool: "type_text",
+        args: { session, ...windowAddressArgs(action.address, target, delivery), text: action.text },
+      };
+    case "keypress": {
+      const addressing = windowAddressArgs(action.address, target, delivery);
+      return action.keys.length === 1
+        ? { tool: "press_key", args: { session, ...addressing, key: action.keys[0] } }
+        : { tool: "hotkey", args: { session, ...addressing, keys: action.keys } };
+    }
+    case "invoke_menu":
+      return {
+        tool: "invoke_menu",
+        args: { session, pid: target.pid, window_id: target.windowId, path: action.path },
+      };
+    case "wait":
+      return { waitMs: action.ms };
+  }
+}
+
+function mapDesktopAction(action: ComputerAction, session: string): MappedAction {
   switch (action.type) {
     case "click":
       if (!("x" in action)) return unsupported(action.type);
@@ -125,4 +223,17 @@ export function mapAction(action: ComputerAction, session: string): MappedAction
     case "launch_app":
       return unsupported(action.type);
   }
+}
+
+export function mapAction(action: ComputerAction | EngineAction, session: string): MappedAction {
+  if (!("target" in action)) return mapDesktopAction(action, session);
+  const engineAction = action as EngineAction;
+  if (engineAction.target.kind === "desktop") {
+    return mapDesktopAction((engineAction as Extract<EngineAction, { target: { kind: "desktop" } }>).action, session);
+  }
+  if (engineAction.target.kind === "app") {
+    return unsupported((engineAction as Extract<EngineAction, { target: { kind: "app" } }>).action.type);
+  }
+  const windowAction = engineAction as Extract<EngineAction, { target: { kind: "window" } }>;
+  return mapWindowAction(windowAction.action, windowAction.target, windowAction.delivery ?? "background", session);
 }

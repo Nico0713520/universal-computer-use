@@ -4,6 +4,7 @@ import { ComputerUseError } from "../errors.js";
 import type {
   EngineDesktopObservation,
   EngineElement,
+  EngineObserveInput,
   EnginePort,
   EngineWindowObservation,
 } from "../engine/port.js";
@@ -111,6 +112,31 @@ export async function observeWithOneTransientRetry(
   }
 }
 
+export async function observeWindowWithOneTransientRetry(
+  engine: EnginePort,
+  input: Extract<EngineObserveInput, { target: { kind: "window" } }>,
+  lifecycleSignal: AbortSignal,
+): Promise<EngineWindowObservation> {
+  const run = async (): Promise<EngineWindowObservation> => {
+    const observed = await withTimeout(
+      (signal) => engine.observe(input, signal),
+      20_000,
+      "capture_failed",
+      lifecycleSignal,
+    );
+    if (!("visualStatus" in observed)) {
+      throw new ComputerUseError("engine_contract_changed", "Window observation returned desktop state", "doctor", false);
+    }
+    return observed;
+  };
+  try {
+    return await run();
+  } catch (error) {
+    if (!(error instanceof ComputerUseError) || error.code !== "capture_failed" || !error.retryable) throw error;
+    return run();
+  }
+}
+
 export function toObservationEnvelope(
   engine: EnginePort,
   snapshot: SnapshotRecord,
@@ -191,15 +217,15 @@ function publicRole(role: string): string {
 function provenActions(role: string): ProjectedElement["public"]["actions"] {
   const value = publicRole(role).replace(/[\s_-]/gu, "");
   if (["button", "checkbox", "radiobutton", "menuitem", "link", "tab"].includes(value)) {
-    return Object.freeze(["click"]);
+    return Object.freeze(["click", "double_click", "right_click"]);
   }
   if (["textfield", "textarea", "edit", "combobox", "searchfield"].includes(value)) {
-    return Object.freeze(["click", "set_value", "type_text", "keypress"]);
+    return Object.freeze(["click", "double_click", "right_click", "set_value", "type_text", "keypress"]);
   }
-  if (["scrollarea", "scrollbar"].includes(value)) return Object.freeze(["click", "scroll"]);
+  if (["scrollarea", "scrollbar"].includes(value)) return Object.freeze(["click", "double_click", "right_click", "scroll"]);
   // Cua's get_window_state only emits element-indexed rows that its click
   // route can address; non-actionable display-only AX rows are omitted.
-  return Object.freeze(["click"]);
+  return Object.freeze(["click", "double_click", "right_click"]);
 }
 
 function identityFor(element: EngineElement, byIndex: ReadonlyMap<number, EngineElement>): ElementIdentity {

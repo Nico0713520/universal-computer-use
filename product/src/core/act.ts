@@ -1,7 +1,8 @@
 import { ComputerUseError } from "../errors.js";
-import type { EngineDesktopObservation, EngineExecution, EnginePort } from "../engine/port.js";
-import type { ActionResult, ActEnvelope, ComputerAction } from "../protocol.js";
+import type { EngineDesktopObservation, EngineExecution, EnginePort, EngineWindowObservation } from "../engine/port.js";
+import { ActOutputSchema, type ActionResult, type ActEnvelope, type ComputerAction } from "../protocol.js";
 import type { SnapshotRecord } from "../snapshot-store.js";
+import type { ProjectedElement } from "./observe.js";
 import { PROTOCOL_VERSION } from "../version.js";
 
 export function assertCoordinates(
@@ -75,11 +76,22 @@ function publicActionErrorCode(
   }
 }
 
-function toActionResult(result: EngineExecution): ActionResult {
+export function toActionResult(result: EngineExecution): ActionResult {
   const common = {
     route: result.route,
     delivery: result.delivery,
-    evidence: [],
+    evidence: [...(result.evidence ?? [])] as ActionResult["evidence"],
+    ...(result.deliveredCount === undefined ? {} : { delivered_count: result.deliveredCount }),
+    ...(result.escalation === undefined
+      ? {}
+      : {
+          escalation: {
+            reason: result.escalation.reason,
+            ...(result.escalation.suggestedDelivery === undefined
+              ? {}
+              : { suggested_delivery: result.escalation.suggestedDelivery }),
+          },
+        }),
   };
   return result.status === "executed"
     ? {
@@ -101,6 +113,46 @@ function toActionResult(result: EngineExecution): ActionResult {
           effect: "unverifiable",
           error_code: publicActionErrorCode(result.errorCode, "action_failed"),
         };
+}
+
+export function toWindowActEnvelope(
+  engine: EnginePort,
+  consumedId: string,
+  snapshot: SnapshotRecord,
+  result: EngineExecution,
+  value: EngineWindowObservation,
+  projected: Readonly<{ elements: readonly ProjectedElement[]; truncated: boolean }>,
+): ActEnvelope {
+  const screenshot = value.visualStatus === "available" && value.image !== undefined
+    ? { mime_type: "image/png" as const, width: value.image.width, height: value.image.height }
+    : undefined;
+  const structured = ActOutputSchema.parse({
+    next_state: "available",
+    protocol_version: PROTOCOL_VERSION,
+    session_id: engine.sessionId,
+    consumed_snapshot_id: consumedId,
+    snapshot_id: snapshot.id,
+    target: {
+      kind: "window",
+      window_ref: value.target.windowRef,
+      app_ref: value.target.appRef,
+      app_name: value.target.appName,
+      title: value.target.title,
+    },
+    coordinate_space: "window_screenshot_pixels",
+    action_result: toActionResult(result),
+    verification: { status: "not_requested" },
+    visual_status: value.visualStatus,
+    ...(screenshot === undefined ? {} : { screenshot }),
+    elements: projected.elements.map((element) => element.public),
+    elements_truncated: projected.truncated,
+  });
+  return {
+    structured,
+    ...(value.visualStatus === "available" && value.image !== undefined
+      ? { image: { mimeType: "image/png" as const, dataBase64: value.image.dataBase64 } }
+      : {}),
+  };
 }
 
 export function toActEnvelope(

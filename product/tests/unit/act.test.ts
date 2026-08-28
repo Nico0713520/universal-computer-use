@@ -95,7 +95,7 @@ describe("ComputerUseRuntime.act", () => {
     });
 
     expect(result.structured.action_result.status).toBe("executed");
-    expect(engine.executions).toEqual([action]);
+    expect(engine.executions).toEqual([{ target: { kind: "desktop" }, action }]);
   });
 
   it("recaptures immediately without an implicit post-action delay", async () => {

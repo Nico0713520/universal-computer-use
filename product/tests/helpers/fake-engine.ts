@@ -1,7 +1,7 @@
 import { ComputerUseError, type ComputerUseErrorCode } from "../../src/errors.js";
 import { ComputerUseRuntime } from "../../src/core/runtime.js";
-import type { ComputerAction } from "../../src/protocol.js";
 import type {
+  EngineAction,
   EngineExecution,
   EngineDesktopObservation,
   EngineDiscoverInput,
@@ -39,7 +39,7 @@ export class FakeEngine implements EnginePort {
   readonly name = "cua-driver" as const;
   readonly version = "0.22.2";
   readonly sessionId = "fixture-session";
-  readonly executions: ComputerAction[] = [];
+  readonly executions: EngineAction[] = [];
   readonly events: string[] = [];
   observations = 0;
   closes = 0;
@@ -96,11 +96,11 @@ export class FakeEngine implements EnginePort {
   }
 
   async execute(
-    action: ComputerAction,
+    action: EngineAction,
     signal: AbortSignal,
   ): Promise<EngineExecution> {
     this.executions.push(action);
-    this.events.push(`execute:${action.type}`);
+    this.events.push(`execute:${action.action.type}`);
     if (this.options.ignoreActionAbort) return new Promise<never>(() => undefined);
     if (this.options.hangAction) return waitForAbort(signal);
     if (this.options.actionError instanceof Error) throw this.options.actionError;

@@ -1,5 +1,6 @@
 import type { ComputerAction } from "../protocol.js";
 import type {
+  InternalAppTarget,
   InternalWindowTarget,
   NativeAppTarget,
   NativeWindowTarget,
@@ -56,6 +57,37 @@ export type EngineDiscovery = Readonly<{
   windows: readonly NativeWindowTarget[];
 }>;
 
+export type EngineElementAddress = Readonly<{ kind: "element"; token: string }>;
+export type EngineCoordinateAddress = Readonly<{ kind: "coordinate"; x: number; y: number }>;
+export type EngineWindowAddress = EngineElementAddress | EngineCoordinateAddress;
+export type EngineWindowAction =
+  | Readonly<{ type: "click" | "double_click" | "right_click"; address: EngineWindowAddress }>
+  | Readonly<{ type: "drag"; fromX: number; fromY: number; toX: number; toY: number; durationMs?: number }>
+  | Readonly<{
+      type: "scroll";
+      address: EngineWindowAddress;
+      direction: "up" | "down" | "left" | "right";
+      amount: number;
+      by?: "line" | "page";
+    }>
+  | Readonly<{ type: "set_value"; address: EngineElementAddress; value: string }>
+  | Readonly<{ type: "type_text"; address?: EngineWindowAddress; text: string }>
+  | Readonly<{ type: "keypress"; address?: EngineWindowAddress; keys: readonly string[] }>
+  | Readonly<{ type: "invoke_menu"; path: readonly string[] }>
+  | Readonly<{ type: "wait"; ms: number }>;
+
+export type EngineAction =
+  | Readonly<{ target: Readonly<{ kind: "desktop" }>; action: ComputerAction }>
+  | Readonly<{
+      target: Readonly<{ kind: "window"; pid: number; windowId: number }>;
+      action: EngineWindowAction;
+      delivery?: "background" | "foreground";
+    }>
+  | Readonly<{
+      target: Readonly<{ kind: "app"; app: InternalAppTarget }>;
+      action: Readonly<{ type: "launch_app" }>;
+    }>;
+
 export type EngineObserveInput =
   | Readonly<{ target: Readonly<{ kind: "desktop" }> }>
   | Readonly<{
@@ -81,6 +113,10 @@ export type EngineExecution = Readonly<{
   errorCode?: string;
   evidence?: readonly string[];
   deliveredCount?: number;
+  escalation?: Readonly<{
+    reason: "background_unavailable" | "foreground_required" | "effect_unconfirmed" | "window_not_ready" | "window_target_ambiguous";
+    suggestedDelivery?: "foreground";
+  }>;
 }>;
 
 export interface EnginePort {
@@ -90,7 +126,7 @@ export interface EnginePort {
   discover(input: EngineDiscoverInput, signal: AbortSignal): Promise<EngineDiscovery>;
   observe(signal: AbortSignal): Promise<EngineDesktopObservation>;
   observe(input: EngineObserveInput, signal: AbortSignal): Promise<EngineObservation>;
-  execute(action: ComputerAction, signal: AbortSignal): Promise<EngineExecution>;
+  execute(action: EngineAction, signal: AbortSignal): Promise<EngineExecution>;
   health(signal: AbortSignal): Promise<boolean>;
   close(): Promise<void>;
 }

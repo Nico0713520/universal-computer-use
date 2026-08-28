@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { mapAction } from "../../src/engine/action-mapper.js";
 import { CuaEngine } from "../../src/engine/cua.js";
 import { loadEngineLock } from "../../src/engine/lock.js";
+import type { EngineAction } from "../../src/engine/port.js";
 import type { ComputerAction } from "../../src/protocol.js";
 import { fakeSdk } from "../helpers/fake-cua-sdk.js";
 
@@ -152,7 +153,7 @@ describe("Cua action mapping", () => {
     const engine = await CuaEngine.fromSdk(sdk, lock);
 
     await expect(engine.execute(
-      { type: "click", x: 10, y: 20 },
+      { target: { kind: "desktop" }, action: { type: "click", x: 10, y: 20 } },
       new AbortController().signal,
     )).resolves.toEqual({
       status: "executed",
@@ -176,7 +177,7 @@ describe("Cua action mapping", () => {
     const engine = await CuaEngine.fromSdk(sdk, lock);
 
     await expect(engine.execute(
-      { type: "wait", ms: 0 },
+      { target: { kind: "desktop" }, action: { type: "wait", ms: 0 } },
       new AbortController().signal,
     )).resolves.toEqual({
       status: "executed",
@@ -187,9 +188,60 @@ describe("Cua action mapping", () => {
     expect(sdk.callToolCalls).toHaveLength(0);
 
     const controller = new AbortController();
-    const pending = engine.execute({ type: "wait", ms: 1_000 }, controller.signal);
+    const pending = engine.execute({ target: { kind: "desktop" }, action: { type: "wait", ms: 1_000 } }, controller.signal);
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(sdk.callToolCalls).toHaveLength(0);
   });
+
+  it.each([
+    {
+      input: {
+        target: { kind: "window", pid: 42, windowId: 7 },
+        action: { type: "click", address: { kind: "element", token: "private-token" } },
+        delivery: "background",
+      },
+      tool: "click",
+      args: { session, element_token: "private-token", delivery_mode: "background" },
+    },
+    {
+      input: {
+        target: { kind: "window", pid: 42, windowId: 7 },
+        action: { type: "click", address: { kind: "coordinate", x: 20, y: 30 } },
+        delivery: "foreground",
+      },
+      tool: "click",
+      args: { session, pid: 42, window_id: 7, x: 20, y: 30, button: "left", count: 1, delivery_mode: "foreground" },
+    },
+    {
+      input: {
+        target: { kind: "window", pid: 42, windowId: 7 },
+        action: { type: "set_value", address: { kind: "element", token: "private-token" }, value: "hello" },
+      },
+      tool: "set_value",
+      args: { session, element_token: "private-token", value: "hello" },
+    },
+    {
+      input: {
+        target: { kind: "window", pid: 42, windowId: 7 },
+        action: { type: "type_text", address: { kind: "element", token: "private-token" }, text: "hello" },
+        delivery: "background",
+      },
+      tool: "type_text",
+      args: { session, element_token: "private-token", text: "hello", delivery_mode: "background" },
+    },
+    {
+      input: {
+        target: { kind: "window", pid: 42, windowId: 7 },
+        action: { type: "invoke_menu", path: ["File", "New"] },
+      },
+      tool: "invoke_menu",
+      args: { session, pid: 42, window_id: 7, path: ["File", "New"] },
+    },
+  ] satisfies Array<{ input: EngineAction; tool: string; args: Record<string, unknown> }>) (
+    "maps one precise window $input.action.type without a focus-helper call",
+    ({ input, tool, args }) => {
+      expect(mapAction(input, session)).toEqual({ tool, args });
+    },
+  );
 });

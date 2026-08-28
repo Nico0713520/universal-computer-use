@@ -1,6 +1,7 @@
 import {
   ActionDeliveryMode,
   ActionEffect,
+  ActionEvidenceKind,
   ActionEscalationReason,
   ActionEscalationTarget,
   ActionRoute,
@@ -148,5 +149,27 @@ describe("Cua result mapping", () => {
     expect(mapCuaResult(resultWith({
       action: actionWith({ delivery: { mode: 99 as ActionDeliveryMode } }),
     }))).toMatchObject({ status: "failed", errorCode: "action_failed" });
+  });
+
+  it("keeps only trusted evidence, delivery count, and stable escalation metadata", () => {
+    expect(mapCuaResult(resultWith({
+      action: actionWith({
+        effect: ActionEffect.Unverifiable,
+        delivery: { mode: ActionDeliveryMode.Background, deliveredCount: 1 },
+        evidence: [
+          { kind: ActionEvidenceKind.ValueReadback },
+          { kind: ActionEvidenceKind.WindowChange },
+          { kind: 99 as ActionEvidenceKind },
+        ],
+        escalation: {
+          target: ActionEscalationTarget.Foreground,
+          reason: ActionEscalationReason.EffectUnconfirmed,
+        },
+      }),
+    }))).toMatchObject({
+      evidence: ["value_readback"],
+      deliveredCount: 1,
+      escalation: { reason: "effect_unconfirmed", suggestedDelivery: "foreground" },
+    });
   });
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ComputerUseRuntime } from "../../src/core/runtime.js";
 import type {
   EngineDesktopObservation,
+  EngineAction,
   EngineDiscoverInput,
   EngineDiscovery,
   EngineExecution,
@@ -11,13 +12,13 @@ import type {
   EnginePort,
   EngineWindowObservation,
 } from "../../src/engine/port.js";
-import type { ComputerAction } from "../../src/protocol.js";
 import { handleObserve } from "../../src/mcp/handlers.js";
 
 class WindowFixtureEngine implements EnginePort {
   readonly name = "cua-driver" as const;
   readonly version = "0.22.2";
   readonly sessionId = "window-fixture-session";
+  readonly executions: EngineAction[] = [];
   constructor(private readonly visualStatus: EngineWindowObservation["visualStatus"] = "available") {}
 
   async discover(_input: EngineDiscoverInput, _signal: AbortSignal): Promise<EngineDiscovery> {
@@ -86,7 +87,8 @@ class WindowFixtureEngine implements EnginePort {
       : { ...base, visualStatus: this.visualStatus };
   }
 
-  async execute(_action: ComputerAction, _signal: AbortSignal): Promise<EngineExecution> {
+  async execute(action: EngineAction, _signal: AbortSignal): Promise<EngineExecution> {
+    this.executions.push(action);
     return { status: "executed", effect: "unverifiable", route: "unknown", delivery: "unknown" };
   }
 
@@ -141,7 +143,7 @@ describe("window observation runtime", () => {
         label: "7",
         bounds: { x: 20, y: 1020, width: 200, height: 160 },
         enabled: true,
-        actions: ["click"],
+        actions: ["click", "double_click", "right_click"],
       }],
       elements_truncated: false,
     });
@@ -162,11 +164,42 @@ describe("window observation runtime", () => {
     expect(observed.isError).not.toBe(true);
     expect(observed.structuredContent).toMatchObject({
       visual_status: "capture_unavailable",
-      elements: [{ role: "button", label: "7", actions: ["click"] }],
+      elements: [{ role: "button", label: "7", actions: ["click", "double_click", "right_click"] }],
     });
     expect(observed.structuredContent).not.toHaveProperty("screenshot");
     expect((observed.structuredContent?.elements as unknown[])[0]).not.toHaveProperty("bounds");
     expect(observed.content.every((item) => item.type !== "image")).toBe(true);
+    await runtime.close();
+  });
+
+  it("resolves one element ref to its private token and reobserves the same window", async () => {
+    const engine = new WindowFixtureEngine();
+    const runtime = new ComputerUseRuntime(engine);
+    const windowRef = await discoverCalculator(runtime);
+    const observed = await runtime.observe({
+      target: { kind: "window", window_ref: windowRef },
+      include_screenshot: true,
+    });
+    if (!("elements" in observed.structured)) throw new Error("expected window elements");
+    const elementRef = observed.structured.elements[0]!.element_ref;
+
+    const acted = await runtime.act({
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "click", element_ref: elementRef },
+      delivery: "background",
+    });
+
+    expect(engine.executions).toEqual([{
+      target: { kind: "window", pid: 42, windowId: 7 },
+      action: { type: "click", address: { kind: "element", token: "private-element-token" } },
+      delivery: "background",
+    }]);
+    expect(acted.structured).toMatchObject({
+      next_state: "available",
+      target: { kind: "window", window_ref: windowRef },
+      visual_status: "available",
+      elements: [{ role: "button", label: "7" }],
+    });
     await runtime.close();
   });
 });
