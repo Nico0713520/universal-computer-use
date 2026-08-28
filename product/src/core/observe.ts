@@ -23,30 +23,47 @@ export async function withTimeout<T>(
   const signal = lifecycleSignal
     ? AbortSignal.any([controller.signal, lifecycleSignal])
     : controller.signal;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let lifecycleAbort: (() => void) | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  let operation: Promise<T>;
+  try {
+    operation = Promise.resolve(run(signal));
+  } catch (error) {
+    operation = Promise.reject(error);
+  }
+  // Promise.race observes late settlement too, but this explicit handler makes
+  // that guarantee visible and protects future refactors from unhandled SDK
+  // rejections after the public deadline has already settled.
+  void operation.catch(() => undefined);
+
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new ComputerUseError(timeoutCode, timeoutCode, "observe_again", true));
+      controller.abort();
+    }, timeoutMs);
+  });
+  const lifecycle = lifecycleSignal === undefined
+    ? new Promise<never>(() => undefined)
+    : new Promise<never>((_, reject) => {
+        lifecycleAbort = () => {
+          reject(new ComputerUseError(
+            "runtime_unavailable",
+            "Runtime is closing",
+            "stop",
+            false,
+          ));
+        };
+        lifecycleSignal.addEventListener("abort", lifecycleAbort, { once: true });
+      });
 
   try {
-    return await run(signal);
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new ComputerUseError(
-        timeoutCode,
-        timeoutCode,
-        "observe_again",
-        true,
-      );
-    }
-    if (lifecycleSignal?.aborted) {
-      throw new ComputerUseError(
-        "runtime_unavailable",
-        "Runtime is closing",
-        "stop",
-        false,
-      );
-    }
-    throw error;
+    return await Promise.race([operation, timeout, lifecycle]);
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
+    if (lifecycleSignal !== undefined && lifecycleAbort !== undefined) {
+      lifecycleSignal.removeEventListener("abort", lifecycleAbort);
+    }
   }
 }
 

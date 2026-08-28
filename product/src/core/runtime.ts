@@ -6,7 +6,13 @@
 import type { EnginePort } from "../engine/port.js";
 import type { ActEnvelope, ActInput, ObservationEnvelope } from "../protocol.js";
 import { SnapshotStore } from "../snapshot-store.js";
-import { assertCoordinates, failedExecution, toActEnvelope } from "./act.js";
+import { ComputerUseError } from "../errors.js";
+import {
+  assertCoordinates,
+  failedExecution,
+  toActEnvelope,
+  toUnavailableActEnvelope,
+} from "./act.js";
 import {
   observeWithOneTransientRetry,
   toObservationEnvelope,
@@ -62,13 +68,43 @@ export class ComputerUseRuntime {
         this.lifecycle.signal,
       );
     } catch (error) {
+      if (
+        error instanceof ComputerUseError &&
+        ["action_timeout", "engine_contract_changed", "engine_unhealthy"].includes(error.code)
+      ) {
+        throw new ComputerUseError(
+          error.code,
+          error.message,
+          error.recovery,
+          error.retryable,
+          true,
+        );
+      }
       actionResult = failedExecution(error);
     }
 
-    const observed = await observeWithOneTransientRetry(
-      this.engine,
-      this.lifecycle.signal,
-    );
+    let observed;
+    try {
+      observed = await observeWithOneTransientRetry(
+        this.engine,
+        this.lifecycle.signal,
+      );
+    } catch (error) {
+      if (
+        error instanceof ComputerUseError &&
+        (error.code === "capture_failed" ||
+          error.code === "target_lost" ||
+          error.code === "window_owner_changed")
+      ) {
+        return toUnavailableActEnvelope(
+          this.engine,
+          snapshot.id,
+          actionResult,
+          error.code,
+        );
+      }
+      throw error;
+    }
     const next = this.snapshots.create(
       this.engine.sessionId,
       observed.image.width,

@@ -64,6 +64,34 @@ function publicActionErrorCode(
   }
 }
 
+function toActionResult(result: EngineExecution): ActionResult {
+  const common = {
+    route: result.route,
+    delivery: result.delivery,
+    evidence: [],
+  };
+  return result.status === "executed"
+    ? {
+        ...common,
+        status: "executed",
+        effect: result.effect === "refused" ? "unverifiable" : result.effect,
+        ...(result.errorCode === undefined ? {} : { error_code: publicActionErrorCode(result.errorCode, "action_failed") }),
+      }
+    : result.status === "refused"
+      ? {
+          ...common,
+          status: "refused",
+          effect: "refused",
+          error_code: publicActionErrorCode(result.errorCode, "action_refused"),
+        }
+      : {
+          ...common,
+          status: "failed",
+          effect: "unverifiable",
+          error_code: publicActionErrorCode(result.errorCode, "action_failed"),
+        };
+}
+
 export function toActEnvelope(
   engine: EnginePort,
   consumedId: string,
@@ -71,32 +99,6 @@ export function toActEnvelope(
   result: EngineExecution,
   value: EngineObservation,
 ): ActEnvelope {
-  const common = {
-    route: result.route,
-    delivery: result.delivery,
-    evidence: [],
-  };
-  const actionResult: ActionResult = result.status === "executed"
-    ? {
-        ...common,
-        status: "executed" as const,
-        effect: result.effect === "refused" ? "unverifiable" as const : result.effect,
-        ...(result.errorCode === undefined ? {} : { error_code: publicActionErrorCode(result.errorCode, "action_failed") }),
-      }
-    : result.status === "refused"
-      ? {
-          ...common,
-          status: "refused" as const,
-          effect: "refused" as const,
-          error_code: publicActionErrorCode(result.errorCode, "action_refused"),
-        }
-      : {
-          ...common,
-          status: "failed" as const,
-          effect: "unverifiable" as const,
-          error_code: publicActionErrorCode(result.errorCode, "action_failed"),
-        };
-
   return {
     structured: {
       next_state: "available",
@@ -106,7 +108,7 @@ export function toActEnvelope(
       snapshot_id: snapshot.id,
       target: { kind: "desktop", display_id: "primary" },
       coordinate_space: "desktop_screenshot_pixels",
-      action_result: actionResult,
+      action_result: toActionResult(result),
       verification: { status: "not_requested" },
       screenshot: {
         mime_type: "image/png",
@@ -115,5 +117,24 @@ export function toActEnvelope(
       },
     },
     image: { mimeType: "image/png", dataBase64: value.image.dataBase64 },
+  };
+}
+
+export function toUnavailableActEnvelope(
+  engine: EnginePort,
+  consumedId: string,
+  result: EngineExecution,
+  code: "target_lost" | "capture_failed" | "window_owner_changed",
+): ActEnvelope {
+  return {
+    structured: {
+      next_state: "unavailable",
+      protocol_version: PROTOCOL_VERSION,
+      session_id: engine.sessionId,
+      consumed_snapshot_id: consumedId,
+      action_result: toActionResult(result),
+      verification: { status: "not_requested" },
+      next_observation_error: { code, recovery: "observe_desktop" },
+    },
   };
 }

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ComputerUseRuntime } from "../../src/core/runtime.js";
 import { ComputerUseError } from "../../src/errors.js";
+import { handleAct } from "../../src/mcp/handlers.js";
 import { createComputerUseServer } from "../../src/mcp/server.js";
 import { fixtureRuntime } from "../helpers/fake-engine.js";
 
@@ -12,6 +13,7 @@ const closeCallbacks: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
   await Promise.allSettled(closeCallbacks.splice(0).map((close) => close()));
+  vi.useRealTimers();
 });
 
 async function connectedClient(runtime: ComputerUseRuntime): Promise<Client> {
@@ -136,6 +138,63 @@ describe("computer use MCP contract", () => {
     expect(result.isError).toBe(true);
     expect(engine.executions).toHaveLength(0);
     expect(engine.observations).toBe(0);
+  });
+
+  it("publishes snapshot consumption only after the phase boundary", async () => {
+    const { runtime, engine } = fixtureRuntime({ hangAction: true });
+    const observed = await runtime.observe();
+    const snapshotId = observed.structured.snapshot_id;
+
+    const outOfBounds = await handleAct(runtime, {
+      snapshot_id: snapshotId,
+      action: { type: "click", x: 100, y: 10 },
+    });
+    expect(outOfBounds.isError).toBe(true);
+    expect(outOfBounds.structuredContent).not.toHaveProperty("snapshot_consumed");
+
+    vi.useFakeTimers();
+    const pending = handleAct(runtime, {
+      snapshot_id: snapshotId,
+      action: { type: "click", x: 10, y: 10 },
+    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    const timedOut = await pending;
+    expect(timedOut).toMatchObject({
+      isError: true,
+      structuredContent: {
+        code: "action_timeout",
+        snapshot_consumed: true,
+      },
+    });
+    expect(engine.executions).toHaveLength(1);
+
+    const stale = await handleAct(runtime, {
+      snapshot_id: snapshotId,
+      action: { type: "wait", ms: 0 },
+    });
+    expect(stale).toMatchObject({ isError: true, structuredContent: { code: "stale_snapshot" } });
+  });
+
+  it("preserves the action result when only the next observation fails", async () => {
+    const { runtime, engine } = fixtureRuntime({
+      observationSequence: ["success", "capture_failed", "capture_failed"],
+    });
+    const observed = await runtime.observe();
+
+    const result = await handleAct(runtime, {
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "click", x: 10, y: 10 },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      next_state: "unavailable",
+      action_result: { status: "executed" },
+      verification: { status: "not_requested" },
+      next_observation_error: { code: "capture_failed", recovery: "observe_desktop" },
+    });
+    expect(result.content.every((item) => item.type !== "image")).toBe(true);
+    expect(engine.executions).toHaveLength(1);
   });
 
   it("returns stable safe fields for ComputerUseError without message or stack", async () => {

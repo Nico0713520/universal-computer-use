@@ -35,6 +35,7 @@ function errorToMcp(error: unknown): CallToolResult {
           code: error.code,
           recovery: error.recovery,
           retryable: error.retryable,
+          ...(error.snapshotConsumed ? { snapshot_consumed: true } : {}),
         }
       : {
           code: "runtime_unavailable",

@@ -17,6 +17,7 @@ export type FakeEngineOptions = Readonly<{
   observationSequence?: readonly ObservationStep[];
   actionError?: ComputerUseErrorCode | Error;
   hangAction?: boolean;
+  ignoreActionAbort?: boolean;
 }>;
 
 function abortError(): DOMException {
@@ -78,6 +79,7 @@ export class FakeEngine implements EnginePort {
   ): Promise<EngineExecution> {
     this.executions.push(action);
     this.events.push(`execute:${action.type}`);
+    if (this.options.ignoreActionAbort) return new Promise<never>(() => undefined);
     if (this.options.hangAction) return waitForAbort(signal);
     if (this.options.actionError instanceof Error) throw this.options.actionError;
     if (this.options.actionError !== undefined) {

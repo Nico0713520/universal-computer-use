@@ -152,12 +152,15 @@ describe("ComputerUseRuntime.act", () => {
     });
     const observed = await runtime.observe();
 
-    await expect(
-      runtime.act({
-        snapshot_id: observed.structured.snapshot_id,
-        action: { type: "click", x: 10, y: 10 },
-      }),
-    ).rejects.toMatchObject({ code: "capture_failed" });
+    await expect(runtime.act({
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "click", x: 10, y: 10 },
+    })).resolves.toMatchObject({
+      structured: {
+        next_state: "unavailable",
+        next_observation_error: { code: "capture_failed" },
+      },
+    });
     expect(engine.observations).toBe(3);
     expect(engine.executions).toHaveLength(1);
     await expect(
@@ -187,17 +190,22 @@ describe("ComputerUseRuntime.act", () => {
     });
     const observed = await runtime.observe();
 
-    await expect(
-      runtime.act({
-        snapshot_id: observed.structured.snapshot_id,
-        action: { type: "wait", ms: 0 },
-      }),
-    ).rejects.toBe(error);
+    const pending = runtime.act({
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "wait", ms: 0 },
+    });
+    if (error.code === "capture_failed") {
+      await expect(pending).resolves.toMatchObject({
+        structured: { next_state: "unavailable" },
+      });
+    } else {
+      await expect(pending).rejects.toBe(error);
+    }
     expect(engine.observations).toBe(2);
     expect(engine.executions).toHaveLength(1);
   });
 
-  it("times out one action at exactly twenty seconds without replaying it", async () => {
+  it("returns a consumed error when one action times out without replaying it", async () => {
     vi.useFakeTimers();
     const { runtime, engine } = fixtureRuntime({ hangAction: true });
     const observed = await runtime.observe();
@@ -220,17 +228,36 @@ describe("ComputerUseRuntime.act", () => {
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
 
-    const result = await pending;
-    expect(result.structured.action_result).toEqual({
-      status: "failed",
-      effect: "unverifiable",
-      route: "unknown",
-      delivery: "unknown",
-      evidence: [],
-      error_code: "action_timeout",
+    await expect(pending).rejects.toMatchObject({
+      code: "action_timeout",
+      snapshotConsumed: true,
     });
     expect(engine.executions).toHaveLength(1);
-    expect(engine.observations).toBe(2);
+    expect(engine.observations).toBe(1);
+  });
+
+  it("enforces the hard action deadline when the engine ignores AbortSignal", async () => {
+    vi.useFakeTimers();
+    const { runtime, engine } = fixtureRuntime({ ignoreActionAbort: true });
+    const observed = await runtime.observe();
+    const pending = runtime.act({
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "click", x: 10, y: 10 },
+    });
+    const outcome = pending.then(
+      () => ({ settled: true, error: undefined }),
+      (error: unknown) => ({ settled: true, error }),
+    );
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    const marker = await Promise.race([
+      outcome,
+      Promise.resolve({ settled: false, error: undefined }),
+    ]);
+
+    expect(marker.settled).toBe(true);
+    expect(marker.error).toMatchObject({ code: "action_timeout", snapshotConsumed: true });
+    expect(engine.executions).toHaveLength(1);
   });
 
   it("executes only one of two concurrent actions bound to the same snapshot", async () => {
@@ -268,8 +295,9 @@ describe("ComputerUseRuntime.act", () => {
 
     expect(engine.events).toEqual(["observe", "execute:click"]);
     await vi.advanceTimersByTimeAsync(20_000);
-    await expect(action).resolves.toMatchObject({
-      structured: { action_result: { error_code: "action_timeout" } },
+    await expect(action).rejects.toMatchObject({
+      code: "action_timeout",
+      snapshotConsumed: true,
     });
     await expect(observation).resolves.toMatchObject({
       structured: { display_id: "primary" },
@@ -277,7 +305,6 @@ describe("ComputerUseRuntime.act", () => {
     expect(engine.events).toEqual([
       "observe",
       "execute:click",
-      "observe",
       "observe",
     ]);
   });
