@@ -94,7 +94,7 @@ describe("computer use MCP contract", () => {
         arguments: {},
       }),
     );
-    expect(observed.isError).not.toBe(true);
+    expect(observed.isError, JSON.stringify(observed)).not.toBe(true);
     expect(observed.content).toHaveLength(2);
     expect(observed.content[0]).toEqual({
       type: "text",
@@ -148,6 +148,38 @@ describe("computer use MCP contract", () => {
       screenshot: { mime_type: "image/png", width: 100, height: 80 },
     });
     expect(acted.structuredContent?.snapshot_id).not.toBe(snapshotId);
+  });
+
+  it("delivers safe runtime errors through the declared MCP output schema", async () => {
+    const { runtime } = fixtureRuntime();
+    const client = await connectedClient(runtime);
+    // SDK 1.30 caches output validators only after tools/list. Real hosts list
+    // tools before calling them, so the regression must exercise that order.
+    await client.listTools();
+    const observed = CallToolResultSchema.parse(await client.callTool({
+      name: "computer_observe",
+      arguments: {},
+    }));
+    const snapshotId = String(observed.structuredContent?.snapshot_id);
+    const first = CallToolResultSchema.parse(await client.callTool({
+      name: "computer_act",
+      arguments: { snapshot_id: snapshotId, action: { type: "wait", ms: 0 } },
+    }));
+    expect(first.isError).not.toBe(true);
+
+    const stale = CallToolResultSchema.parse(await client.callTool({
+      name: "computer_act",
+      arguments: { snapshot_id: snapshotId, action: { type: "wait", ms: 0 } },
+    }));
+
+    expect(stale).toMatchObject({
+      isError: true,
+      structuredContent: {
+        code: "stale_snapshot",
+        recovery: "observe_again",
+        retryable: true,
+      },
+    });
   });
 
   it("rejects actions arrays before the runtime can execute anything", async () => {

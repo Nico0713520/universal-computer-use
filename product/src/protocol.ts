@@ -428,6 +428,29 @@ export const McpErrorOutputSchema = z.object({
   snapshot_consumed: z.literal(true).optional(),
 }).strict();
 
+// MCP SDK clients cache the advertised output schema after tools/list and
+// validate structuredContent even when isError is true. Advertise both the
+// success and the stable safe-error shapes so real hosts can receive recovery
+// codes such as stale_snapshot instead of a client-side -32602.
+export const ObserveToolMcpOutputSchema = z.object({
+  ...ObservationMcpOutputSchema.shape,
+  ...McpErrorOutputSchema.shape,
+}).partial().strict().superRefine((value, context) => {
+  if (!ObservationMcpOutputSchema.safeParse(value).success &&
+      !McpErrorOutputSchema.safeParse(value).success) {
+    context.addIssue({ code: "custom", message: "observe output is neither success nor safe error" });
+  }
+});
+export const ActToolMcpOutputSchema = z.object({
+  ...ActMcpOutputSchema.shape,
+  ...McpErrorOutputSchema.shape,
+}).partial().strict().superRefine((value, context) => {
+  if (!ActMcpOutputSchema.safeParse(value).success &&
+      !McpErrorOutputSchema.safeParse(value).success) {
+    context.addIssue({ code: "custom", message: "act output is neither success nor safe error" });
+  }
+});
+
 export type ObservationOutput = z.infer<typeof ObservationOutputSchema>;
 export type ActOutput = z.infer<typeof ActOutputSchema>;
 export type ActionResult = z.infer<typeof ActionResultSchema>;
