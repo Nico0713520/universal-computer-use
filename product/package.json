@@ -23,6 +23,7 @@
     "pretest": "npm run build",
     "test": "vitest run tests/unit tests/contract",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "acceptance:macos": "node scripts/run-development-acceptance.mjs",
     "prepack": "npm run build",
     "prerelease:verify": "npm run build",
     "release:verify": "node scripts/verify-release.mjs"
