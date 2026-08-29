@@ -3,11 +3,17 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { Ajv2020 } from "ajv/dist/2020.js";
 
 import type { ComputerUseRuntime } from "../../src/core/runtime.js";
 import { ComputerUseError } from "../../src/errors.js";
 import { handleAct } from "../../src/mcp/handlers.js";
 import { createComputerUseServer } from "../../src/mcp/server.js";
+import {
+  ActOutputSchema,
+  McpErrorOutputSchema,
+  ObservationOutputSchema,
+} from "../../src/protocol.js";
 import { fixtureRuntime } from "../helpers/fake-engine.js";
 
 const closeCallbacks: Array<() => Promise<void>> = [];
@@ -63,22 +69,176 @@ describe("computer use MCP contract", () => {
       },
     });
 
-    for (const tool of tools) {
+    for (const [index, tool] of tools.entries()) {
+      if (tool.outputSchema === undefined) throw new Error(`${tool.name} did not publish an output schema`);
       expect(tool.outputSchema).toMatchObject({
         type: "object",
-        oneOf: [
-          { type: "object", required: expect.any(Array) },
-          { type: "object", required: ["code", "recovery", "retryable"] },
-        ],
+        oneOf: expect.any(Array),
       });
+      expect((tool.outputSchema.oneOf as unknown[])).toHaveLength(index === 0 ? 5 : 6);
+      expect((tool.outputSchema.oneOf as Array<{ required?: string[] }>).at(-1)?.required)
+        .toEqual(["code", "recovery", "retryable"]);
       const output = z.fromJSONSchema(tool.outputSchema as never);
       expect(output.safeParse({}).success).toBe(false);
       expect(output.safeParse({
         code: "stale_snapshot",
         recovery: "observe_again",
         retryable: true,
-        protocol_version: "1.1.0",
+        protocol_version: "1.2.0",
       }).success).toBe(false);
+      expect(output.safeParse({
+        code: "stale_snapshot",
+        recovery: "observe_again",
+        retryable: true,
+        snapshot_id: "snap_12345678",
+      }).success).toBe(false);
+    }
+  });
+
+  it("publishes exact JSON Schema branches that match runtime output validation", async () => {
+    const { runtime } = fixtureRuntime();
+    const client = await connectedClient(runtime);
+    const { tools } = await client.listTools();
+    if (tools[0]?.outputSchema === undefined || tools[1]?.outputSchema === undefined) {
+      throw new Error("both tools must publish output schemas");
+    }
+    const ajv = new Ajv2020({ strict: true, allErrors: true });
+    const validateObserve = ajv.compile({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      oneOf: tools[0].outputSchema.oneOf,
+    });
+    const validateAct = ajv.compile({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      oneOf: tools[1].outputSchema.oneOf,
+    });
+    const screenshot = { mime_type: "image/png", width: 100, height: 80 };
+    const target = {
+      kind: "window",
+      window_ref: "win_abcdefghijklmnop",
+      app_ref: "app_abcdefghijklmnop",
+      app_name: "Calculator",
+      title: "Calculator",
+    } as const;
+    const observeBase = {
+      protocol_version: "1.2.0",
+      session_id: "ses_123",
+      snapshot_id: "snap_12345678",
+      platform: "macos",
+      engine: { name: "cua-driver", version: "0.22.2" },
+    } as const;
+    const windowBase = {
+      ...observeBase,
+      target,
+      coordinate_space: "window_screenshot_pixels",
+      elements: [],
+      elements_truncated: false,
+    } as const;
+    const desktop = {
+      ...observeBase,
+      display_id: "primary",
+      target: { kind: "desktop", display_id: "primary" },
+      coordinate_space: "desktop_screenshot_pixels",
+      screenshot,
+    } as const;
+    const safeError = {
+      code: "stale_snapshot",
+      recovery: "observe_again",
+      retryable: true,
+    } as const;
+    const observations = [
+      { ...windowBase, observation_mode: "visual", visual_status: "available", screenshot },
+      { ...windowBase, observation_mode: "visual", visual_status: "capture_unavailable" },
+      { ...windowBase, observation_mode: "semantic", visual_status: "not_requested" },
+      desktop,
+      safeError,
+    ] as const;
+    for (const output of observations) {
+      const runtimeValid = "code" in output
+        ? McpErrorOutputSchema.safeParse(output).success
+        : ObservationOutputSchema.safeParse(output).success;
+      expect(runtimeValid, JSON.stringify(output)).toBe(true);
+      expect(validateObserve(output), JSON.stringify(validateObserve.errors)).toBe(true);
+    }
+
+    const actionBase = {
+      protocol_version: "1.2.0",
+      session_id: "ses_123",
+      consumed_snapshot_id: "snap_87654321",
+      action_result: {
+        status: "executed",
+        effect: "confirmed",
+        route: "accessibility",
+        delivery: "background",
+        evidence: ["value_readback"],
+      },
+      verification: { status: "satisfied" },
+    } as const;
+    const windowActionBase = {
+      ...actionBase,
+      next_state: "available",
+      snapshot_id: "snap_12345678",
+      target,
+      coordinate_space: "window_screenshot_pixels",
+      elements: [],
+      elements_truncated: false,
+    } as const;
+    const actions = [
+      { ...windowActionBase, observation_mode: "visual", visual_status: "available", screenshot },
+      { ...windowActionBase, observation_mode: "visual_recovery", visual_status: "pixel_frame_unproven" },
+      { ...windowActionBase, observation_mode: "semantic", visual_status: "not_requested" },
+      {
+        ...actionBase,
+        next_state: "available",
+        snapshot_id: "snap_12345678",
+        target: { kind: "desktop", display_id: "primary" },
+        coordinate_space: "desktop_screenshot_pixels",
+        screenshot,
+      },
+      {
+        ...actionBase,
+        next_state: "unavailable",
+        next_observation_error: { code: "target_lost", recovery: "observe_desktop" },
+      },
+      safeError,
+    ] as const;
+    for (const output of actions) {
+      const runtimeValid = "code" in output
+        ? McpErrorOutputSchema.safeParse(output).success
+        : ActOutputSchema.safeParse(output).success;
+      expect(runtimeValid, JSON.stringify(output)).toBe(true);
+      expect(validateAct(output), JSON.stringify(validateAct.errors)).toBe(true);
+    }
+
+    for (const invalid of [
+      {},
+      { ...desktop, observation_mode: "visual" },
+      {
+        ...windowBase,
+        observation_mode: "semantic",
+        visual_status: "available",
+        screenshot,
+      },
+    ]) {
+      expect(ObservationOutputSchema.safeParse(invalid).success).toBe(false);
+      expect(validateObserve(invalid)).toBe(false);
+    }
+    for (const invalid of [
+      {},
+      {
+        ...actionBase,
+        next_state: "unavailable",
+        next_observation_error: { code: "target_lost", recovery: "observe_desktop" },
+        observation_mode: "visual",
+      },
+      {
+        ...windowActionBase,
+        observation_mode: "semantic",
+        visual_status: "available",
+        screenshot,
+      },
+    ]) {
+      expect(ActOutputSchema.safeParse(invalid).success).toBe(false);
+      expect(validateAct(invalid)).toBe(false);
     }
   });
 
@@ -125,7 +285,7 @@ describe("computer use MCP contract", () => {
       data: "cG5nLWZpeHR1cmU=",
     });
     expect(observed.structuredContent).toMatchObject({
-      protocol_version: "1.1.0",
+      protocol_version: "1.2.0",
       session_id: "fixture-session",
       platform: "macos",
       display_id: "primary",
@@ -155,7 +315,7 @@ describe("computer use MCP contract", () => {
       data: "cG5nLWZpeHR1cmU=",
     });
     expect(acted.structuredContent).toMatchObject({
-      protocol_version: "1.1.0",
+      protocol_version: "1.2.0",
       session_id: "fixture-session",
       consumed_snapshot_id: snapshotId,
       action_result: {

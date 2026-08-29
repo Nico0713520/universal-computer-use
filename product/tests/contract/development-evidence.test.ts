@@ -23,8 +23,8 @@ function completeEvidence(): JsonRecord {
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
     metadata: {
-      product_version: "0.2.1",
-      protocol_version: "1.1.0",
+      product_version: "0.2.2",
+      protocol_version: "1.2.0",
       engine_version: "0.22.2",
       macos_version: "15.6.1",
       architecture: "arm64",
@@ -131,7 +131,7 @@ describe("macOS development acceptance evidence", () => {
   it("requires semantic versions, a supported architecture, successful cleanup and UTC time", async () => {
     const parser = await evidenceParser();
     const mutations: Array<(value: JsonRecord) => void> = [
-      (value) => { (value.metadata as JsonRecord).product_version = "v0.2.1"; },
+      (value) => { (value.metadata as JsonRecord).product_version = "v0.2.2"; },
       (value) => { (value.metadata as JsonRecord).architecture = "x64"; },
       (value) => { value.cleanup_passed = false; },
       (value) => { value.timestamp = "2026-08-29 12:34:56"; },

@@ -15,6 +15,10 @@ export const ElementRefSchema = z.string().regex(/^el_[A-Za-z0-9_-]{16,}$/);
 export const SnapshotIdSchema = z.string().regex(/^snap_[A-Za-z0-9_-]{8,}$/);
 
 export const DeliverySchema = z.enum(["background", "foreground"]);
+export const NextObservationSchema = z.object({
+  mode: z.enum(["visual", "semantic"]),
+}).strict();
+export const ObservationModeSchema = z.enum(["visual", "semantic", "visual_recovery"]);
 const clickTypes = ["click", "double_click", "right_click"] as const;
 
 const coordinateClicks = clickTypes.map((type) => z.object({
@@ -118,6 +122,7 @@ const ElementExpectationSchema = z.object({
 export const ActInputSchema = z.object({
   snapshot_id: SnapshotIdSchema,
   action: ComputerActionSchema,
+  next_observation: NextObservationSchema.optional(),
   delivery: DeliverySchema.optional(),
   expect: z.object({
     element: ElementExpectationSchema,
@@ -244,16 +249,23 @@ const WindowOutputBaseSchema = ObservationBaseSchema.extend({
   elements: z.array(ElementOutputSchema).max(150),
   elements_truncated: z.boolean(),
 });
-const WindowVisualOutputSchema = WindowOutputBaseSchema.extend({
+export const WindowVisualOutputSchema = WindowOutputBaseSchema.extend({
+  observation_mode: z.literal("visual"),
   visual_status: z.literal("available"),
   screenshot: ScreenshotSchema,
 }).strict();
-const WindowSemanticOutputSchema = WindowOutputBaseSchema.extend({
-  visual_status: z.enum(["not_requested", "capture_unavailable", "pixel_frame_unproven"]),
+export const WindowDegradedVisualOutputSchema = WindowOutputBaseSchema.extend({
+  observation_mode: z.literal("visual"),
+  visual_status: z.enum(["capture_unavailable", "pixel_frame_unproven"]),
+}).strict();
+export const WindowSemanticOutputSchema = WindowOutputBaseSchema.extend({
+  observation_mode: z.literal("semantic"),
+  visual_status: z.literal("not_requested"),
 }).strict();
 
 export const ObservationOutputSchema = z.union([
   WindowVisualOutputSchema,
+  WindowDegradedVisualOutputSchema,
   WindowSemanticOutputSchema,
   DesktopOutputSchema,
 ]);
@@ -281,6 +293,7 @@ export const ObservationMcpOutputSchema = z.object({
   windows_truncated: z.boolean().optional(),
   elements: z.array(ElementOutputSchema).max(150).optional(),
   elements_truncated: z.boolean().optional(),
+  observation_mode: ObservationModeSchema.optional(),
   visual_status: z.enum(["available", "not_requested", "capture_unavailable", "pixel_frame_unproven"]).optional(),
 }).strict().superRefine((value, context) => {
   const parsed = ObservationOutputSchema.safeParse(value);
@@ -369,12 +382,18 @@ const WindowActOutputBaseSchema = ActOutputBaseSchema.extend({
   elements: z.array(ElementOutputSchema).max(150),
   elements_truncated: z.boolean(),
 });
-const WindowVisualActOutputSchema = WindowActOutputBaseSchema.extend({
+export const WindowVisualActOutputSchema = WindowActOutputBaseSchema.extend({
+  observation_mode: z.enum(["visual", "visual_recovery"]),
   visual_status: z.literal("available"),
   screenshot: ScreenshotSchema,
 }).strict();
-const WindowSemanticActOutputSchema = WindowActOutputBaseSchema.extend({
-  visual_status: z.enum(["not_requested", "capture_unavailable", "pixel_frame_unproven"]),
+export const WindowDegradedVisualActOutputSchema = WindowActOutputBaseSchema.extend({
+  observation_mode: z.enum(["visual", "visual_recovery"]),
+  visual_status: z.enum(["capture_unavailable", "pixel_frame_unproven"]),
+}).strict();
+export const WindowSemanticActOutputSchema = WindowActOutputBaseSchema.extend({
+  observation_mode: z.literal("semantic"),
+  visual_status: z.literal("not_requested"),
 }).strict();
 const UnavailableActOutputSchema = ActOutputBaseSchema.extend({
   next_state: z.literal("unavailable"),
@@ -386,6 +405,7 @@ const UnavailableActOutputSchema = ActOutputBaseSchema.extend({
 
 export const ActOutputSchema = z.union([
   WindowVisualActOutputSchema,
+  WindowDegradedVisualActOutputSchema,
   WindowSemanticActOutputSchema,
   DesktopActOutputSchema,
   UnavailableActOutputSchema,
@@ -409,6 +429,7 @@ export const ActMcpOutputSchema = z.object({
   windows_truncated: z.boolean().optional(),
   elements: z.array(ElementOutputSchema).max(150).optional(),
   elements_truncated: z.boolean().optional(),
+  observation_mode: ObservationModeSchema.optional(),
   visual_status: z.enum(["available", "not_requested", "capture_unavailable", "pixel_frame_unproven"]).optional(),
   next_observation_error: z.object({
     code: z.enum(["target_lost", "capture_failed", "window_owner_changed"]),
@@ -442,11 +463,18 @@ function jsonSchemaBranch(schema: z.ZodType): Record<string, unknown> {
 }
 
 const observeToolOneOf = [
-  jsonSchemaBranch(ObservationMcpOutputSchema),
+  jsonSchemaBranch(WindowVisualOutputSchema),
+  jsonSchemaBranch(WindowDegradedVisualOutputSchema),
+  jsonSchemaBranch(WindowSemanticOutputSchema),
+  jsonSchemaBranch(DesktopOutputSchema),
   jsonSchemaBranch(McpErrorOutputSchema),
 ];
 const actToolOneOf = [
-  jsonSchemaBranch(ActMcpOutputSchema),
+  jsonSchemaBranch(WindowVisualActOutputSchema),
+  jsonSchemaBranch(WindowDegradedVisualActOutputSchema),
+  jsonSchemaBranch(WindowSemanticActOutputSchema),
+  jsonSchemaBranch(DesktopActOutputSchema),
+  jsonSchemaBranch(UnavailableActOutputSchema),
   jsonSchemaBranch(McpErrorOutputSchema),
 ];
 

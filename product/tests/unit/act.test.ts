@@ -43,13 +43,19 @@ class SemanticGuardEngine implements EnginePort {
         image: { mimeType: "image/png", dataBase64: "cG5n", width: 100, height: 80 },
       };
     }
-    return {
-      platform: "macos",
+    const base = {
+      platform: "macos" as const,
       target: inputOrSignal.target.window,
-      visualStatus: "not_requested",
       elements: [],
       elementsComplete: true,
     };
+    return "includeScreenshot" in inputOrSignal && inputOrSignal.includeScreenshot
+      ? {
+          ...base,
+          visualStatus: "available",
+          image: { mimeType: "image/png", dataBase64: "d2luZG93", width: 100, height: 80 },
+        }
+      : { ...base, visualStatus: "not_requested" };
   }
 
   async execute(action: EngineAction, _signal: AbortSignal): Promise<EngineExecution> {
@@ -101,6 +107,7 @@ function semanticWindowRuntime(): Readonly<{
   const snapshot = snapshots.create({
     sessionId: engine.sessionId,
     target: { kind: "window", windowRef: window.windowRef },
+    observationMode: "semantic",
     visual: { status: "not_requested" },
     coordinateSpace: "window_screenshot_pixels",
     windowTarget: {
@@ -109,6 +116,7 @@ function semanticWindowRuntime(): Readonly<{
       nativeKey: window.nativeKey,
       ownerKey: window.ownerKey,
     },
+    elements: [],
     observeOptions: { includeScreenshot: false, maxElements: 150, maxDepth: 12 },
   });
   return {
@@ -124,6 +132,7 @@ function semanticSnapshot(): SnapshotRecord {
     sessionId: "session-test",
     target: { kind: "window", windowRef: "win_semantic123456" },
     visualStatus: "not_requested",
+    observationMode: "semantic",
     coordinateSpace: "window_screenshot_pixels",
     windowTarget: {
       windowRef: "win_semantic123456",
@@ -502,6 +511,39 @@ describe("ComputerUseRuntime.act", () => {
     });
     expect(engine.executions).toHaveLength(2);
   });
+
+  it.each(["engine_contract_changed", "engine_unhealthy"] as const)(
+    "fails closed when desktop post-action observation reports %s",
+    async (code) => {
+      const critical = new ComputerUseError(code, code, "doctor", false);
+      const { runtime, engine } = fixtureRuntime({
+        observationSequence: ["success", critical, "success"],
+        healthSequence: [false, true],
+      });
+      const observed = await runtime.observe();
+      const firstInput = {
+        snapshot_id: observed.structured.snapshot_id,
+        action: { type: "wait" as const, ms: 0 },
+      };
+
+      await expect(runtime.act(firstInput)).rejects.toMatchObject({ code, snapshotConsumed: true });
+      expect(engine.executions).toHaveLength(1);
+      await expect(runtime.act(firstInput)).rejects.toMatchObject({ code: "stale_snapshot" });
+
+      const fresh = await runtime.observe();
+      const retryInput = {
+        snapshot_id: fresh.structured.snapshot_id,
+        action: { type: "wait" as const, ms: 0 },
+      };
+      await expect(runtime.act(retryInput)).rejects.toMatchObject({ code: "engine_unhealthy" });
+      expect(engine.executions).toHaveLength(1);
+      await expect(runtime.act(retryInput)).resolves.toMatchObject({
+        structured: { action_result: { status: "executed" } },
+      });
+      expect(engine.executions).toHaveLength(2);
+      await runtime.close();
+    },
+  );
 
   it("closes idempotently through the FIFO and aborts the active lifecycle", async () => {
     vi.useFakeTimers();

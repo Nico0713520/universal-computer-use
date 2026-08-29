@@ -141,6 +141,7 @@ export function toWindowActEnvelope(
       title: value.target.title,
     },
     coordinate_space: "window_screenshot_pixels",
+    observation_mode: snapshot.observationMode,
     action_result: toActionResult(result),
     verification,
     visual_status: value.visualStatus,

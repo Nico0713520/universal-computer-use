@@ -101,6 +101,7 @@ describe("SnapshotStore", () => {
     const snapshot = store.create({
       sessionId: "ses_a",
       target: { kind: "window", windowRef: "win_abcdefghijklmnop" },
+      observationMode: "visual",
       visual: { status: "available", width: 460, height: 816 },
       coordinateSpace: "window_screenshot_pixels",
       upstreamSnapshotId: "cua-private-snapshot",
@@ -128,6 +129,7 @@ describe("SnapshotStore", () => {
       identity: { role: "button", label: "7" },
     });
     expect(snapshot).toMatchObject({
+      observationMode: "visual",
       visualStatus: "available",
       width: 460,
       height: 816,
@@ -143,8 +145,15 @@ describe("SnapshotStore", () => {
     const snapshot = store.create({
       sessionId: "ses_a",
       target: { kind: "window", windowRef: "win_abcdefghijklmnop" },
+      observationMode: "semantic",
       visual: { status: "capture_unavailable" },
       coordinateSpace: "window_screenshot_pixels",
+      windowTarget: {
+        windowRef: "win_abcdefghijklmnop",
+        appRef: "app_abcdefghijklmnop",
+        nativeKey: "7",
+        ownerKey: "pid:42",
+      },
       elements: [],
       observeOptions: {
         includeScreenshot: true,
@@ -153,7 +162,7 @@ describe("SnapshotStore", () => {
       },
     });
 
-    expect(snapshot).toMatchObject({ visualStatus: "capture_unavailable" });
+    expect(snapshot).toMatchObject({ observationMode: "semantic", visualStatus: "capture_unavailable" });
     expect(snapshot.width).toBeUndefined();
     expect(snapshot.height).toBeUndefined();
   });
@@ -171,12 +180,32 @@ describe("SnapshotStore", () => {
     expect(() => store.create({
       sessionId: "ses_a",
       target: { kind: "window", windowRef: "win_abcdefghijklmnop" },
+      observationMode: "visual",
       visual: { status: "available", width: 100, height: 80 },
       coordinateSpace: "window_screenshot_pixels",
+      windowTarget: {
+        windowRef: "win_abcdefghijklmnop",
+        appRef: "app_abcdefghijklmnop",
+        nativeKey: "7",
+        ownerKey: "pid:42",
+      },
       elements: [duplicate, duplicate],
       observeOptions: { includeScreenshot: true, maxElements: 100, maxDepth: 10 },
     })).toThrow("Duplicate element_ref");
     expect(store.requireCurrent(current.id)).toBe(current);
     expect(() => store.resolveElement(current.id, "el_abcdefghijklmnop")).toThrowError("stale_element_ref");
+  });
+
+  it("never stores an observation mode on desktop snapshots", () => {
+    const store = new SnapshotStore(() => 1_000, () => "desktop_token");
+    const snapshot = store.create({
+      sessionId: "ses_a",
+      target: { kind: "desktop" },
+      visual: { status: "available", width: 100, height: 80 },
+      coordinateSpace: "desktop_screenshot_pixels",
+      observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
+    });
+
+    expect(snapshot).not.toHaveProperty("observationMode");
   });
 });

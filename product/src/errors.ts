@@ -8,6 +8,7 @@ export const ERROR_CODES = [
   "unsupported_platform",
   "interactive_session_required",
   "stale_snapshot",
+  "next_observation_target_conflict",
   "coordinate_out_of_bounds",
   "action_timeout",
   "action_refused",

@@ -25,6 +25,7 @@ describe("public tool JSON Schema", () => {
     expect(act.required).toEqual(["snapshot_id", "action"]);
     expect(act.properties).toHaveProperty("snapshot_id");
     expect(act.properties).toHaveProperty("action");
+    expect(act.properties).toHaveProperty("next_observation");
     expect(act.properties).not.toHaveProperty("actions");
 
     expect(PUBLIC_TOOL_SCHEMAS).toMatchInlineSnapshot(`
@@ -752,6 +753,22 @@ describe("public tool JSON Schema", () => {
                 },
                 "required": [
                   "element",
+                ],
+                "type": "object",
+              },
+              "next_observation": {
+                "additionalProperties": false,
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "visual",
+                      "semantic",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "mode",
                 ],
                 "type": "object",
               },

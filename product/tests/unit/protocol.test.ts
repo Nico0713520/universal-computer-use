@@ -10,6 +10,29 @@ import {
 } from "../../src/protocol.js";
 import { ComputerUseError, ERROR_CODES } from "../../src/errors.js";
 
+function windowObservation(overrides: Record<string, unknown> = {}) {
+  return {
+    protocol_version: "1.2.0",
+    session_id: "ses_123",
+    snapshot_id: "snap_12345678",
+    platform: "macos",
+    target: {
+      kind: "window",
+      window_ref: "win_abcdefghijklmnop",
+      app_ref: "app_abcdefghijklmnop",
+      app_name: "Calculator",
+      title: "Calculator",
+    },
+    coordinate_space: "window_screenshot_pixels",
+    observation_mode: "semantic",
+    visual_status: "not_requested",
+    elements: [],
+    elements_truncated: false,
+    engine: { name: "cua-driver", version: "0.22.2" },
+    ...overrides,
+  };
+}
+
 describe("public protocol", () => {
   it("accepts an empty observe input and rejects unknown fields", () => {
     expect(ObserveInputSchema.parse({})).toEqual({});
@@ -60,6 +83,34 @@ describe("public protocol", () => {
       snapshot_id: "snap_12345678",
       actions: [],
     })).toThrow();
+  });
+
+  it("accepts only a strict adaptive next-observation preference", () => {
+    expect(ActInputSchema.parse({
+      snapshot_id: "snap_12345678",
+      action: { type: "wait", ms: 0 },
+      next_observation: { mode: "semantic" },
+    }).next_observation).toEqual({ mode: "semantic" });
+
+    for (const invalid of [
+      { mode: "fast" },
+      {},
+      { mode: "visual", extra: true },
+    ]) {
+      expect(() => ActInputSchema.parse({
+        snapshot_id: "snap_12345678",
+        action: { type: "wait", ms: 0 },
+        next_observation: invalid,
+      })).toThrow();
+    }
+  });
+
+  it("keeps semantic window observations image-free", () => {
+    expect(ObservationOutputSchema.parse(windowObservation())).not.toHaveProperty("screenshot");
+    expect(() => ObservationOutputSchema.parse(windowObservation({
+      visual_status: "available",
+      screenshot: { mime_type: "image/png", width: 100, height: 100 },
+    }))).toThrow();
   });
 
   it.each([
@@ -122,7 +173,7 @@ describe("public protocol", () => {
   it("validates versioned observation and action outputs", () => {
     const screenshot = { mime_type: "image/png", width: 2560, height: 1440 };
     expect(ObservationOutputSchema.parse({
-      protocol_version: "1.1.0",
+      protocol_version: "1.2.0",
       session_id: "ses_123",
       snapshot_id: "snap_12345678",
       platform: "macos",
@@ -134,7 +185,7 @@ describe("public protocol", () => {
     })).toBeTruthy();
     expect(ActOutputSchema.parse({
       next_state: "available",
-      protocol_version: "1.1.0",
+      protocol_version: "1.2.0",
       session_id: "ses_123",
       consumed_snapshot_id: "snap_12345678",
       snapshot_id: "snap_87654321",
@@ -153,7 +204,7 @@ describe("public protocol", () => {
 
     expect(ActOutputSchema.parse({
       next_state: "unavailable",
-      protocol_version: "1.1.0",
+      protocol_version: "1.2.0",
       session_id: "ses_123",
       consumed_snapshot_id: "snap_12345678",
       action_result: {
@@ -171,7 +222,7 @@ describe("public protocol", () => {
 
   it("publishes only bounded opaque discovery metadata", () => {
     const output = {
-      protocol_version: "1.1.0",
+      protocol_version: "1.2.0",
       session_id: "ses_123",
       snapshot_id: "snap_12345678",
       platform: "macos",
@@ -217,7 +268,7 @@ describe("public protocol", () => {
 
   it("requires honest element and action-result evidence", () => {
     const windowObservation = {
-      protocol_version: "1.1.0",
+      protocol_version: "1.2.0",
       session_id: "ses_123",
       snapshot_id: "snap_12345678",
       platform: "macos",
@@ -229,6 +280,7 @@ describe("public protocol", () => {
         title: "Calculator",
       },
       coordinate_space: "window_screenshot_pixels",
+      observation_mode: "semantic",
       visual_status: "not_requested",
       elements: [{
         element_ref: "el_abcdefghijklmnop",
@@ -251,7 +303,7 @@ describe("public protocol", () => {
 
     const baseAction = {
       next_state: "unavailable",
-      protocol_version: "1.1.0",
+      protocol_version: "1.2.0",
       session_id: "ses_123",
       consumed_snapshot_id: "snap_12345678",
       action_result: {
@@ -313,6 +365,7 @@ describe("public protocol", () => {
       "unsupported_platform",
       "interactive_session_required",
       "stale_snapshot",
+      "next_observation_target_conflict",
       "coordinate_out_of_bounds",
       "action_timeout",
       "action_refused",

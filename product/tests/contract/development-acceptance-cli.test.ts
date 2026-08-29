@@ -35,8 +35,8 @@ function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
     metadata: {
-      product_version: "0.2.1",
-      protocol_version: "1.1.0",
+      product_version: "0.2.2",
+      protocol_version: "1.2.0",
       engine_version: "0.22.2",
       macos_version: "15.6.1",
       architecture: "arm64",

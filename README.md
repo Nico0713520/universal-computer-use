@@ -58,7 +58,7 @@ The npm package name is reserved in the project metadata but is not published ye
 
 ## Current status
 
-The v0.2.1 developer preview has a real macOS acceptance command. On the current arm64 macOS 26.3 test machine it proved the two-tool inventory, desktop and exact-window PNGs, one-use snapshots, background semantic click, foreground pixel fallback, reconnect cleanup, and rejection of old snapshot/window/element refs. The final independent-geometry runs passed with degraded timing: the foreground coordinate action took 2.71–2.92 seconds against a 1-second target while remaining below its 3-second hard limit.
+The v0.2.2 developer preview retains the real macOS acceptance command. On the current arm64 macOS 26.3 test machine, the latest completed v0.2.1 evidence proved the two-tool inventory, desktop and exact-window PNGs, one-use snapshots, background semantic click, foreground pixel fallback, reconnect cleanup, and rejection of old snapshot/window/element refs. The final independent-geometry runs passed with degraded timing: the foreground coordinate action took 2.71–2.92 seconds against a 1-second target while remaining below its 3-second hard limit. Fresh v0.2.2 performance evidence remains pending.
 
 | Capability | Code | Contract | macOS real | Named host | Release |
 |---|---|---|---|---|---|

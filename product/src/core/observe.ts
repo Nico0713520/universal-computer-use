@@ -386,6 +386,7 @@ export function toWindowObservationEnvelope(
       title: target.title,
     },
     coordinate_space: "window_screenshot_pixels",
+    observation_mode: snapshot.observationMode,
     visual_status: value.visualStatus,
     ...(screenshot === undefined ? {} : { screenshot }),
     elements: projected.elements.map((element) => element.public),

@@ -27,6 +27,7 @@ import {
   withTimeout,
 } from "./observe.js";
 import { SerialExecutor } from "./serial-executor.js";
+import { decideFinalObservation, decideInitialObservation } from "./observation-policy.js";
 import {
   expectationSatisfied,
   verifyWindowState,
@@ -88,6 +89,7 @@ export class ComputerUseRuntime {
       const snapshot = this.snapshots.create({
         sessionId: this.engine.sessionId,
         target: { kind: "window", windowRef: window.windowRef },
+        observationMode: includeScreenshot ? "visual" : "semantic",
         visual,
         coordinateSpace: "window_screenshot_pixels",
         ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
@@ -134,7 +136,6 @@ export class ComputerUseRuntime {
       target: { kind: "desktop" },
       visual: { status: "available", width: observed.image.width, height: observed.image.height },
       coordinateSpace: "desktop_screenshot_pixels",
-      elements: [],
       observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
     });
     if (discovery === undefined || input.discover === undefined) {
@@ -211,6 +212,14 @@ export class ComputerUseRuntime {
 
   private async actUnlocked(input: ActInput): Promise<ActEnvelope> {
     const snapshot = this.snapshots.requireCurrent(input.snapshot_id);
+    if (input.next_observation !== undefined && snapshot.target.kind !== "window") {
+      throw new ComputerUseError(
+        "next_observation_target_conflict",
+        "next_observation requires a window snapshot",
+        "observe_again",
+        true,
+      );
+    }
     if (this.engineUnhealthy) {
       const healthy = await withTimeout(
         (signal) => this.engine.health(signal),
@@ -237,21 +246,8 @@ export class ComputerUseRuntime {
         this.lifecycle.signal,
       );
     } catch (error) {
-      if (
-        error instanceof ComputerUseError &&
-        ["action_timeout", "engine_contract_changed", "engine_unhealthy"].includes(error.code)
-      ) {
-        if (error.code === "engine_contract_changed" || error.code === "engine_unhealthy") {
-          this.engineUnhealthy = true;
-        }
-        throw new ComputerUseError(
-          error.code,
-          error.message,
-          error.recovery,
-          error.retryable,
-          true,
-        );
-      }
+      const critical = this.consumedCriticalError(error);
+      if (critical !== undefined) throw critical;
       actionResult = failedExecution(error);
     }
 
@@ -260,24 +256,41 @@ export class ComputerUseRuntime {
     }
 
     if (snapshot.target.kind === "window") {
+      if (engineAction.target.kind !== "window") {
+        this.engineUnhealthy = true;
+        throw new ComputerUseError(
+          "engine_contract_changed",
+          "Window snapshot resolved to a non-window action",
+          "doctor",
+          false,
+          true,
+        );
+      }
       const window = this.targets.resolveWindow(snapshot.target.windowRef);
-      const options = snapshot.observeOptions;
-      let observed;
-      let verification: VerificationResult = { status: "not_requested" };
-      let transitioned = false;
-      try {
-        const observe = () => observeWindowWithOneTransientRetry(this.engine, {
+      const initial = decideInitialObservation({
+        consumedOptions: snapshot.observeOptions,
+        requestedMode: input.next_observation?.mode,
+        action: engineAction.action as EngineWindowAction,
+        execution: actionResult,
+        hasResolvedExpectation: verificationExpectation !== undefined,
+      });
+      const observeWith = (options: typeof snapshot.observeOptions) =>
+        observeWindowWithOneTransientRetry(this.engine, {
           target: { kind: "window", window },
           includeScreenshot: options.includeScreenshot,
           ...(options.query === undefined ? {} : { query: options.query }),
           maxElements: options.maxElements,
           maxDepth: options.maxDepth,
         }, this.lifecycle.signal);
+      let observed;
+      let verification: VerificationResult = { status: "not_requested" };
+      let transitioned = false;
+      try {
         if (verificationExpectation === undefined) {
-          observed = await observe();
+          observed = await observeWith(initial.options);
         } else {
           const verified = await verifyWindowState({
-            observe,
+            observe: () => observeWith(initial.options),
             expectation: verificationExpectation.expectation,
             timeoutMs: verificationExpectation.timeoutMs,
             signal: this.lifecycle.signal,
@@ -290,6 +303,8 @@ export class ComputerUseRuntime {
         if (error instanceof ComputerUseError && error.code === "window_owner_changed") {
           this.targets.invalidateWindow(window.windowRef);
         }
+        const critical = this.consumedCriticalError(error);
+        if (critical !== undefined) throw critical;
         if (error instanceof ComputerUseError &&
             (error.code === "capture_failed" || error.code === "target_lost" || error.code === "window_owner_changed")) {
           return toUnavailableActEnvelope(
@@ -310,13 +325,39 @@ export class ComputerUseRuntime {
         transitioned,
         verificationExpectation?.setValue === true,
       );
-      const projected = projectWindowElements(observed, options.maxElements);
+      const final = decideFinalObservation({ initial, verification, finalExecution: actionResult });
+      if (final.requiresVisualRecovery) {
+        try {
+          observed = await observeWith(final.options);
+        } catch (error) {
+          if (error instanceof ComputerUseError && error.code === "window_owner_changed") {
+            this.targets.invalidateWindow(window.windowRef);
+          }
+          const critical = this.consumedCriticalError(error);
+          if (critical !== undefined) throw critical;
+          if (error instanceof ComputerUseError &&
+              (error.code === "capture_failed" || error.code === "target_lost" || error.code === "window_owner_changed")) {
+            return toUnavailableActEnvelope(
+              this.engine,
+              snapshot.id,
+              actionResult,
+              error.code,
+              verificationExpectation === undefined
+                ? { status: "not_requested" }
+                : { status: "unknown", reason: "observation_unavailable" },
+            );
+          }
+          throw error;
+        }
+      }
+      const projected = projectWindowElements(observed, final.options.maxElements);
       const visual = observed.visualStatus === "available" && observed.image !== undefined
         ? { status: "available" as const, width: observed.image.width, height: observed.image.height }
         : { status: observed.visualStatus as Exclude<typeof observed.visualStatus, "available"> };
       const next = this.snapshots.create({
         sessionId: this.engine.sessionId,
         target: { kind: "window", windowRef: window.windowRef },
+        observationMode: final.observationMode,
         visual,
         coordinateSpace: "window_screenshot_pixels",
         ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
@@ -327,7 +368,7 @@ export class ComputerUseRuntime {
           ownerKey: window.ownerKey,
         },
         elements: projected.elements.map((element) => element.snapshot),
-        observeOptions: options,
+        observeOptions: final.options,
       });
       return toWindowActEnvelope(this.engine, snapshot.id, next, actionResult, observed, projected, verification);
     }
@@ -339,6 +380,8 @@ export class ComputerUseRuntime {
         this.lifecycle.signal,
       );
     } catch (error) {
+      const critical = this.consumedCriticalError(error);
+      if (critical !== undefined) throw critical;
       if (
         error instanceof ComputerUseError &&
         (error.code === "capture_failed" ||
@@ -382,6 +425,7 @@ export class ComputerUseRuntime {
         const next = this.snapshots.create({
           sessionId: this.engine.sessionId,
           target: { kind: "window", windowRef: window.windowRef },
+          observationMode: "visual",
           visual,
           coordinateSpace: "window_screenshot_pixels",
           ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
@@ -396,6 +440,8 @@ export class ComputerUseRuntime {
         });
         return toWindowActEnvelope(this.engine, consumedId, next, result, observed, projected);
       } catch (error) {
+        const critical = this.consumedCriticalError(error);
+        if (critical !== undefined) throw critical;
         if (!(error instanceof ComputerUseError) ||
             !["capture_failed", "target_lost", "window_owner_changed"].includes(error.code)) throw error;
         result = {
@@ -408,13 +454,19 @@ export class ComputerUseRuntime {
       }
     }
 
-    const observed = await observeWithOneTransientRetry(this.engine, this.lifecycle.signal);
+    let observed;
+    try {
+      observed = await observeWithOneTransientRetry(this.engine, this.lifecycle.signal);
+    } catch (error) {
+      const critical = this.consumedCriticalError(error);
+      if (critical !== undefined) throw critical;
+      throw error;
+    }
     const next = this.snapshots.create({
       sessionId: this.engine.sessionId,
       target: { kind: "desktop" },
       visual: { status: "available", width: observed.image.width, height: observed.image.height },
       coordinateSpace: "desktop_screenshot_pixels",
-      elements: [],
       observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
     });
     return toActEnvelope(
@@ -617,6 +669,23 @@ export class ComputerUseRuntime {
       evidence: [...evidence],
       ...(errorCode === undefined ? { errorCode: undefined } : { errorCode }),
     };
+  }
+
+  private consumedCriticalError(error: unknown): ComputerUseError | undefined {
+    if (!(error instanceof ComputerUseError) ||
+        !["action_timeout", "engine_contract_changed", "engine_unhealthy"].includes(error.code)) {
+      return undefined;
+    }
+    if (error.code === "engine_contract_changed" || error.code === "engine_unhealthy") {
+      this.engineUnhealthy = true;
+    }
+    return new ComputerUseError(
+      error.code,
+      error.message,
+      error.recovery,
+      error.retryable,
+      true,
+    );
   }
 
   close(): Promise<void> {

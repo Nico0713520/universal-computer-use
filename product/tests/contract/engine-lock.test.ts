@@ -16,9 +16,9 @@ describe("engine lock", () => {
       await readFile(new URL("../../package.json", import.meta.url), "utf8"),
     ) as { version?: unknown };
 
-    expect(manifest.version).toBe("0.2.1");
-    expect(PRODUCT_VERSION).toBe("0.2.1");
-    expect(PROTOCOL_VERSION).toBe("1.1.0");
+    expect(manifest.version).toBe("0.2.2");
+    expect(PRODUCT_VERSION).toBe("0.2.2");
+    expect(PROTOCOL_VERSION).toBe("1.2.0");
   });
 
   it("publishes independent implementation, evidence, host and release status", async () => {

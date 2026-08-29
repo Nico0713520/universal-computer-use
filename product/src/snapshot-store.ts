@@ -45,6 +45,7 @@ export type SnapshotRecord = Readonly<{
   sessionId: string;
   target: SnapshotTarget;
   visualStatus: SnapshotVisualStatus;
+  observationMode?: "visual" | "semantic" | "visual_recovery";
   coordinateSpace: "desktop_screenshot_pixels" | "window_screenshot_pixels";
   width?: number;
   height?: number;
@@ -54,18 +55,27 @@ export type SnapshotRecord = Readonly<{
   createdAtMs: number;
 }>;
 
-export type SnapshotCreateInput = Readonly<{
-  sessionId: string;
-  target: Readonly<{ kind: "desktop" }> | Readonly<{ kind: "window"; windowRef: string }>;
-  visual:
-    | Readonly<{ status: "available"; width: number; height: number }>
-    | Readonly<{ status: Exclude<SnapshotVisualStatus, "available"> }>;
-  coordinateSpace: "desktop_screenshot_pixels" | "window_screenshot_pixels";
-  upstreamSnapshotId?: string;
-  windowTarget?: SnapshotWindowTarget;
-  elements?: readonly SnapshotElement[];
-  observeOptions: SnapshotObserveOptions;
-}>;
+export type SnapshotCreateInput =
+  | Readonly<{
+      sessionId: string;
+      target: Readonly<{ kind: "desktop" }>;
+      visual: Readonly<{ status: "available"; width: number; height: number }>;
+      coordinateSpace: "desktop_screenshot_pixels";
+      observeOptions: SnapshotObserveOptions;
+    }>
+  | Readonly<{
+      sessionId: string;
+      target: Readonly<{ kind: "window"; windowRef: string }>;
+      observationMode: "visual" | "semantic" | "visual_recovery";
+      visual:
+        | Readonly<{ status: "available"; width: number; height: number }>
+        | Readonly<{ status: Exclude<SnapshotVisualStatus, "available"> }>;
+      coordinateSpace: "window_screenshot_pixels";
+      upstreamSnapshotId?: string;
+      windowTarget: SnapshotWindowTarget;
+      elements: readonly SnapshotElement[];
+      observeOptions: SnapshotObserveOptions;
+    }>;
 
 function validDimension(value: number): boolean {
   return Number.isInteger(value) && value > 0;
@@ -107,7 +117,6 @@ export class SnapshotStore {
             height: legacyHeight as number,
           },
           coordinateSpace: "desktop_screenshot_pixels",
-          elements: [],
           observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
         }
       : inputOrSession;
@@ -123,8 +132,11 @@ export class SnapshotStore {
       throw new Error("Window snapshots require window screenshot coordinates");
     }
 
+    const windowInput = input.target.kind === "window"
+      ? input as Extract<SnapshotCreateInput, { target: { kind: "window" } }>
+      : undefined;
     const elements = new Map<string, SnapshotElement>();
-    for (const element of input.elements ?? []) {
+    for (const element of windowInput?.elements ?? []) {
       if (!/^el_[A-Za-z0-9_-]{16,}$/.test(element.elementRef)) {
         throw new Error("Invalid element_ref");
       }
@@ -149,12 +161,15 @@ export class SnapshotStore {
       sessionId: input.sessionId,
       target,
       visualStatus: input.visual.status,
+      ...(windowInput === undefined ? {} : { observationMode: windowInput.observationMode }),
       coordinateSpace: input.coordinateSpace,
       ...visualFields,
-      ...(input.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: input.upstreamSnapshotId }),
-      ...(input.windowTarget === undefined
+      ...(windowInput?.upstreamSnapshotId === undefined
         ? {}
-        : { windowTarget: Object.freeze({ ...input.windowTarget }) }),
+        : { upstreamSnapshotId: windowInput.upstreamSnapshotId }),
+      ...(windowInput !== undefined
+        ? { windowTarget: Object.freeze({ ...windowInput.windowTarget }) }
+        : {}),
       observeOptions: Object.freeze({ ...input.observeOptions }),
       createdAtMs: this.now(),
     });
