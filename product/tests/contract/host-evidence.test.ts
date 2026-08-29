@@ -259,9 +259,9 @@ describe("host acceptance evidence", () => {
     const configuredPaths = process.env.CUA_HOST_EVIDENCE_FILES;
     if (!configuredPaths) {
       const repositoryFiles = await readdir(hostDirectory);
-      expect(repositoryFiles.filter((name) => name.endsWith(".json"))).toEqual([
-        "evidence.schema.json",
-      ]);
+      const committedJson = repositoryFiles.filter((name) => name.endsWith(".json"));
+      expect(committedJson).toContain("evidence.schema.json");
+      expect(committedJson.every((name) => name.endsWith(".schema.json"))).toBe(true);
       return;
     }
 
