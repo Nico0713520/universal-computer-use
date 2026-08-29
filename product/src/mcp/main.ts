@@ -10,7 +10,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { ComputerUseRuntime } from "../core/runtime.js";
 import { CuaEngine } from "../engine/cua.js";
 import { loadEngineLock } from "../engine/lock.js";
+import type { EnginePort } from "../engine/port.js";
 import { ComputerUseError } from "../errors.js";
+import { createMetadataLogger, type MetadataLogger } from "../logging/logger.js";
 import { createComputerUseServer } from "./server.js";
 
 type StdioOptions = Readonly<{
@@ -18,6 +20,13 @@ type StdioOptions = Readonly<{
   stdout?: Writable;
   stderr?: Pick<Writable, "write">;
 }>;
+
+export function createProductionRuntime(
+  engine: EnginePort,
+  logger: MetadataLogger = createMetadataLogger(),
+): ComputerUseRuntime {
+  return new ComputerUseRuntime(engine, undefined, undefined, { logger });
+}
 
 export async function runStdioServer(
   runtime: ComputerUseRuntime,
@@ -87,7 +96,7 @@ export async function runStdioServer(
 async function runDefaultServer(): Promise<void> {
   const lock = await loadEngineLock();
   const engine = await CuaEngine.connect(lock);
-  await runStdioServer(new ComputerUseRuntime(engine));
+  await runStdioServer(createProductionRuntime(engine));
 }
 
 function isDirectEntryPoint(): boolean {

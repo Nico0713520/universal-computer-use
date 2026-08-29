@@ -18,6 +18,11 @@ export type MetadataLoggerOptions = Readonly<{
   now?: () => Date;
 }>;
 
+export const NOOP_METADATA_LOGGER: MetadataLogger = Object.freeze({
+  level: "off",
+  log(): void {},
+});
+
 function writeToStderr(jsonl: string): void {
   process.stderr.write(jsonl);
 }

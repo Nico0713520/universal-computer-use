@@ -11,10 +11,15 @@ const ACTION_TYPES = [
   "move",
   "drag",
   "scroll",
+  "set_value",
   "type",
+  "type_text",
   "keypress",
+  "invoke_menu",
+  "launch_app",
   "wait",
 ] as const satisfies readonly ComputerAction["type"][];
+const OBSERVATION_MODES = ["visual", "semantic", "visual_recovery"] as const;
 const EFFECTS = [
   "confirmed",
   "partial",
@@ -45,13 +50,31 @@ type ActionType = ComputerAction["type"];
 type Effect = ActOutput["action_result"]["effect"];
 type Route = ActOutput["action_result"]["route"];
 type Delivery = ActOutput["action_result"]["delivery"];
+type ObservationMode = typeof OBSERVATION_MODES[number];
+
+export type MetadataTimings = Readonly<{
+  queueWaitMs?: number;
+  engineExecuteMs?: number;
+  postActionObserveMs?: number;
+  projectionMs?: number;
+  toolTotalMs?: number;
+}>;
+
+export type MetadataTimingRecord = Readonly<{
+  queue_wait_ms?: number;
+  engine_execute_ms?: number;
+  post_action_observe_ms?: number;
+  projection_ms?: number;
+  tool_total_ms?: number;
+}>;
 
 export type MetadataLogEvent = Readonly<{
   sessionId?: string;
   snapshotId?: string;
   toolName?: ToolName;
   actionType?: ActionType;
-  durationMs?: number;
+  timings?: MetadataTimings;
+  observationMode?: ObservationMode;
   effect?: Effect;
   route?: Route;
   delivery?: Delivery;
@@ -64,7 +87,8 @@ export type MetadataLogRecord = Readonly<{
   snapshot_id_hash?: string;
   tool_name?: ToolName;
   action_type?: ActionType;
-  duration_ms?: number;
+  timings?: MetadataTimingRecord;
+  observation_mode?: ObservationMode;
   effect?: Effect;
   route?: Route;
   delivery?: Delivery;
@@ -104,7 +128,8 @@ export function redactMetadataEvent(
     snapshot_id_hash?: string;
     tool_name?: ToolName;
     action_type?: ActionType;
-    duration_ms?: number;
+    timings?: MetadataTimingRecord;
+    observation_mode?: ObservationMode;
     effect?: Effect;
     route?: Route;
     delivery?: Delivery;
@@ -123,12 +148,29 @@ export function redactMetadataEvent(
   if (isMember(ACTION_TYPES, input.actionType)) {
     output.action_type = input.actionType;
   }
-  if (
-    typeof input.durationMs === "number"
-    && Number.isFinite(input.durationMs)
-    && input.durationMs >= 0
-  ) {
-    output.duration_ms = input.durationMs;
+  const timingFields = [
+    ["queueWaitMs", "queue_wait_ms"],
+    ["engineExecuteMs", "engine_execute_ms"],
+    ["postActionObserveMs", "post_action_observe_ms"],
+    ["projectionMs", "projection_ms"],
+    ["toolTotalMs", "tool_total_ms"],
+  ] as const;
+  const timingInput: Record<string, unknown> =
+    typeof input.timings === "object" && input.timings !== null
+      ? input.timings as Record<string, unknown>
+      : {};
+  const timings: Record<string, number> = {};
+  for (const [inputName, outputName] of timingFields) {
+    const value = timingInput[inputName];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      timings[outputName] = Math.ceil(value);
+    }
+  }
+  if (Object.keys(timings).length > 0) {
+    output.timings = timings;
+  }
+  if (isMember(OBSERVATION_MODES, input.observationMode)) {
+    output.observation_mode = input.observationMode;
   }
   if (isMember(EFFECTS, input.effect)) {
     output.effect = input.effect;

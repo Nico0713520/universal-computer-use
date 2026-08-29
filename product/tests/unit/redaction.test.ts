@@ -21,8 +21,16 @@ function poisonedEvent(): MetadataLogEvent {
     sessionId: "session-sensitive-value",
     snapshotId: "snapshot-sensitive-value",
     toolName: "computer_act",
-    actionType: "type",
-    durationMs: 37,
+    actionType: "set_value",
+    timings: {
+      queueWaitMs: 1,
+      engineExecuteMs: 2,
+      postActionObserveMs: 3,
+      projectionMs: 4,
+      toolTotalMs: 10,
+      secret: "drop-me",
+    },
+    observationMode: "visual_recovery",
     effect: "confirmed",
     route: "accessibility",
     delivery: "foreground",
@@ -33,6 +41,9 @@ function poisonedEvent(): MetadataLogEvent {
     clipboard: CLIPBOARD_SECRET,
     env: { TOKEN: ENV_SECRET },
     model: { prompt: PROMPT_SECRET },
+    token: "private-element-token",
+    path: "/Users/private/secret.txt",
+    pid: 4242,
     nested: {
       text: NESTED_SECRET,
       sessionId: NESTED_SECRET,
@@ -65,8 +76,15 @@ describe("metadata log redaction", () => {
       session_id_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
       snapshot_id_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
       tool_name: "computer_act",
-      action_type: "type",
-      duration_ms: 37,
+      action_type: "set_value",
+      timings: {
+        queue_wait_ms: 1,
+        engine_execute_ms: 2,
+        post_action_observe_ms: 3,
+        projection_ms: 4,
+        tool_total_ms: 10,
+      },
+      observation_mode: "visual_recovery",
       effect: "confirmed",
       route: "accessibility",
       delivery: "foreground",
@@ -92,7 +110,8 @@ describe("metadata log redaction", () => {
       "snapshot_id_hash",
       "tool_name",
       "action_type",
-      "duration_ms",
+      "timings",
+      "observation_mode",
       "effect",
       "route",
       "delivery",
@@ -105,7 +124,14 @@ describe("metadata log redaction", () => {
       {
         toolName: PROMPT_SECRET,
         actionType: TYPE_SECRET,
-        durationMs: Number.NaN,
+        timings: {
+          queueWaitMs: Number.NaN,
+          engineExecuteMs: Number.POSITIVE_INFINITY,
+          postActionObserveMs: -1,
+          projectionMs: "1",
+          toolTotalMs: Number.NEGATIVE_INFINITY,
+        },
+        observationMode: NESTED_SECRET,
         effect: NESTED_SECRET,
         route: ENV_SECRET,
         delivery: CLIPBOARD_SECRET,
@@ -116,6 +142,27 @@ describe("metadata log redaction", () => {
 
     expect(record).toEqual({ timestamp: FIXED_TIMESTAMP });
     expect(JSON.stringify(record)).not.toContain("secret");
+  });
+
+  it.each([
+    "click",
+    "double_click",
+    "right_click",
+    "move",
+    "drag",
+    "scroll",
+    "set_value",
+    "type",
+    "type_text",
+    "keypress",
+    "invoke_menu",
+    "launch_app",
+    "wait",
+  ] as const)("keeps the current public action type %s", (actionType) => {
+    expect(redactMetadataEvent(
+      { actionType },
+      new Date(FIXED_TIMESTAMP),
+    )).toEqual({ timestamp: FIXED_TIMESTAMP, action_type: actionType });
   });
 
   it("keeps pseudonyms stable in one process without exposing raw identifiers", () => {

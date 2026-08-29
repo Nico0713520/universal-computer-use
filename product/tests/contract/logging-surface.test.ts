@@ -4,21 +4,18 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
 
 import { createMetadataLogger } from "../../src/logging/logger.js";
+import { createProductionRuntime } from "../../src/mcp/main.js";
 import { createComputerUseServer } from "../../src/mcp/server.js";
-import { fixtureRuntime } from "../helpers/fake-engine.js";
+import { FakeEngine } from "../helpers/fake-engine.js";
 
 describe("metadata logging public surface", () => {
   it("does not add logging data or tools to MCP responses", async () => {
     const logLines: string[] = [];
     const logger = createMetadataLogger({ write: (line) => logLines.push(line) });
-    logger.log({
-      sessionId: "private-session",
-      snapshotId: "private-snapshot",
-      toolName: "computer_observe",
-      durationMs: 12,
-    });
-
-    const { runtime } = fixtureRuntime({ dataBase64: "cG5nLWZpeHR1cmU=" });
+    const runtime = createProductionRuntime(
+      new FakeEngine({ dataBase64: "cG5nLWZpeHR1cmU=" }),
+      logger,
+    );
     const server = createComputerUseServer(runtime);
     const client = new Client({ name: "logging-contract-test", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -51,6 +48,7 @@ describe("metadata logging public surface", () => {
       ]);
       expect(JSON.stringify(observed)).not.toContain("session_id_hash");
       expect(JSON.stringify(observed)).not.toContain("timestamp");
+      expect(JSON.stringify(observed)).not.toContain("tool_total_ms");
       expect(logLines).toHaveLength(1);
     } finally {
       await client.close();

@@ -5,11 +5,10 @@ import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { ComputerUseRuntime } from "../core/runtime.js";
 import { CuaEngine } from "../engine/cua.js";
 import { loadEngineLock, type EngineLock } from "../engine/lock.js";
 import { ComputerUseError, ERROR_CODES } from "../errors.js";
-import { runStdioServer } from "../mcp/main.js";
+import { createProductionRuntime, runStdioServer } from "../mcp/main.js";
 import { renderConfig, type ConfigClient } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import {
@@ -35,6 +34,7 @@ type CliDependencies = Readonly<{
   mcpScriptPath: string;
   productOwnedPaths: readonly string[];
   isEngineInstalled: () => Promise<boolean>;
+  runMcpServer: typeof runStdioServer;
 }>;
 
 const mcpScriptPath = fileURLToPath(new URL("../mcp/main.js", import.meta.url));
@@ -61,6 +61,7 @@ const defaultDependencies: CliDependencies = {
   // Task 9 owns host-specific Skill links. Until it creates a product-owned
   // manifest, safe uninstall deliberately removes no inferred user paths.
   productOwnedPaths: [],
+  runMcpServer: runStdioServer,
   async isEngineInstalled() {
     try {
       await access(defaultEnginePath());
@@ -171,7 +172,7 @@ export async function runCli(
     requireOnly(args, []);
     const lock = await dependencies.loadLock();
     const engine = await dependencies.connectEngine(lock);
-    await runStdioServer(new ComputerUseRuntime(engine));
+    await dependencies.runMcpServer(createProductionRuntime(engine));
     return 0;
   }
 

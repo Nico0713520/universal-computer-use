@@ -4,10 +4,16 @@
  * Upstream SPDX-License-Identifier: MIT
  */
 import type { EngineAction, EngineDiscovery, EngineExecution, EnginePort, EngineWindowAction } from "../engine/port.js";
-import type { ActEnvelope, ActInput, ObservationEnvelope, ObserveInput } from "../protocol.js";
+import type { ActEnvelope, ActInput, ComputerAction, ObservationEnvelope, ObserveInput } from "../protocol.js";
 import { SnapshotStore } from "../snapshot-store.js";
 import { TargetRegistry, type NativeAppTarget, type NativeWindowTarget } from "../target-registry.js";
 import { ComputerUseError } from "../errors.js";
+import {
+  NOOP_METADATA_LOGGER,
+  type MetadataLogEvent,
+  type MetadataLogger,
+} from "../logging/logger.js";
+import { RuntimeTiming } from "../logging/timing.js";
 import {
   assertCoordinates,
   failedExecution,
@@ -35,23 +41,45 @@ import {
   type VerificationResult,
 } from "./verifier.js";
 
+export type RuntimeInstrumentation = Readonly<{
+  logger?: MetadataLogger;
+  now?: () => number;
+}>;
+
 export class ComputerUseRuntime {
   private readonly serial = new SerialExecutor();
   private readonly lifecycle = new AbortController();
   private closePromise?: Promise<void>;
   private engineUnhealthy = false;
+  private readonly logger: MetadataLogger;
+  private readonly now: () => number;
 
   constructor(
     private readonly engine: EnginePort,
     private readonly snapshots = new SnapshotStore(),
     private readonly targets = new TargetRegistry(),
-  ) {}
-
-  observe(input: ObserveInput = {}): Promise<ObservationEnvelope> {
-    return this.serial.run(() => this.observeUnlocked(input));
+    instrumentation: RuntimeInstrumentation = {},
+  ) {
+    this.logger = instrumentation.logger ?? NOOP_METADATA_LOGGER;
+    this.now = instrumentation.now ?? (() => performance.now());
   }
 
-  private async observeUnlocked(input: ObserveInput): Promise<ObservationEnvelope> {
+  observe(input: ObserveInput = {}): Promise<ObservationEnvelope> {
+    const timing = new RuntimeTiming(this.now);
+    return this.serial.run(async () => {
+      timing.markDequeued();
+      try {
+        const result = await this.observeUnlocked(input, timing);
+        this.logSuccess("computer_observe", undefined, result, timing);
+        return result;
+      } catch (error) {
+        this.logFailure("computer_observe", undefined, undefined, error, timing);
+        throw error;
+      }
+    });
+  }
+
+  private async observeUnlocked(input: ObserveInput, timing: RuntimeTiming): Promise<ObservationEnvelope> {
     this.snapshots.clear();
     const target = input.target ?? { kind: "desktop" as const };
     if (target.kind === "window") {
@@ -61,17 +89,20 @@ export class ComputerUseRuntime {
       const maxDepth = input.elements?.max_depth ?? 12;
       let observed;
       try {
-        observed = await withTimeout(
-          (signal) => this.engine.observe({
-            target: { kind: "window", window },
-            includeScreenshot,
-            ...(input.elements?.query === undefined ? {} : { query: input.elements.query }),
-            maxElements,
-            maxDepth,
-          }, signal),
-          20_000,
-          "capture_failed",
-          this.lifecycle.signal,
+        observed = await timing.measure(
+          "postActionObserveMs",
+          () => withTimeout(
+            (signal) => this.engine.observe({
+              target: { kind: "window", window },
+              includeScreenshot,
+              ...(input.elements?.query === undefined ? {} : { query: input.elements.query }),
+              maxElements,
+              maxDepth,
+            }, signal),
+            20_000,
+            "capture_failed",
+            this.lifecycle.signal,
+          ),
         );
       } catch (error) {
         if (error instanceof ComputerUseError && error.code === "window_owner_changed") {
@@ -82,39 +113,44 @@ export class ComputerUseRuntime {
       if (!("visualStatus" in observed)) {
         throw new ComputerUseError("engine_contract_changed", "Window observation returned desktop state", "doctor", false);
       }
-      const projected = projectWindowElements(observed, maxElements);
-      const visual = observed.visualStatus === "available" && observed.image !== undefined
-        ? { status: "available" as const, width: observed.image.width, height: observed.image.height }
-        : { status: observed.visualStatus as Exclude<typeof observed.visualStatus, "available"> };
-      const snapshot = this.snapshots.create({
-        sessionId: this.engine.sessionId,
-        target: { kind: "window", windowRef: window.windowRef },
-        observationMode: includeScreenshot ? "visual" : "semantic",
-        visual,
-        coordinateSpace: "window_screenshot_pixels",
-        ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
-        windowTarget: {
-          windowRef: window.windowRef,
-          appRef: window.appRef,
-          nativeKey: window.nativeKey,
-          ownerKey: window.ownerKey,
-        },
-        elements: projected.elements.map((element) => element.snapshot),
-        observeOptions: {
-          includeScreenshot,
-          ...(input.elements?.query === undefined ? {} : { query: input.elements.query }),
-          maxElements,
-          maxDepth,
-        },
+      return timing.measureSync("projectionMs", () => {
+        const projected = projectWindowElements(observed, maxElements);
+        const visual = observed.visualStatus === "available" && observed.image !== undefined
+          ? { status: "available" as const, width: observed.image.width, height: observed.image.height }
+          : { status: observed.visualStatus as Exclude<typeof observed.visualStatus, "available"> };
+        const snapshot = this.snapshots.create({
+          sessionId: this.engine.sessionId,
+          target: { kind: "window", windowRef: window.windowRef },
+          observationMode: includeScreenshot ? "visual" : "semantic",
+          visual,
+          coordinateSpace: "window_screenshot_pixels",
+          ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
+          windowTarget: {
+            windowRef: window.windowRef,
+            appRef: window.appRef,
+            nativeKey: window.nativeKey,
+            ownerKey: window.ownerKey,
+          },
+          elements: projected.elements.map((element) => element.snapshot),
+          observeOptions: {
+            includeScreenshot,
+            ...(input.elements?.query === undefined ? {} : { query: input.elements.query }),
+            maxElements,
+            maxDepth,
+          },
+        });
+        return toWindowObservationEnvelope(this.engine, snapshot, observed, projected);
       });
-      return toWindowObservationEnvelope(this.engine, snapshot, observed, projected);
     }
 
-    const observePromise = withTimeout(
-      (signal) => this.engine.observe(signal),
-      20_000,
-      "capture_failed",
-      this.lifecycle.signal,
+    const observePromise = timing.measure(
+      "postActionObserveMs",
+      () => withTimeout(
+        (signal) => this.engine.observe(signal),
+        20_000,
+        "capture_failed",
+        this.lifecycle.signal,
+      ),
     );
     const discoveryPromise = input.discover === undefined
       ? undefined
@@ -131,22 +167,24 @@ export class ComputerUseRuntime {
       observePromise,
       discoveryPromise ?? Promise.resolve(undefined),
     ]);
-    const snapshot = this.snapshots.create({
-      sessionId: this.engine.sessionId,
-      target: { kind: "desktop" },
-      visual: { status: "available", width: observed.image.width, height: observed.image.height },
-      coordinateSpace: "desktop_screenshot_pixels",
-      observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
+    return timing.measureSync("projectionMs", () => {
+      const snapshot = this.snapshots.create({
+        sessionId: this.engine.sessionId,
+        target: { kind: "desktop" },
+        visual: { status: "available", width: observed.image.width, height: observed.image.height },
+        coordinateSpace: "desktop_screenshot_pixels",
+        observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
+      });
+      if (discovery === undefined || input.discover === undefined) {
+        return toObservationEnvelope(this.engine, snapshot, observed);
+      }
+      return toDesktopDiscoveryEnvelope(
+        this.engine,
+        snapshot,
+        observed,
+        this.projectDiscovery(discovery, input.discover),
+      );
     });
-    if (discovery === undefined || input.discover === undefined) {
-      return toObservationEnvelope(this.engine, snapshot, observed);
-    }
-    return toDesktopDiscoveryEnvelope(
-      this.engine,
-      snapshot,
-      observed,
-      this.projectDiscovery(discovery, input.discover),
-    );
   }
 
   private projectDiscovery(
@@ -207,10 +245,21 @@ export class ComputerUseRuntime {
   }
 
   act(input: ActInput): Promise<ActEnvelope> {
-    return this.serial.run(() => this.actUnlocked(input));
+    const timing = new RuntimeTiming(this.now);
+    return this.serial.run(async () => {
+      timing.markDequeued();
+      try {
+        const result = await this.actUnlocked(input, timing);
+        this.logSuccess("computer_act", input.action.type, result, timing);
+        return result;
+      } catch (error) {
+        this.logFailure("computer_act", input.action.type, input.snapshot_id, error, timing);
+        throw error;
+      }
+    });
   }
 
-  private async actUnlocked(input: ActInput): Promise<ActEnvelope> {
+  private async actUnlocked(input: ActInput, timing: RuntimeTiming): Promise<ActEnvelope> {
     const snapshot = this.snapshots.requireCurrent(input.snapshot_id);
     if (input.next_observation !== undefined && snapshot.target.kind !== "window") {
       throw new ComputerUseError(
@@ -237,13 +286,16 @@ export class ComputerUseRuntime {
     const engineAction = this.resolveEngineAction(input, snapshot);
     this.snapshots.consume(input.snapshot_id);
 
-    let actionResult;
+    let actionResult: EngineExecution;
     try {
-      actionResult = await withTimeout(
-        (signal) => this.engine.execute(engineAction, signal),
-        20_000,
-        "action_timeout",
-        this.lifecycle.signal,
+      actionResult = await timing.measure(
+        "engineExecuteMs",
+        () => withTimeout(
+          (signal) => this.engine.execute(engineAction, signal),
+          20_000,
+          "action_timeout",
+          this.lifecycle.signal,
+        ),
       );
     } catch (error) {
       const critical = this.consumedCriticalError(error);
@@ -252,7 +304,7 @@ export class ComputerUseRuntime {
     }
 
     if (engineAction.target.kind === "app") {
-      return this.finishLaunch(snapshot.id, actionResult);
+      return this.finishLaunch(snapshot.id, actionResult, timing);
     }
 
     if (snapshot.target.kind === "window") {
@@ -275,13 +327,16 @@ export class ComputerUseRuntime {
         hasResolvedExpectation: verificationExpectation !== undefined,
       });
       const observeWith = (options: typeof snapshot.observeOptions) =>
-        observeWindowWithOneTransientRetry(this.engine, {
-          target: { kind: "window", window },
-          includeScreenshot: options.includeScreenshot,
-          ...(options.query === undefined ? {} : { query: options.query }),
-          maxElements: options.maxElements,
-          maxDepth: options.maxDepth,
-        }, this.lifecycle.signal);
+        timing.measure(
+          "postActionObserveMs",
+          () => observeWindowWithOneTransientRetry(this.engine, {
+            target: { kind: "window", window },
+            includeScreenshot: options.includeScreenshot,
+            ...(options.query === undefined ? {} : { query: options.query }),
+            maxElements: options.maxElements,
+            maxDepth: options.maxDepth,
+          }, this.lifecycle.signal),
+        );
       let observed;
       let verification: VerificationResult = { status: "not_requested" };
       let transitioned = false;
@@ -307,14 +362,18 @@ export class ComputerUseRuntime {
         if (critical !== undefined) throw critical;
         if (error instanceof ComputerUseError &&
             (error.code === "capture_failed" || error.code === "target_lost" || error.code === "window_owner_changed")) {
-          return toUnavailableActEnvelope(
-            this.engine,
-            snapshot.id,
-            actionResult,
-            error.code,
-            verificationExpectation === undefined
-              ? { status: "not_requested" }
-              : { status: "unknown", reason: "observation_unavailable" },
+          const errorCode = error.code;
+          return timing.measureSync(
+            "projectionMs",
+            () => toUnavailableActEnvelope(
+              this.engine,
+              snapshot.id,
+              actionResult,
+              errorCode,
+              verificationExpectation === undefined
+                ? { status: "not_requested" }
+                : { status: "unknown", reason: "observation_unavailable" },
+            ),
           );
         }
         throw error;
@@ -337,95 +396,32 @@ export class ComputerUseRuntime {
           if (critical !== undefined) throw critical;
           if (error instanceof ComputerUseError &&
               (error.code === "capture_failed" || error.code === "target_lost" || error.code === "window_owner_changed")) {
-            return toUnavailableActEnvelope(
-              this.engine,
-              snapshot.id,
-              actionResult,
-              error.code,
-              verificationExpectation === undefined
-                ? { status: "not_requested" }
-                : { status: "unknown", reason: "observation_unavailable" },
+            const errorCode = error.code;
+            return timing.measureSync(
+              "projectionMs",
+              () => toUnavailableActEnvelope(
+                this.engine,
+                snapshot.id,
+                actionResult,
+                errorCode,
+                verificationExpectation === undefined
+                  ? { status: "not_requested" }
+                  : { status: "unknown", reason: "observation_unavailable" },
+              ),
             );
           }
           throw error;
         }
       }
-      const projected = projectWindowElements(observed, final.options.maxElements);
-      const visual = observed.visualStatus === "available" && observed.image !== undefined
-        ? { status: "available" as const, width: observed.image.width, height: observed.image.height }
-        : { status: observed.visualStatus as Exclude<typeof observed.visualStatus, "available"> };
-      const next = this.snapshots.create({
-        sessionId: this.engine.sessionId,
-        target: { kind: "window", windowRef: window.windowRef },
-        observationMode: final.observationMode,
-        visual,
-        coordinateSpace: "window_screenshot_pixels",
-        ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
-        windowTarget: {
-          windowRef: window.windowRef,
-          appRef: window.appRef,
-          nativeKey: window.nativeKey,
-          ownerKey: window.ownerKey,
-        },
-        elements: projected.elements.map((element) => element.snapshot),
-        observeOptions: final.options,
-      });
-      return toWindowActEnvelope(this.engine, snapshot.id, next, actionResult, observed, projected, verification);
-    }
-
-    let observed;
-    try {
-      observed = await observeWithOneTransientRetry(
-        this.engine,
-        this.lifecycle.signal,
-      );
-    } catch (error) {
-      const critical = this.consumedCriticalError(error);
-      if (critical !== undefined) throw critical;
-      if (
-        error instanceof ComputerUseError &&
-        (error.code === "capture_failed" ||
-          error.code === "target_lost" ||
-          error.code === "window_owner_changed")
-      ) {
-        return toUnavailableActEnvelope(
-          this.engine,
-          snapshot.id,
-          actionResult,
-          error.code,
-        );
-      }
-      throw error;
-    }
-    const next = this.snapshots.create(
-      this.engine.sessionId,
-      observed.image.width,
-      observed.image.height,
-    );
-    return toActEnvelope(this.engine, snapshot.id, next, actionResult, observed);
-  }
-
-  private async finishLaunch(consumedId: string, result: EngineExecution): Promise<ActEnvelope> {
-    const candidates = result.launch === undefined
-      ? []
-      : this.targets.registerWindows(result.launch.windows).slice(0, 30);
-    if (result.status === "executed" && result.launch?.windowReady === true && candidates.length === 1) {
-      const window = candidates[0]!;
-      try {
-        const observed = await observeWindowWithOneTransientRetry(this.engine, {
-          target: { kind: "window", window },
-          includeScreenshot: true,
-          maxElements: 150,
-          maxDepth: 12,
-        }, this.lifecycle.signal);
-        const projected = projectWindowElements(observed, 150);
+      return timing.measureSync("projectionMs", () => {
+        const projected = projectWindowElements(observed, final.options.maxElements);
         const visual = observed.visualStatus === "available" && observed.image !== undefined
           ? { status: "available" as const, width: observed.image.width, height: observed.image.height }
           : { status: observed.visualStatus as Exclude<typeof observed.visualStatus, "available"> };
         const next = this.snapshots.create({
           sessionId: this.engine.sessionId,
           target: { kind: "window", windowRef: window.windowRef },
-          observationMode: "visual",
+          observationMode: final.observationMode,
           visual,
           coordinateSpace: "window_screenshot_pixels",
           ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
@@ -436,9 +432,96 @@ export class ComputerUseRuntime {
             ownerKey: window.ownerKey,
           },
           elements: projected.elements.map((element) => element.snapshot),
-          observeOptions: { includeScreenshot: true, maxElements: 150, maxDepth: 12 },
+          observeOptions: final.options,
         });
-        return toWindowActEnvelope(this.engine, consumedId, next, result, observed, projected);
+        return toWindowActEnvelope(this.engine, snapshot.id, next, actionResult, observed, projected, verification);
+      });
+    }
+
+    let observed;
+    try {
+      observed = await timing.measure(
+        "postActionObserveMs",
+        () => observeWithOneTransientRetry(
+          this.engine,
+          this.lifecycle.signal,
+        ),
+      );
+    } catch (error) {
+      const critical = this.consumedCriticalError(error);
+      if (critical !== undefined) throw critical;
+      if (
+        error instanceof ComputerUseError &&
+        (error.code === "capture_failed" ||
+          error.code === "target_lost" ||
+          error.code === "window_owner_changed")
+      ) {
+        const errorCode = error.code;
+        return timing.measureSync(
+          "projectionMs",
+          () => toUnavailableActEnvelope(
+            this.engine,
+            snapshot.id,
+            actionResult,
+            errorCode,
+          ),
+        );
+      }
+      throw error;
+    }
+    return timing.measureSync("projectionMs", () => {
+      const next = this.snapshots.create(
+        this.engine.sessionId,
+        observed.image.width,
+        observed.image.height,
+      );
+      return toActEnvelope(this.engine, snapshot.id, next, actionResult, observed);
+    });
+  }
+
+  private async finishLaunch(
+    consumedId: string,
+    result: EngineExecution,
+    timing: RuntimeTiming,
+  ): Promise<ActEnvelope> {
+    const candidates = result.launch === undefined
+      ? []
+      : this.targets.registerWindows(result.launch.windows).slice(0, 30);
+    if (result.status === "executed" && result.launch?.windowReady === true && candidates.length === 1) {
+      const window = candidates[0]!;
+      try {
+        const observed = await timing.measure(
+          "postActionObserveMs",
+          () => observeWindowWithOneTransientRetry(this.engine, {
+            target: { kind: "window", window },
+            includeScreenshot: true,
+            maxElements: 150,
+            maxDepth: 12,
+          }, this.lifecycle.signal),
+        );
+        return timing.measureSync("projectionMs", () => {
+          const projected = projectWindowElements(observed, 150);
+          const visual = observed.visualStatus === "available" && observed.image !== undefined
+            ? { status: "available" as const, width: observed.image.width, height: observed.image.height }
+            : { status: observed.visualStatus as Exclude<typeof observed.visualStatus, "available"> };
+          const next = this.snapshots.create({
+            sessionId: this.engine.sessionId,
+            target: { kind: "window", windowRef: window.windowRef },
+            observationMode: "visual",
+            visual,
+            coordinateSpace: "window_screenshot_pixels",
+            ...(observed.upstreamSnapshotId === undefined ? {} : { upstreamSnapshotId: observed.upstreamSnapshotId }),
+            windowTarget: {
+              windowRef: window.windowRef,
+              appRef: window.appRef,
+              nativeKey: window.nativeKey,
+              ownerKey: window.ownerKey,
+            },
+            elements: projected.elements.map((element) => element.snapshot),
+            observeOptions: { includeScreenshot: true, maxElements: 150, maxDepth: 12 },
+          });
+          return toWindowActEnvelope(this.engine, consumedId, next, result, observed, projected);
+        });
       } catch (error) {
         const critical = this.consumedCriticalError(error);
         if (critical !== undefined) throw critical;
@@ -456,29 +539,34 @@ export class ComputerUseRuntime {
 
     let observed;
     try {
-      observed = await observeWithOneTransientRetry(this.engine, this.lifecycle.signal);
+      observed = await timing.measure(
+        "postActionObserveMs",
+        () => observeWithOneTransientRetry(this.engine, this.lifecycle.signal),
+      );
     } catch (error) {
       const critical = this.consumedCriticalError(error);
       if (critical !== undefined) throw critical;
       throw error;
     }
-    const next = this.snapshots.create({
-      sessionId: this.engine.sessionId,
-      target: { kind: "desktop" },
-      visual: { status: "available", width: observed.image.width, height: observed.image.height },
-      coordinateSpace: "desktop_screenshot_pixels",
-      observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
+    return timing.measureSync("projectionMs", () => {
+      const next = this.snapshots.create({
+        sessionId: this.engine.sessionId,
+        target: { kind: "desktop" },
+        visual: { status: "available", width: observed.image.width, height: observed.image.height },
+        coordinateSpace: "desktop_screenshot_pixels",
+        observeOptions: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
+      });
+      return toActEnvelope(
+        this.engine,
+        consumedId,
+        next,
+        result,
+        observed,
+        candidates.length > 1
+          ? { windows: candidates.map(publicWindow), windowsTruncated: result.launch!.windows.length > candidates.length }
+          : {},
+      );
     });
-    return toActEnvelope(
-      this.engine,
-      consumedId,
-      next,
-      result,
-      observed,
-      candidates.length > 1
-        ? { windows: candidates.map(publicWindow), windowsTruncated: result.launch!.windows.length > candidates.length }
-        : {},
-    );
   }
 
   private resolveEngineAction(input: ActInput, snapshot: ReturnType<SnapshotStore["requireCurrent"]>): EngineAction {
@@ -686,6 +774,66 @@ export class ComputerUseRuntime {
       error.retryable,
       true,
     );
+  }
+
+  private logSuccess(
+    toolName: "computer_observe" | "computer_act",
+    actionType: ComputerAction["type"] | undefined,
+    envelope: ObservationEnvelope | ActEnvelope,
+    timing: RuntimeTiming,
+  ): void {
+    const structured = envelope.structured;
+    const snapshotId = "snapshot_id" in structured
+      ? structured.snapshot_id
+      : "consumed_snapshot_id" in structured
+        ? structured.consumed_snapshot_id
+        : undefined;
+    const actionResult = "action_result" in structured ? structured.action_result : undefined;
+    this.writeLog({
+      sessionId: structured.session_id,
+      ...(snapshotId === undefined ? {} : { snapshotId }),
+      toolName,
+      ...(actionType === undefined ? {} : { actionType }),
+      timings: timing.finish(),
+      ...("observation_mode" in structured
+        ? { observationMode: structured.observation_mode }
+        : {}),
+      ...(actionResult === undefined
+        ? {}
+        : {
+            effect: actionResult.effect,
+            route: actionResult.route,
+            delivery: actionResult.delivery,
+            ...(actionResult.error_code === undefined
+              ? {}
+              : { errorCode: actionResult.error_code }),
+          }),
+    });
+  }
+
+  private logFailure(
+    toolName: "computer_observe" | "computer_act",
+    actionType: ComputerAction["type"] | undefined,
+    snapshotId: string | undefined,
+    error: unknown,
+    timing: RuntimeTiming,
+  ): void {
+    this.writeLog({
+      sessionId: this.engine.sessionId,
+      ...(snapshotId === undefined ? {} : { snapshotId }),
+      toolName,
+      ...(actionType === undefined ? {} : { actionType }),
+      timings: timing.finish(),
+      errorCode: error instanceof ComputerUseError ? error.code : "runtime_unavailable",
+    });
+  }
+
+  private writeLog(event: MetadataLogEvent): void {
+    try {
+      this.logger.log(event);
+    } catch {
+      // Telemetry is best-effort and must never change tool-call semantics.
+    }
   }
 
   close(): Promise<void> {
