@@ -53,11 +53,12 @@ async function runProcess(command, args, options = {}) {
 }
 
 function parseArguments(argv) {
-  if (argv.length === 0) return { evidencePath: undefined };
-  if (argv.length !== 2 || argv[0] !== "--evidence" || argv[1] === "") {
+  const normalized = argv[0] === "--" ? argv.slice(1) : argv;
+  if (normalized.length === 0) return { evidencePath: undefined };
+  if (normalized.length !== 2 || normalized[0] !== "--evidence" || normalized[1] === "") {
     throw new AcceptanceFailure("acceptance_preflight_failed:invalid_arguments");
   }
-  return { evidencePath: argv[1] };
+  return { evidencePath: normalized[1] };
 }
 
 function validDoctor(value, lockedVersion) {

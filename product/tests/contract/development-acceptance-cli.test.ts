@@ -42,8 +42,15 @@ async function run(
   evidencePath: string,
   overrides: NodeJS.ProcessEnv = {},
   extraArgs: readonly string[] = [],
+  packageManagerSeparator = false,
 ): Promise<RunResult> {
-  const child = spawn(process.execPath, [SCRIPT, "--evidence", evidencePath, ...extraArgs], {
+  const child = spawn(process.execPath, [
+    SCRIPT,
+    ...(packageManagerSeparator ? ["--"] : []),
+    "--evidence",
+    evidencePath,
+    ...extraArgs,
+  ], {
     cwd: process.cwd(),
     env: {
       PATH: process.env.PATH,
@@ -114,6 +121,14 @@ describe("macOS development acceptance launcher", () => {
     });
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual(simulatedEvidence());
     expect(await readFile(path, "utf8")).not.toContain(path);
+  });
+
+  it("accepts the package-manager argument separator used by the documented command", async () => {
+    const path = await fixturePath("evidence.json");
+    const result = await run(path, {}, [], true);
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "passed", evidence_path: path });
   });
 
   it("refuses to overwrite an existing evidence path", async () => {
