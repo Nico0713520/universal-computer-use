@@ -268,6 +268,7 @@ describe("computer use MCP contract", () => {
     );
     const { runtime } = fixtureRuntime({ observationSequence: [error] });
     const client = await connectedClient(runtime);
+    await client.listTools();
 
     const result = CallToolResultSchema.parse(
       await client.callTool({
