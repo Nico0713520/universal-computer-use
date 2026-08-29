@@ -1,8 +1,140 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { assertCoordinates } from "../../src/core/act.js";
+import { ComputerUseRuntime } from "../../src/core/runtime.js";
 import { ComputerUseError } from "../../src/errors.js";
+import type {
+  EngineAction,
+  EngineDesktopObservation,
+  EngineDiscoverInput,
+  EngineDiscovery,
+  EngineExecution,
+  EngineObservation,
+  EngineObserveInput,
+  EnginePort,
+} from "../../src/engine/port.js";
 import type { ActInput, ComputerAction } from "../../src/protocol.js";
+import { SnapshotStore, type SnapshotRecord } from "../../src/snapshot-store.js";
+import { TargetRegistry } from "../../src/target-registry.js";
 import { fixtureRuntime } from "../helpers/fake-engine.js";
+
+class SemanticGuardEngine implements EnginePort {
+  readonly name = "cua-driver" as const;
+  readonly version = "0.22.2";
+  readonly sessionId = "semantic-guard-session";
+  readonly executions: EngineAction[] = [];
+
+  async discover(_input: EngineDiscoverInput, _signal: AbortSignal): Promise<EngineDiscovery> {
+    return { apps: [], windows: [] };
+  }
+
+  async observe(signal: AbortSignal): Promise<EngineDesktopObservation>;
+  async observe(input: EngineObserveInput, signal: AbortSignal): Promise<EngineObservation>;
+  async observe(
+    inputOrSignal: EngineObserveInput | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<EngineObservation> {
+    const signal = inputOrSignal instanceof AbortSignal ? inputOrSignal : maybeSignal!;
+    if (signal.aborted) throw new DOMException("aborted", "AbortError");
+    if (inputOrSignal instanceof AbortSignal || inputOrSignal.target.kind === "desktop") {
+      return {
+        platform: "macos",
+        scaleFactor: 1,
+        image: { mimeType: "image/png", dataBase64: "cG5n", width: 100, height: 80 },
+      };
+    }
+    return {
+      platform: "macos",
+      target: inputOrSignal.target.window,
+      visualStatus: "not_requested",
+      elements: [],
+      elementsComplete: true,
+    };
+  }
+
+  async execute(action: EngineAction, _signal: AbortSignal): Promise<EngineExecution> {
+    this.executions.push(action);
+    return {
+      status: "executed",
+      effect: "confirmed",
+      route: "system_api",
+      delivery: "not_applicable",
+    };
+  }
+
+  async health(_signal: AbortSignal): Promise<boolean> { return true; }
+  async close(): Promise<void> {}
+}
+
+function semanticWindowRuntime(): Readonly<{
+  runtime: ComputerUseRuntime;
+  engine: SemanticGuardEngine;
+  snapshot: SnapshotRecord;
+}> {
+  const engine = new SemanticGuardEngine();
+  const snapshotTokens = ["semanticSnapshotToken1", "semanticSnapshotToken2"];
+  const snapshots = new SnapshotStore(() => 1, () => snapshotTokens.shift()!);
+  const targets = new TargetRegistry({
+    now: () => 1,
+    token: (() => {
+      const tokens = ["semanticAppToken1", "semanticWindowToken1"];
+      return () => tokens.shift()!;
+    })(),
+  });
+  const app = {
+    nativeKey: "bundle:semantic-guard",
+    displayName: "Semantic Guard",
+    running: true,
+    capabilities: ["windows"] as const,
+    native: { platform: "macos", pid: 42 },
+  };
+  const window = targets.registerWindows([{
+    nativeKey: "window:7",
+    ownerKey: "pid:42",
+    app,
+    title: "Semantic Guard",
+    bounds: { x: 0, y: 0, width: 100, height: 80 },
+    focused: false,
+    capabilities: ["observe", "keypress"] as const,
+    native: { platform: "macos", pid: 42, window_id: 7 },
+  }])[0]!;
+  const snapshot = snapshots.create({
+    sessionId: engine.sessionId,
+    target: { kind: "window", windowRef: window.windowRef },
+    visual: { status: "not_requested" },
+    coordinateSpace: "window_screenshot_pixels",
+    windowTarget: {
+      windowRef: window.windowRef,
+      appRef: window.appRef,
+      nativeKey: window.nativeKey,
+      ownerKey: window.ownerKey,
+    },
+    observeOptions: { includeScreenshot: false, maxElements: 150, maxDepth: 12 },
+  });
+  return {
+    runtime: new ComputerUseRuntime(engine, snapshots, targets),
+    engine,
+    snapshot,
+  };
+}
+
+function semanticSnapshot(): SnapshotRecord {
+  return {
+    id: "snap_semantic123",
+    sessionId: "session-test",
+    target: { kind: "window", windowRef: "win_semantic123456" },
+    visualStatus: "not_requested",
+    coordinateSpace: "window_screenshot_pixels",
+    windowTarget: {
+      windowRef: "win_semantic123456",
+      appRef: "app_semantic123456",
+      nativeKey: "window:1",
+      ownerKey: "pid:1",
+    },
+    observeOptions: { includeScreenshot: false, maxElements: 150, maxDepth: 12 },
+    createdAtMs: 1,
+  };
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -10,6 +142,43 @@ afterEach(() => {
 });
 
 describe("ComputerUseRuntime.act", () => {
+  it.each<ComputerAction>([
+    { type: "type", x: 10, y: 11, text: "once" },
+    { type: "type_text", x: 10, y: 11, text: "once" },
+    { type: "keypress", x: 10, y: 11, keys: ["enter"] },
+    { type: "click", x: 10, y: 11 },
+    { type: "scroll", x: 10, y: 11, direction: "down", amount: 1 },
+    { type: "drag", from_x: 10, from_y: 11, to_x: 20, to_y: 21 },
+  ])("rejects coordinate action $type without a proven pixel frame", (action) => {
+    expect(() => assertCoordinates(action, semanticSnapshot())).toThrowError(
+      expect.objectContaining({ code: "pixel_frame_unproven" }),
+    );
+  });
+
+  it.each<ComputerAction>([
+    { type: "type", x: 10, y: 11, text: "once" },
+    { type: "type_text", x: 10, y: 11, text: "once" },
+    { type: "keypress", x: 10, y: 11, keys: ["enter"] },
+    { type: "click", x: 10, y: 11 },
+    { type: "scroll", x: 10, y: 11, direction: "down", amount: 1 },
+    { type: "drag", from_x: 10, from_y: 11, to_x: 20, to_y: 21 },
+  ])("rejects semantic-snapshot coordinate $type before execution without consuming", async (action) => {
+    const { runtime, engine, snapshot } = semanticWindowRuntime();
+
+    await expect(runtime.act({ snapshot_id: snapshot.id, action })).rejects.toMatchObject({
+      code: "pixel_frame_unproven",
+    });
+    expect(engine.executions).toHaveLength(0);
+    await expect(runtime.act({
+      snapshot_id: snapshot.id,
+      action: { type: "wait", ms: 0 },
+    })).resolves.toMatchObject({
+      structured: { consumed_snapshot_id: snapshot.id },
+    });
+    expect(engine.executions).toHaveLength(1);
+    await runtime.close();
+  });
+
   it.each<ComputerAction>([
     { type: "click", x: 100, y: 20 },
     { type: "double_click", x: 10, y: 80 },

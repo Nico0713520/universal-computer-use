@@ -16,11 +16,7 @@ export function assertCoordinates(
           [action.from_x, action.from_y],
           [action.to_x, action.to_y],
         ]
-      : (action.type === "click" ||
-          action.type === "double_click" ||
-          action.type === "right_click" ||
-          action.type === "move" ||
-          action.type === "scroll") && "x" in action
+      : "x" in action && "y" in action
         ? [[action.x, action.y]]
         : [];
 
