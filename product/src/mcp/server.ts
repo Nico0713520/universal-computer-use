@@ -23,7 +23,7 @@ export function createComputerUseServer(runtime: ComputerUseRuntime): McpServer 
     "computer_observe",
     {
       description:
-        "Capture the primary display and establish the only current actionable snapshot.",
+        "Observe the requested desktop or exact-window target state and create a one-use actionable snapshot.",
       inputSchema: ObserveInputSchema,
       outputSchema: ObserveToolMcpOutputSchema,
       annotations: {
@@ -40,7 +40,7 @@ export function createComputerUseServer(runtime: ComputerUseRuntime): McpServer 
     "computer_act",
     {
       description:
-        "Execute one screenshot-bound desktop action and return a fresh primary-display screenshot.",
+        "Execute one snapshot-bound action and return the fresh target state; next_observation may request a safe semantic next state.",
       inputSchema: ActInputSchema,
       outputSchema: ActToolMcpOutputSchema,
       annotations: {

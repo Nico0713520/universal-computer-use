@@ -248,7 +248,8 @@ describe("computer use MCP contract", () => {
     const instructions = client.getInstructions();
 
     expect(instructions).toBeTypeOf("string");
-    const opening = instructions!.slice(0, 512);
+    const opening = instructions!.split("\n\n", 1)[0] ?? "";
+    expect(opening.length).toBeLessThanOrEqual(512);
     for (const phrase of [
       "Observe before the first action",
       "exact window",
@@ -260,7 +261,33 @@ describe("computer use MCP contract", () => {
     ]) {
       expect(opening).toContain(phrase);
     }
+    for (const phrase of [
+      "next_observation",
+      "semantic",
+      "visual_recovery",
+      "semantic snapshot",
+      "do not call computer_observe again",
+      "Never insert a fixed post-action wait",
+    ]) {
+      expect(instructions).toContain(phrase);
+    }
+    expect(instructions).toMatch(/Canvas|WebGL/);
+    expect(instructions).toMatch(/never.*repeat|Never blindly repeat/i);
     expect(instructions).not.toMatch(/embedded model|bypass|computer_verify/i);
+  });
+
+  it("describes target-aware observations without promising a primary-display screenshot", async () => {
+    const { runtime } = fixtureRuntime();
+    const client = await connectedClient(runtime);
+    const { tools } = await client.listTools();
+    const observe = tools.find(({ name }) => name === "computer_observe");
+    const act = tools.find(({ name }) => name === "computer_act");
+
+    expect(observe?.description).toMatch(/desktop or exact-window|target state/i);
+    expect(act?.description).toMatch(/fresh target state/i);
+    expect(act?.description).toContain("next_observation");
+    expect(observe?.description).not.toMatch(/only current actionable|primary display/i);
+    expect(act?.description).not.toMatch(/primary-display screenshot/i);
   });
 
   it("returns matching structured data and one PNG image for observe and act", async () => {

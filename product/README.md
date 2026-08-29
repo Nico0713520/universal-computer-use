@@ -1,13 +1,15 @@
 # Universal Computer Use Plugin
 
-A lightweight local MCP bridge that lets a compatible multimodal agent observe and operate the current desktop. The host agent supplies the vision model and decision loop; this package supplies the protocol, validation, lifecycle, and execution bridge.
+A lightweight local MCP bridge that lets a compatible multimodal agent observe and operate the current desktop. The host agent supplies the vision model and decision loop; product `0.2.2` and protocol `1.2.0` supply the validation, lifecycle, and execution bridge.
 
 Cua Driver is a separate MIT-licensed runtime dependency. Its Rust and native platform code are not bundled as product source, modified, or re-signed by this project. The exact reviewed runtime and installer artifacts are pinned in `engine.lock.json`.
 
 The MCP surface contains exactly two tools:
 
 - `computer_observe` captures the main display, can discover opaque app/window targets, and on macOS can return an exact window PNG plus bounded Accessibility elements.
-- `computer_act` validates one action against that one-use snapshot, prefers precise element handles, supports explicit background/foreground window delivery, verifies bounded postconditions, and returns the next state without a redundant observe call.
+- `computer_act` validates one action against that one-use snapshot, prefers precise element handles, supports explicit background/foreground window delivery, verifies bounded postconditions, and returns the fresh target state without a redundant observe call.
+
+After one full exact-window screenshot, a confirmed low-risk semantic action can request `next_observation: {"mode":"semantic"}` and continue from bounded elements without another PNG. Coordinate, foreground, failed, refused, unconfirmed, and otherwise unsafe paths instead return `observation_mode:"visual_recovery"`; the Agent must inspect that visual state and must not replay the action automatically. A semantic snapshot cannot authorize coordinates.
 
 The plugin has no model, provider endpoint, API key, internal planner, OCR service, per-action dialog, or GUI. Host approval and safety policy still apply.
 

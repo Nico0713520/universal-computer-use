@@ -19,9 +19,11 @@
 
 - 仓库：<https://github.com/trycua/cua>
 - 许可证 SPDX：`MIT`
-- 开发基线 release：`cua-driver-rs-v0.22.2`（GitHub pre-release，固定 development candidate）
+- 开发基线 release：`cua-driver-rs-v0.22.2`
 - 开发基线 commit：`d114f35fec05ecd37bf529e5587be86852205b64`
 - macOS 必需修复：`90295148d34dac8e5a1307bac917e08171af5839`
+
+The monorepo release is labeled Pre-release to control GitHub's Latest pointer; the plain SemVer driver channel is still a stable upstream release channel. UCU keeps `release_eligible:false` because its own named-host, installer, soak, and Windows evidence gates are incomplete—not because of that GitHub label alone.
 
 | 上游文件 | 采用方式 | 我方用途 |
 |---|---|---|

@@ -50,6 +50,26 @@ describe("canonical computer-use Skill policy", () => {
     expect(skill).not.toContain("bring_to_front");
   });
 
+  it("teaches the adaptive semantic-next-state loop and safe visual recovery", async () => {
+    const skill = await readSkill();
+
+    for (const phrase of [
+      "next_observation",
+      "semantic",
+      "visual_recovery",
+      "semantic snapshot",
+      "do not call `computer_observe` again",
+      "Never insert a fixed post-action wait",
+    ]) {
+      expect(skill).toContain(phrase);
+    }
+    expect(skill).toMatch(/Canvas|WebGL/);
+    expect(skill).toMatch(/never.*repeat|Never blindly repeat/i);
+    expect(skill).toMatch(/50\/100\/200\/400\/500/);
+    expect(skill).toMatch(/explicit `wait\(ms\)`/i);
+    expect(skill).toMatch(/no universal post-action wait/i);
+  });
+
   it("documents all public actions and actionable recovery without expanding the protocol", async () => {
     const skill = await readSkill();
 

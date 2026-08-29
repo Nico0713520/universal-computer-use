@@ -1,4 +1,5 @@
 export const MCP_SERVER_INSTRUCTIONS = [
   "Observe before the first action. Discover and lock the exact window when possible. Execute one action at a time using only the latest snapshot. computer_act returns the fresh next state; inspect it instead of observing again. Never blindly retry unverifiable input. Stop as soon as the visible goal is proved.",
+  "After a full window screenshot grounds the task, a confirmed low-risk element or menu action may request next_observation mode semantic. Use the fresh snapshot returned by computer_act; do not call computer_observe again. A semantic snapshot supports elements, never coordinates. observation_mode visual_recovery requires inspecting the returned PNG and deciding again; never repeat automatically. Canvas and WebGL stay visual one-action/one-frame loops. Never insert a fixed post-action wait.",
   "Prefer element_ref inside an exact window; use screenshot coordinates only when semantic elements are unavailable. Re-discover after a stale or lost target.",
-].join(" ");
+].join("\n\n");

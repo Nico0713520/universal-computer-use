@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 import { loadEngineLock } from "../../src/engine/lock.js";
 
 const sourceMapUrl = new URL("../../../docs/upstream-sources.md", import.meta.url);
+const currentDocUrls = [
+  new URL("../../../README.md", import.meta.url),
+  new URL("../../README.md", import.meta.url),
+  new URL("../../../docs/host-compatibility.md", import.meta.url),
+] as const;
 
 async function readSourceMap(): Promise<string> {
   return readFile(sourceMapUrl, "utf8");
@@ -41,5 +46,35 @@ describe("upstream source map", () => {
     }
     expect(sourceMap).not.toContain("copy Cua Rust");
     expect(sourceMap).not.toContain("follow latest");
+  });
+
+  it("attributes UCU's development status to its own evidence gates", async () => {
+    const sourceMap = await readSourceMap();
+
+    expect(sourceMap).toContain(
+      "The monorepo release is labeled Pre-release to control GitHub's Latest pointer; " +
+      "the plain SemVer driver channel is still a stable upstream release channel.",
+    );
+    expect(sourceMap).toContain(
+      "UCU keeps `release_eligible:false` because its own named-host, installer, soak, and Windows evidence gates are incomplete—not because of that GitHub label alone.",
+    );
+    expect(sourceMap).not.toContain(
+      "GitHub pre-release，固定 development candidate",
+    );
+  });
+
+  it("keeps current docs on product 0.2.2 and protocol 1.2 adaptive behavior", async () => {
+    const docs = await Promise.all(currentDocUrls.map((url) => readFile(url, "utf8")));
+    const combined = docs.join("\n");
+
+    for (const doc of docs) {
+      expect(doc).toContain("0.2.2");
+      expect(doc).toContain("1.2.0");
+    }
+    expect(combined).toContain("next_observation");
+    expect(combined).toContain("visual_recovery");
+    expect(combined).toMatch(/semantic next state|semantic-next-state/i);
+    expect(combined).toMatch(/Windows[\s\S]*primary-desktop path/i);
+    expect(combined).toMatch(/Windows[\s\S]*window-state tools are stubs/i);
   });
 });

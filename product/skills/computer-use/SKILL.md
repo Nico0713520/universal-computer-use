@@ -29,7 +29,11 @@ The speed/precision tradeoff is explicit: `element_ref` keeps semantic identity 
 
 Prefer background delivery for window click, scroll, drag, typing, and keypress. Use foreground only after a fresh state proves background delivery did not land and the action is safe to attempt again. Never treat an escalation hint as retry permission. The plugin does not persistently bring a target to the front.
 
-Never insert a fixed post-action wait. Verification observes immediately and conditionally backs off. Use `wait` only when fresh evidence shows loading or animation is still in progress. Send complete text once rather than one character per action.
+After one full window screenshot grounds the task, a confirmed low-risk element or menu action may request `next_observation: {"mode":"semantic"}`. Use the fresh snapshot returned by `computer_act`; do not call `computer_observe` again when it is available. A semantic snapshot has no proven pixel frame, so it may address elements but never coordinates.
+
+`observation_mode:"visual_recovery"` means the requested or inherited semantic path was upgraded because the action was coordinate-based, foreground, failed, refused, unconfirmed, or otherwise unsafe. Inspect the returned PNG and decide again; never replay the action automatically. Canvas, video, and WebGL remain visual one-action/one-frame loops.
+
+Never insert a fixed post-action wait. Verification observes immediately and conditionally backs off through 50/100/200/400/500 ms only when verification is required; there is no universal post-action wait. Use an explicit `wait(ms)` action only when fresh evidence shows loading or animation is still in progress. Send complete text once rather than one character per action.
 
 With the pinned Cua 0.22.2 runtime, precise window discovery, element targeting, and background window actions are implemented on macOS. Windows keeps the desktop screenshot path while upstream window tools remain unavailable; do not claim Windows background precision until a later locked runtime and real DPI evidence prove it.
 

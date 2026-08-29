@@ -32,12 +32,14 @@ macOS / Windows desktop
 
 The adapter exposes one UCU session to the host but keeps Cua's mutually exclusive desktop- and window-capture scopes in separate internal sessions. Desktop calls stay on the desktop scope; exact window screenshots and background element actions stay on the window scope.
 
-The public MCP surface contains exactly two tools:
+Product `0.2.2` uses protocol `1.2.0` and keeps the public MCP surface at exactly two tools:
 
-- `computer_observe` captures the primary display and returns a PNG with a one-use `snapshot_id`.
-- `computer_act` validates and consumes that snapshot, executes exactly one action, and returns a fresh screenshot and snapshot ID.
+- `computer_observe` returns a one-use `snapshot_id` for the desktop or an exact window, with a PNG when a visual frame is requested and bounded elements for window observations.
+- `computer_act` validates and consumes that snapshot, executes exactly one action, and returns the fresh target state plus a new snapshot ID.
 
-Supported v1 actions are click, double-click, right-click, move, drag, scroll, type, keypress/hotkey, and wait. The plugin does not contain a model, planner, OCR system, GUI, per-action approval dialog, or native input implementation.
+After a full exact-window frame grounds the task, a confirmed low-risk semantic action may request `next_observation: {"mode":"semantic"}` to avoid another PNG. Unsafe, foreground, failed, refused, unconfirmed, or coordinate-based paths return `observation_mode:"visual_recovery"` so the Agent inspects current pixels instead of blindly repeating the action. Semantic snapshots retain one-use snapshot protection and may address elements, never coordinates.
+
+Supported actions are click, double-click, right-click, move, drag, scroll, set value, type, keypress/hotkey, menu invocation, application launch, and explicit wait. The plugin does not contain a model, planner, OCR system, GUI, per-action approval dialog, or native input implementation.
 
 ## Run from source
 
@@ -87,7 +89,7 @@ The v0.2.2 developer preview retains the real macOS acceptance command. On the c
 
 - Use the host Agent's current multimodal model.
 - Keep the public interface small and portable.
-- Bind every action to the latest visible screenshot.
+- Bind every action to the latest visual or semantic snapshot.
 - Execute one action at a time and never blindly retry input.
 - Reuse mature native execution instead of copying platform code.
 - Treat compatibility as evidence, not a README claim.
