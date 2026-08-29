@@ -52,7 +52,7 @@ computer-use doctor --json
 
 Doctor validates the locked Runtime version and required tools, performs exactly one screenshot observation, performs no mouse or keyboard action, and closes its diagnostic session. It returns plugin/protocol/engine versions, platform support, Runtime connectivity, required tool status, interactive desktop status, permission status when exposed, observation status, screenshot dimensions, and overall `ok`. Any required failure exits 1.
 
-Cua Driver 0.22.1 does not expose a portable target-integrity or complete permission-state probe through the public plugin seam. Unknown values remain `unknown`; observed refusals and locked-session failures remain failures.
+Cua Driver 0.22.2 does not expose a portable target-integrity or complete permission-state probe through the public plugin seam. Unknown values remain `unknown`; observed refusals and locked-session failures remain failures.
 
 ## Configure the host Agent
 

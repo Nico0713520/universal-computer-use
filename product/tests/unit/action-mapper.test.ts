@@ -202,7 +202,13 @@ describe("Cua action mapping", () => {
         delivery: "background",
       },
       tool: "click",
-      args: { session, element_token: "private-token", delivery_mode: "background" },
+      args: {
+        session,
+        pid: 42,
+        window_id: 7,
+        element_token: "private-token",
+        delivery_mode: "background",
+      },
     },
     {
       input: {
@@ -219,7 +225,7 @@ describe("Cua action mapping", () => {
         action: { type: "set_value", address: { kind: "element", token: "private-token" }, value: "hello" },
       },
       tool: "set_value",
-      args: { session, element_token: "private-token", value: "hello" },
+      args: { session, pid: 42, window_id: 7, element_token: "private-token", value: "hello" },
     },
     {
       input: {
@@ -228,7 +234,14 @@ describe("Cua action mapping", () => {
         delivery: "background",
       },
       tool: "type_text",
-      args: { session, element_token: "private-token", text: "hello", delivery_mode: "background" },
+      args: {
+        session,
+        pid: 42,
+        window_id: 7,
+        element_token: "private-token",
+        text: "hello",
+        delivery_mode: "background",
+      },
     },
     {
       input: {

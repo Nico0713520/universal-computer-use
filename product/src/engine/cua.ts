@@ -80,6 +80,7 @@ export class CuaEngine implements EnginePort {
     private readonly sdk: CuaSdkLike,
     readonly version: string,
     readonly sessionId: string,
+    private readonly windowSessionId: string,
   ) {}
 
   static async connect(lock: EngineLock): Promise<CuaEngine> {
@@ -146,34 +147,53 @@ export class CuaEngine implements EnginePort {
     }
 
     const publicSession = `ucu_${randomUUID()}`;
-    const started = await sdk.startSession({
-      session: publicSession,
-      captureScope: CaptureScope.Desktop,
-    });
-    if (
-      started.state.captureScope !== CaptureScope.Desktop ||
-      started.state.effectiveScope !== EffectiveScope.Desktop
-    ) {
-      await sdk.endSession({ session: started.state.session });
+    const starts = await Promise.allSettled([
+      sdk.startSession({
+        session: publicSession,
+        captureScope: CaptureScope.Desktop,
+      }),
+      sdk.startSession({
+        session: `${publicSession}_window`,
+        captureScope: CaptureScope.Window,
+      }),
+    ]);
+    const activeSessions = starts.flatMap((start) => start.status === "fulfilled" ? [start.value.state.session] : []);
+    const desktop = starts[0];
+    const window = starts[1];
+    const validDesktop = desktop?.status === "fulfilled" &&
+      desktop.value.state.captureScope === CaptureScope.Desktop &&
+      desktop.value.state.effectiveScope === EffectiveScope.Desktop;
+    const validWindow = window?.status === "fulfilled" &&
+      window.value.state.captureScope === CaptureScope.Window &&
+      window.value.state.effectiveScope === EffectiveScope.Window;
+    if (!validDesktop || !validWindow) {
+      await Promise.allSettled([...activeSessions].reverse().map(async (session) => sdk.endSession({ session })));
+      const rejected = starts.find((start): start is PromiseRejectedResult => start.status === "rejected");
+      if (rejected !== undefined) throw rejected.reason;
       throw new ComputerUseError(
         "engine_version_mismatch",
-        "Cua did not establish the requested desktop scope",
+        "Cua did not establish the required desktop and window scopes",
         "setup",
         false,
       );
     }
 
-    return new CuaEngine(sdk, lock.version, started.state.session);
+    return new CuaEngine(sdk, lock.version, desktop.value.state.session, window.value.state.session);
   }
 
   async discover(input: EngineDiscoverInput, signal: AbortSignal): Promise<EngineDiscovery> {
     if (!input.apps && !input.windows) return { apps: [], windows: [] };
     const platform = supportedPlatform();
     assertPreciseWindowSupport(platform);
-    const appsResult = await this.sdk.callTool("list_apps", "{}", { signal });
+    if (!input.windows) {
+      const appsResult = await this.sdk.callTool("list_apps", "{}", { signal });
+      return { apps: input.apps ? parseAppList(appsResult, platform) : [], windows: [] };
+    }
+    const [appsResult, windowsResult] = await Promise.all([
+      this.sdk.callTool("list_apps", "{}", { signal }),
+      this.sdk.callTool("list_windows", "{}", { signal }),
+    ]);
     const apps = parseAppList(appsResult, platform);
-    if (!input.windows) return { apps: input.apps ? apps : [], windows: [] };
-    const windowsResult = await this.sdk.callTool("list_windows", "{}", { signal });
     const windows = parseWindowList(windowsResult, apps, platform);
     return { apps: input.apps ? apps : [], windows };
   }
@@ -214,7 +234,7 @@ export class CuaEngine implements EnginePort {
     const result = await this.sdk.callTool(
       "get_window_state",
       JSON.stringify({
-        session: this.sessionId,
+        session: this.windowSessionId,
         pid,
         window_id: windowId,
         include_screenshot: windowInput.includeScreenshot,
@@ -228,7 +248,10 @@ export class CuaEngine implements EnginePort {
   }
 
   async execute(action: EngineAction, signal: AbortSignal): Promise<EngineExecution> {
-    const mapped = mapAction(action, this.sessionId);
+    const mapped = mapAction(
+      action,
+      action.target.kind === "desktop" ? this.sessionId : this.windowSessionId,
+    );
     if ("waitMs" in mapped) {
       await cancellableWait(mapped.waitMs, signal);
       return {
@@ -260,6 +283,11 @@ export class CuaEngine implements EnginePort {
   }
 
   async close(): Promise<void> {
-    await this.sdk.endSession({ session: this.sessionId });
+    const closed = await Promise.allSettled([
+      this.sdk.endSession({ session: this.windowSessionId }),
+      this.sdk.endSession({ session: this.sessionId }),
+    ]);
+    const rejected = closed.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (rejected !== undefined) throw rejected.reason;
   }
 }

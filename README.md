@@ -30,6 +30,8 @@ Unmodified Cua Driver runtime
 macOS / Windows desktop
 ```
 
+The adapter exposes one UCU session to the host but keeps Cua's mutually exclusive desktop- and window-capture scopes in separate internal sessions. Desktop calls stay on the desktop scope; exact window screenshots and background element actions stay on the window scope.
+
 The public MCP surface contains exactly two tools:
 
 - `computer_observe` captures the primary display and returns a PNG with a one-use `snapshot_id`.

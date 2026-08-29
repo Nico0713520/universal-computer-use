@@ -2,6 +2,8 @@
 
 > **实现修正（2026-08-28）：** 对锁定的 Cua 0.22.2 做源码级审计后确认，`list_apps`、`list_windows`、`get_window_state` 在 macOS 有可用实现，但 Windows 端仍是 stub。因此 v0.2 的窗口精准能力只在 macOS 实现；Windows 保留 v0.1 主桌面路径，对精准发现/窗口请求稳定返回 `unsupported_platform`。下文更广泛的 Windows window/UIA 描述属于目标架构，不代表 0.22.2 已交付；必须等后续锁定 Runtime 加上 100%/125%/150% 真机证据后才能晋级。
 
+> **真机契约修正（2026-08-29）：** Cua 0.22.2 的 `Desktop` 与 `Window` capture scope 互斥，桌面会话调用 `get_window_state` 会返回 `window_scope_disabled`。Adapter 因此并行建立两个内部 Cua session，对宿主仍只暴露一个 UCU session；桌面观察/动作固定走 desktop session，窗口观察、元素动作和后台投递固定走 window session。`list_windows` 中合法的 `0×0` 系统辅助窗口会被逐项丢弃，不再使整批发现失败；所有元素动作都同时携带内部 PID、window ID 和 token，避免 Cua 将精确动作拒绝为缺少 PID。
+
 日期：2026-08-28
 
 状态：已批准并实施；真实平台证据待补

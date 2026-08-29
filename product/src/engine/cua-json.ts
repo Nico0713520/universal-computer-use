@@ -21,6 +21,12 @@ const BoundsSchema = z.object({
   width: positive,
   height: positive,
 }).passthrough();
+const WindowListBoundsSchema = z.object({
+  x: finite,
+  y: finite,
+  width: finite.nonnegative(),
+  height: finite.nonnegative(),
+}).passthrough();
 
 const DesktopStateSchema = z.object({
   platform: PlatformSchema,
@@ -49,7 +55,7 @@ const WindowSchema = z.object({
   pid: positiveInteger,
   app_name: z.string(),
   title: z.string(),
-  bounds: BoundsSchema,
+  bounds: WindowListBoundsSchema,
   z_index: z.number().int().nullable().optional(),
   is_on_screen: z.boolean().optional(),
   on_current_space: z.boolean().nullable().optional(),
@@ -218,7 +224,9 @@ export function parseWindowList(
     Number.NEGATIVE_INFINITY,
     ...parsed.windows.flatMap((window) => window.z_index === null || window.z_index === undefined ? [] : [window.z_index]),
   );
-  return Object.freeze(parsed.windows.map((window): NativeWindowTarget => {
+  return Object.freeze(parsed.windows
+    .filter((window) => window.bounds.width > 0 && window.bounds.height > 0)
+    .map((window): NativeWindowTarget => {
     const ownerApp: NativeAppTarget = appsByPid.get(window.pid) ?? Object.freeze({
       nativeKey: `pid:${window.pid}`,
       displayName: window.app_name,
@@ -245,7 +253,7 @@ export function parseWindowList(
       ] as const),
       native: Object.freeze({ platform, pid: window.pid, window_id: window.window_id }),
     });
-  }));
+    }));
 }
 
 function exactWindowIds(target: InternalWindowTarget): { pid: number; windowId: number } {

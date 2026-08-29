@@ -28,7 +28,7 @@ Development setup always prints a machine-readable `development_only:true` warni
 
 Setup downloads `install.sh` from the exact locked GitHub release and its helper scripts from the exact locked Cua source commit into one temporary directory. It verifies every script SHA-256 before executing the local entry point, pins `CUA_DRIVER_RS_VERSION`, and never follows `latest` or `main`. The unmodified upstream installer downloads the release archive; the asset hash in the lock is promotion evidence rather than a claim that this wrapper re-hashes that internal archive transfer.
 
-After installation, setup verifies `/Applications/CuaDriver.app` with `codesign --verify --deep --strict` and Gatekeeper. A promoted release must also match the TeamIdentifier, bundle ID, and designated-requirement fingerprint in the lock. It then kicks Cua's official autostart service and delegates permission prompting to:
+After installation, setup verifies `/Applications/CuaDriver.app` with `codesign --verify --deep --strict` and Gatekeeper. A promoted release must also match the TeamIdentifier, bundle ID, and designated-requirement fingerprint in the lock. Locked Cua 0.22.2's macOS installer does not implement the Windows-only `autostart kick` command, so setup starts the verified app directly with `open -n -g /Applications/CuaDriver.app --args serve`, then delegates permission prompting to:
 
 ```bash
 /Applications/CuaDriver.app/Contents/MacOS/cua-driver permissions grant
@@ -55,7 +55,7 @@ computer-use doctor --json
 
 Doctor connects to the exact locked Runtime, validates its version and required tool contract, performs exactly one screenshot observation, performs no input action, and closes the diagnostic session. The JSON includes plugin/protocol/engine versions, connection and tool status, interactive desktop status, permission status when the Runtime reports it, and screenshot dimensions. Any required failure sets `ok:false` and exits 1.
 
-Cua Driver 0.22.1 does not expose a complete portable permission-state object through the public SDK. Doctor therefore reports `permissions:"unknown"` after a successful capture, or `permissions:"required"` only when the Runtime explicitly returns `permission_required`; it does not invent a grant state.
+Cua Driver 0.22.2 does not expose a complete portable permission-state object through the public SDK. Doctor therefore reports `permissions:"unknown"` after a successful capture, or `permissions:"required"` only when the Runtime explicitly returns `permission_required`; it does not invent a grant state.
 
 ## Configure the host Agent
 
@@ -103,7 +103,7 @@ The explicit form downloads `uninstall.sh` from the exact locked release, verifi
 
 - `engine_not_release_eligible`: no public macOS candidate has passed all gates. Use `--development` only for development or wait for a promoted release.
 - `runtime_missing`: run setup for the package version currently installed.
-- `runtime_unavailable`: ensure the login session is unlocked, then run `cua-driver autostart kick` and doctor again.
+- `runtime_unavailable`: ensure the login session is unlocked, then run `open -n -g /Applications/CuaDriver.app --args serve` and doctor again.
 - `engine_version_mismatch`: do not use `latest`; rerun this package's setup to install the exact lock.
 - `permission_required`: rerun `cua-driver permissions grant`, check both Privacy & Security panels, and restart the signed app.
 - `interactive_session_required`: unlock the foreground desktop. Background and login-window automation are out of scope.

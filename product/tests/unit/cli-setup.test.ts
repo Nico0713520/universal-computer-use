@@ -126,11 +126,17 @@ describe("setup", () => {
     ]);
     const installRun = boundary.runs[0];
     expect(installRun.command).toBe("/bin/bash");
-    expect(installRun.args).toHaveLength(2);
+    expect(installRun.args).toHaveLength(1);
     expect(installRun.args[0]).toBe(boundary.downloads[0].destination);
     expect(dirname(installRun.args[0])).toBe(dirname(boundary.downloads[1].destination));
-    expect(installRun.args[1]).toBe("--autostart");
     expect(installRun.env?.CUA_DRIVER_RS_VERSION).toBe("0.22.2");
+    expect(boundary.runs).toContainEqual(expect.objectContaining({
+      command: "/usr/bin/open",
+      args: ["-n", "-g", "/Applications/CuaDriver.app", "--args", "serve"],
+    }));
+    expect(boundary.runs).not.toContainEqual(expect.objectContaining({
+      args: ["autostart", "kick"],
+    }));
     expect(result).toMatchObject({ ok: true, development_only: true });
     expect(result.warning).toMatchObject({ development_only: true });
 

@@ -12,7 +12,7 @@ Use the host's current vision model for returned PNG images. Never request a plu
 ## Control loop
 
 1. Before the first action, call `computer_observe`. When the target app is not already exact, discover apps and windows before guessing coordinates: `{"target":{"kind":"desktop"},"discover":{"apps":true,"windows":true,"query":"name"}}`.
-2. Prefer an exact window observation with its newest `window_ref`. Prefer `element_ref` for standard controls; use coordinates from that window's exact PNG only for canvas, video, WebGL, or custom-drawn content.
+2. Prefer an exact window observation with its newest `window_ref`. Prefer `element_ref` for standard, destructive, ambiguous, obscured, minimized, or off-Space controls. For repeated low-risk rectangular controls in a visible exact window, the interior center from the current window PNG is an allowed fast path. Use window coordinates for canvas, video, WebGL, and custom-drawn content.
 3. Send exactly one smallest useful action in each `computer_act`, using only the newest `snapshot_id`. The snapshot is consumed immediately before mutation and cannot be reused.
 4. Inspect the fresh state returned by `computer_act` before every next action. Its new snapshot is already the next observation, so do not call `computer_observe` again when that state is available.
 5. When the visible goal or semantic goal is satisfied and proved, stop. Never blindly repeat a failed, uncertain, or unverifiable action. In particular, do not repeat unverifiable text input; inspect the fresh value or screenshot first.
@@ -24,6 +24,8 @@ Report permission, runtime, target-loss, or unsupported-platform blockers honest
 Window coordinates use the returned window PNG, not desktop coordinates or a resized preview. Desktop coordinates use the primary desktop PNG. Aim at the interior center of a custom control, away from every edge or gap. Never invent an offset or blindly retry a nearby point.
 
 Window discovery bounds are descriptive `desktop_logical` geometry and are never action coordinates. A window snapshot either proves `window_screenshot_pixels` or omits pixel bounds entirely. When `visual_status` is not `available`, use semantic elements only.
+
+The speed/precision tradeoff is explicit: `element_ref` keeps semantic identity and works without a visible pixel anchor, while a current exact-window coordinate avoids the Runtime's bounded Accessibility confirmation interval. Never use the coordinate fast path for destructive actions, overlapping controls, a hidden/minimized/off-Space target, or an unproven pixel frame.
 
 Prefer background delivery for window click, scroll, drag, typing, and keypress. Use foreground only after a fresh state proves background delivery did not land and the action is safe to attempt again. Never treat an escalation hint as retry permission. The plugin does not persistently bring a target to the front.
 

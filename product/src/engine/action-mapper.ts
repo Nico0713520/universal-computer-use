@@ -34,7 +34,8 @@ function windowAddressArgs(
 ): Record<string, unknown> {
   if (address?.kind === "element") {
     return {
-      ...(delivery === "foreground" ? { pid: target.pid, window_id: target.windowId } : {}),
+      pid: target.pid,
+      window_id: target.windowId,
       element_token: address.token,
       delivery_mode: delivery,
     };
@@ -101,7 +102,13 @@ function mapWindowAction(
     case "set_value":
       return {
         tool: "set_value",
-        args: { session, element_token: action.address.token, value: action.value },
+        args: {
+          session,
+          pid: target.pid,
+          window_id: target.windowId,
+          element_token: action.address.token,
+          value: action.value,
+        },
       };
     case "type_text":
       return {

@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 
 import {
+  ActionDeliveryMode,
+  ActionEffect,
+  ActionRoute,
   CaptureScope,
   CuaDriver,
   EffectiveScope,
@@ -85,7 +88,7 @@ describe("Cua daemon connection", () => {
     });
   });
 
-  it("starts one explicitly desktop-scoped session", async () => {
+  it("starts separate desktop and window sessions so neither Cua scope disables the other", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({
       driverVersion: lock.version,
@@ -95,14 +98,21 @@ describe("Cua daemon connection", () => {
     const engine = await CuaEngine.fromSdk(sdk, lock);
 
     expect(engine.sessionId).toMatch(/^ucu_/);
-    expect(sdk.startSessionCalls).toHaveLength(1);
+    expect(sdk.startSessionCalls).toHaveLength(2);
     expect(sdk.startSessionCalls[0]).toMatchObject({
       session: engine.sessionId,
       captureScope: CaptureScope.Desktop,
     });
+    expect(sdk.startSessionCalls[1]).toMatchObject({
+      captureScope: CaptureScope.Window,
+    });
+    expect(sdk.startSessionCalls[1]?.session).not.toBe(engine.sessionId);
 
     await engine.close();
-    expect(sdk.endSessionCalls).toEqual([{ session: engine.sessionId }]);
+    expect(sdk.endSessionCalls).toEqual([
+      { session: sdk.startSessionCalls[1]?.session },
+      { session: engine.sessionId },
+    ]);
   });
 
   it("rejects a session that does not establish desktop scope", async () => {
@@ -116,7 +126,21 @@ describe("Cua daemon connection", () => {
     await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
       code: "engine_version_mismatch",
     });
-    expect(sdk.endSessionCalls).toHaveLength(1);
+    expect(sdk.endSessionCalls).toHaveLength(2);
+  });
+
+  it("rejects and cleans up when Cua does not establish window scope", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      effectiveScope: EffectiveScope.Desktop,
+    });
+
+    await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
+      code: "engine_version_mismatch",
+    });
+    expect(sdk.endSessionCalls).toHaveLength(2);
   });
 
   it("parses the screenshot dimensions declared by desktop state", async () => {
@@ -325,6 +349,69 @@ describe("Cua daemon connection", () => {
     ]);
   });
 
+  it("ignores zero-sized system windows without losing valid discovery results", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: {
+        list_apps: result({ apps: [{
+          pid: 42,
+          name: "Calculator",
+          bundle_id: "com.apple.calculator",
+          running: true,
+        }] }),
+        list_windows: result({ windows: [{
+          window_id: 99,
+          pid: 100,
+          app_name: "System Helper",
+          title: "",
+          bounds: { x: 0, y: 0, width: 0, height: 0 },
+          z_index: 2,
+          is_on_screen: false,
+        }, {
+          window_id: 7,
+          pid: 42,
+          app_name: "Calculator",
+          title: "Calculator",
+          bounds: { x: 100, y: 100, width: 460, height: 816 },
+          z_index: 1,
+          is_on_screen: true,
+        }] }),
+      },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock);
+
+    const discovery = await engine.discover({ apps: true, windows: true }, new AbortController().signal);
+
+    expect(discovery.windows).toHaveLength(1);
+    expect(discovery.windows[0]).toMatchObject({
+      title: "Calculator",
+      bounds: { width: 460, height: 816 },
+    });
+  });
+
+  it("requests apps and windows concurrently for one window discovery", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.spyOn(sdk, "callTool").mockImplementation(async (name) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight -= 1;
+      if (name === "list_apps") return result({ apps: [] });
+      if (name === "list_windows") return result({ windows: [] });
+      throw new Error(`unexpected tool: ${name}`);
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock);
+
+    await engine.discover({ apps: true, windows: true }, new AbortController().signal);
+
+    expect(maxInFlight).toBe(2);
+  });
+
   it("observes one exact registered window without exposing its native ids", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({
@@ -390,13 +477,50 @@ describe("Cua daemon connection", () => {
     expect(sdk.callToolCalls).toEqual([{
       name: "get_window_state",
       argumentsJson: JSON.stringify({
-        session: engine.sessionId,
+        session: sdk.startSessionCalls[1]?.session,
         pid: 42,
         window_id: 7,
         include_screenshot: true,
         query: "7",
         max_elements: 25,
         max_depth: 6,
+      }),
+    }]);
+  });
+
+  it("routes an exact background window action through the window-scoped session", async () => {
+    const lock = await loadEngineLock();
+    const clickResult = result({});
+    clickResult.action = {
+      effect: ActionEffect.Confirmed,
+      route: ActionRoute.Accessibility,
+      delivery: { mode: ActionDeliveryMode.Background, deliveredCount: 1 },
+    };
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: { click: clickResult },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock);
+
+    await expect(engine.execute({
+      target: { kind: "window", pid: 42, windowId: 7 },
+      action: { type: "click", address: { kind: "element", token: "private-token" } },
+      delivery: "background",
+    }, new AbortController().signal)).resolves.toMatchObject({
+      status: "executed",
+      effect: "confirmed",
+      route: "accessibility",
+      delivery: "background",
+    });
+    expect(sdk.callToolCalls).toEqual([{
+      name: "click",
+      argumentsJson: JSON.stringify({
+        session: sdk.startSessionCalls[1]?.session,
+        pid: 42,
+        window_id: 7,
+        element_token: "private-token",
+        delivery_mode: "background",
       }),
     }]);
   });
@@ -465,7 +589,10 @@ describe("Cua daemon connection", () => {
     });
     expect(sdk.callToolCalls).toEqual([{
       name: "launch_app",
-      argumentsJson: JSON.stringify({ session: engine.sessionId, bundle_id: "com.apple.calculator" }),
+      argumentsJson: JSON.stringify({
+        session: sdk.startSessionCalls[1]?.session,
+        bundle_id: "com.apple.calculator",
+      }),
     }]);
   });
 });

@@ -230,7 +230,7 @@ export async function runSetup(
     if (platform === "macos") {
       environment.CUA_DRIVER_RS_VERSION = dependencies.lock.version;
       await requireSuccess(
-        await dependencies.runner.run("/bin/bash", [entrypoint, "--autostart"], {
+        await dependencies.runner.run("/bin/bash", [entrypoint], {
           env: environment,
           timeoutMs: PROCESS_TIMEOUT_MS,
         }),
@@ -242,7 +242,7 @@ export async function runSetup(
         "/Applications/CuaDriver.app/Contents/MacOS/cua-driver";
       await verifyMacSignature(dependencies.lock, dependencies.runner, appPath);
       await requireSuccess(
-        await dependencies.runner.run(executablePath, ["autostart", "kick"], {
+        await dependencies.runner.run("/usr/bin/open", ["-n", "-g", appPath, "--args", "serve"], {
           timeoutMs: 30_000,
         }),
         "Cua daemon startup",

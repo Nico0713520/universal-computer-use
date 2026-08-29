@@ -62,7 +62,8 @@ export function fakeSdk(options: FakeSdkOptions): FakeCuaSdk {
         state: {
           session: input.session ?? "implicit",
           captureScope: input.captureScope ?? CaptureScope.Auto,
-          effectiveScope: options.effectiveScope ?? EffectiveScope.Desktop,
+          effectiveScope: options.effectiveScope ??
+            (input.captureScope === CaptureScope.Window ? EffectiveScope.Window : EffectiveScope.Desktop),
           desktopUnlocked: options.desktopUnlocked ?? true,
         },
         active: true,
