@@ -16,9 +16,19 @@ describe("engine lock", () => {
       await readFile(new URL("../../package.json", import.meta.url), "utf8"),
     ) as { version?: unknown };
 
-    expect(manifest.version).toBe("0.2.0");
-    expect(PRODUCT_VERSION).toBe("0.2.0");
+    expect(manifest.version).toBe("0.2.1");
+    expect(PRODUCT_VERSION).toBe("0.2.1");
     expect(PROTOCOL_VERSION).toBe("1.1.0");
+  });
+
+  it("publishes independent implementation, evidence, host and release status", async () => {
+    const readme = await readFile(new URL("../../../README.md", import.meta.url), "utf8");
+
+    expect(readme).toContain("| Capability | Code | Contract | macOS real | Named host | Release |");
+    expect(readme).toMatch(/^\| macOS exact window \| complete \| passed \| development-passed \| pending \| blocked \|$/m);
+    expect(readme).toMatch(/^\| macOS background semantic action \| complete \| passed \| development-passed \| pending \| blocked \|$/m);
+    expect(readme).toMatch(/^\| Windows DPI \| harness complete \| passed \| pending real hardware \| pending \| blocked \|$/m);
+    expect(readme).toMatch(/^\| Windows exact window \| blocked upstream \| truthful refusal \| unavailable \| unavailable \| blocked \|$/m);
   });
 
   it("keeps the staged Cua release internally consistent", async () => {

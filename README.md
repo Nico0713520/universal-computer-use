@@ -58,13 +58,18 @@ The npm package name is reserved in the project metadata but is not published ye
 
 ## Current status
 
-- Unit and contract tests: 203 passing.
-- Deterministic cross-platform fixture contracts are implemented.
-- Generic MCP configuration is experimental.
-- Codex and Kimi integration guides exist but real eligible-runtime host evidence is pending.
-- WorkBuddy and DeepSeek Harness adapters are declaration-only and experimental.
-- Real macOS Retina, Windows 100%/125%/150% DPI, signing, and soak evidence is required before release promotion.
-- Known release blockers include hard-timeout enforcement, exact installed-asset verification, and several error-classification and uninstall semantics fixes.
+The v0.2.1 developer preview has a real macOS acceptance command. On the current arm64 macOS 26.3 test machine it proved the two-tool inventory, desktop and exact-window PNGs, one-use snapshots, background semantic click, foreground pixel fallback, reconnect cleanup, and rejection of old snapshot/window/element refs. The run passed with degraded timing because the foreground coordinate action took 1.248 seconds against a 1-second target while remaining below its 3-second hard limit.
+
+| Capability | Code | Contract | macOS real | Named host | Release |
+|---|---|---|---|---|---|
+| Desktop observe/act | complete | passed | development-passed | pending | blocked |
+| macOS exact window | complete | passed | development-passed | pending | blocked |
+| macOS background semantic action | complete | passed | development-passed | pending | blocked |
+| Windows desktop | complete | passed | n/a in this lane | pending | blocked |
+| Windows DPI | harness complete | passed | pending real hardware | pending | blocked |
+| Windows exact window | blocked upstream | truthful refusal | unavailable | unavailable | blocked |
+
+`development-passed` is local developer evidence, not a Beta/Stable claim. Codex, Kimi, HanaAgent and WorkBuddy still need direct named-host image/loop evidence. Windows still needs physical 100%/125%/150% DPI runs, and the pinned Cua 0.22.2 Windows window APIs remain upstream stubs.
 
 ## Documentation
 
@@ -73,6 +78,7 @@ The npm package name is reserved in the project metadata but is not published ye
 - [macOS installation](docs/installation/macos.md)
 - [Windows installation](docs/installation/windows.md)
 - [Host compatibility](docs/host-compatibility.md)
+- [macOS development acceptance](product/tests/e2e/development/README.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Reviewed upstream sources](docs/upstream-sources.md)
 - [Canonical Computer Use Skill](product/skills/computer-use/SKILL.md)

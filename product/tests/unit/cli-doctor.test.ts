@@ -18,7 +18,7 @@ describe("doctor", () => {
 
     expect(report).toEqual({
       ok: true,
-      product_version: "0.2.0",
+      product_version: "0.2.1",
       protocol_version: "1.1.0",
       platform: "macos",
       supported_platform: true,

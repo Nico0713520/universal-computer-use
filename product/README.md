@@ -33,12 +33,15 @@ Use `config --client codex` or `config --client kimi` for the documented host-sp
 ```bash
 npx --yes pnpm@9.0.4 test
 npx --yes pnpm@9.0.4 typecheck
+npx --yes pnpm@9.0.4 acceptance:macos
 npm pack --dry-run --json
 ```
 
+`acceptance:macos` is a source-only real-machine lane. It opens an isolated deterministic Chrome fixture, uses one long-lived stdio MCP client, proves exact-window semantic and pixel actions, reconnect behavior and cleanup, then writes a redacted development record outside the repository. See [`tests/e2e/development/README.md`](tests/e2e/development/README.md). It does not create release evidence.
+
 ## Current platform scope
 
-- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background delivery, pixel fallback, bounded verification, and safe app launch are implemented. Real Retina and host-loop evidence is still required before Beta.
+- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background semantic delivery, foreground pixel fallback, bounded verification, safe app launch and the complete development acceptance loop are implemented. The current real run passed all scenarios with one degraded coordinate-action timing; named-host and release-candidate evidence is still required before Beta.
 - Windows with Cua 0.22.2: primary-desktop screenshot/input compatibility remains implemented. The pinned upstream `list_apps`, `list_windows`, and `get_window_state` entries are stubs, so window precision/background mode is intentionally not advertised as available. Windows 100%/125%/150% DPI evidence remains a release blocker.
 
-The `0.2.0` lock is development-eligible but not release-eligible. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. See `../docs/troubleshooting.md` for permissions, evidence, and release details.
+The `0.2.1` product still locks Cua `0.22.2`; both platforms are development-eligible but not release-eligible. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. See `../docs/troubleshooting.md` for permissions, evidence, and release details.
