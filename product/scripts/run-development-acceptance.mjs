@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 const PRODUCT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_BROWSER = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -75,11 +76,22 @@ function validDoctor(value, lockedVersion) {
     Number.isInteger(value.screenshot?.height) && value.screenshot.height > 0;
 }
 
-function validEvidence(value) {
-  return value?.schema_version === 1 &&
+async function validEvidence(value) {
+  if (!(value?.schema_version === 1 &&
     value.evidence_type === "computer-use-macos-development-acceptance" &&
     (value.status === "passed" || value.status === "degraded") &&
-    typeof value.cleanup_passed === "boolean";
+    typeof value.cleanup_passed === "boolean")) return false;
+  const schema = JSON.parse(await readFile(
+    join(PRODUCT_DIR, "tests/e2e/development/evidence.schema.json"),
+    "utf8",
+  ));
+  const { oneOf, ...strictBase } = schema;
+  if (!Array.isArray(oneOf)) return false;
+  const parser = z.pipe(
+    z.fromJSONSchema(strictBase),
+    z.fromJSONSchema(schema),
+  );
+  return parser.safeParse(value).success;
 }
 
 async function selectEvidencePath(configured) {
@@ -219,11 +231,11 @@ async function main() {
     } catch {
       throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
     }
-    if (!validEvidence(evidence)) {
-      throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
-    }
     if (evidence.cleanup_passed !== true) {
       throw new AcceptanceFailure("acceptance_failed:cleanup_failed");
+    }
+    if (!(await validEvidence(evidence))) {
+      throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
     }
 
     completed = true;

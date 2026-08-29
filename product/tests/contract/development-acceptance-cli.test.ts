@@ -34,7 +34,35 @@ function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
     schema_version: 1,
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
+    metadata: {
+      product_version: "0.2.1",
+      protocol_version: "1.1.0",
+      engine_version: "0.22.2",
+      macos_version: "15.6.1",
+      architecture: "arm64",
+    },
+    scenarios: {
+      two_tool_inventory: true,
+      desktop_png: true,
+      fresh_snapshot: true,
+      stale_snapshot_rejected: true,
+      exact_window_discovered: true,
+      window_png_and_element: true,
+      background_element_effect: true,
+      window_coordinate_effect: true,
+      old_refs_rejected_after_reconnect: true,
+    },
+    timings: [
+      { name: "mcp_start", duration_ms: 100, target_ms: 2_000, hard_limit_ms: 10_000, status: "target_met" },
+      { name: "desktop_observe", duration_ms: 100, target_ms: 1_000, hard_limit_ms: 3_000, status: "target_met" },
+      { name: "window_discover", duration_ms: 100, target_ms: 1_000, hard_limit_ms: 3_000, status: "target_met" },
+      { name: "window_observe", duration_ms: 100, target_ms: 1_000, hard_limit_ms: 3_000, status: "target_met" },
+      { name: "coordinate_action", duration_ms: 100, target_ms: 1_000, hard_limit_ms: 3_000, status: "target_met" },
+      { name: "element_action", duration_ms: 100, target_ms: 3_000, hard_limit_ms: 8_000, status: "target_met" },
+      { name: "mcp_reconnect", duration_ms: 100, target_ms: 2_000, hard_limit_ms: 10_000, status: "target_met" },
+    ],
     cleanup_passed: cleanupPassed,
+    timestamp: "2026-08-29T12:34:56.000Z",
   };
 }
 
@@ -167,6 +195,20 @@ describe("macOS development acceptance launcher", () => {
       code: 1,
       stdout: "",
       stderr: "acceptance_failed:cleanup_failed\n",
+    });
+  });
+
+  it("rejects a child record that violates the redacted evidence schema", async () => {
+    const path = await fixturePath("evidence.json");
+    const malformed = { ...simulatedEvidence(), screenshot: "private-png" };
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_CHILD_RESULT: JSON.stringify(malformed),
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "acceptance_failed:evidence_missing_or_invalid\n",
     });
   });
 
