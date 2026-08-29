@@ -31,6 +31,7 @@ function freshState() {
   return {
     generation,
     clicks: 0,
+    pixel_clicks: 0,
     double_clicks: 0,
     context_menus: 0,
     moves: 0,
@@ -129,6 +130,10 @@ function applyEvent(event) {
     case "click":
       requireExactKeys(event, ["kind"]);
       state.clicks += 1;
+      break;
+    case "pixel_click":
+      requireExactKeys(event, ["kind"]);
+      state.pixel_clicks += 1;
       break;
     case "double_click":
       requireExactKeys(event, ["kind"]);

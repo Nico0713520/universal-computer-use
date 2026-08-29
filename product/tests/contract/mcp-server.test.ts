@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import type { ComputerUseRuntime } from "../../src/core/runtime.js";
 import { ComputerUseError } from "../../src/errors.js";
@@ -61,6 +62,24 @@ describe("computer use MCP contract", () => {
         discover: expect.any(Object),
       },
     });
+
+    for (const tool of tools) {
+      expect(tool.outputSchema).toMatchObject({
+        type: "object",
+        oneOf: [
+          { type: "object", required: expect.any(Array) },
+          { type: "object", required: ["code", "recovery", "retryable"] },
+        ],
+      });
+      const output = z.fromJSONSchema(tool.outputSchema as never);
+      expect(output.safeParse({}).success).toBe(false);
+      expect(output.safeParse({
+        code: "stale_snapshot",
+        recovery: "observe_again",
+        retryable: true,
+        protocol_version: "1.1.0",
+      }).success).toBe(false);
+    }
   });
 
   it("publishes a self-contained safe control loop in MCP initialization", async () => {

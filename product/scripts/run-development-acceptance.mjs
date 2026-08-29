@@ -10,6 +10,11 @@ import { z } from "zod";
 
 const PRODUCT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_BROWSER = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const SOURCE_ACCEPTANCE_FILES = [
+  "tests/e2e/development/macos-acceptance.spec.ts",
+  "tests/e2e/development/evidence.schema.json",
+  "tests/fixtures/desktop-harness/server.mjs",
+];
 const TEST_KEYS = [
   "CUA_ACCEPTANCE_TEST_PLATFORM",
   "CUA_ACCEPTANCE_TEST_MACOS_VERSION",
@@ -114,6 +119,13 @@ async function selectEvidencePath(configured) {
 }
 
 async function main() {
+  const sourceCheckout = await Promise.all(
+    SOURCE_ACCEPTANCE_FILES.map((path) => exists(join(PRODUCT_DIR, path))),
+  );
+  if (sourceCheckout.some((present) => !present)) {
+    throw new AcceptanceFailure("acceptance_preflight_failed:source_checkout_required");
+  }
+
   const testModeRequested = process.env.CUA_ACCEPTANCE_TEST_MODE === "1" ||
     TEST_KEYS.some((key) => process.env[key] !== undefined);
   if (testModeRequested && process.env.NODE_ENV !== "test") {

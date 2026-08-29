@@ -213,6 +213,7 @@
     }
 
     byId("click-target").addEventListener("click", () => record("click"));
+    byId("double-target").addEventListener("click", () => record("pixel_click"));
     byId("double-target").addEventListener("dblclick", () => record("double_click"));
     byId("context-target").addEventListener("contextmenu", (event) => {
       event.preventDefault();

@@ -431,7 +431,25 @@ export const McpErrorOutputSchema = z.object({
 // MCP SDK clients cache the advertised output schema after tools/list and
 // validate structuredContent even when isError is true. Advertise both the
 // success and the stable safe-error shapes so real hosts can receive recovery
-// codes such as stale_snapshot instead of a client-side -32602.
+// codes such as stale_snapshot instead of a client-side -32602. The high-level
+// SDK currently requires an object schema at the root, so the runtime object
+// keeps the union refinement while JSON Schema metadata publishes the same
+// alternatives as a real oneOf. This prevents generated clients from accepting
+// empty or mixed partial objects merely because refinements are not serialised.
+function jsonSchemaBranch(schema: z.ZodType): Record<string, unknown> {
+  const { $schema: _dialect, ...branch } = z.toJSONSchema(schema, { target: "draft-7" });
+  return branch;
+}
+
+const observeToolOneOf = [
+  jsonSchemaBranch(ObservationMcpOutputSchema),
+  jsonSchemaBranch(McpErrorOutputSchema),
+];
+const actToolOneOf = [
+  jsonSchemaBranch(ActMcpOutputSchema),
+  jsonSchemaBranch(McpErrorOutputSchema),
+];
+
 export const ObserveToolMcpOutputSchema = z.object({
   ...ObservationMcpOutputSchema.shape,
   ...McpErrorOutputSchema.shape,
@@ -440,7 +458,7 @@ export const ObserveToolMcpOutputSchema = z.object({
       !McpErrorOutputSchema.safeParse(value).success) {
     context.addIssue({ code: "custom", message: "observe output is neither success nor safe error" });
   }
-});
+}).meta({ oneOf: observeToolOneOf });
 export const ActToolMcpOutputSchema = z.object({
   ...ActMcpOutputSchema.shape,
   ...McpErrorOutputSchema.shape,
@@ -449,7 +467,7 @@ export const ActToolMcpOutputSchema = z.object({
       !McpErrorOutputSchema.safeParse(value).success) {
     context.addIssue({ code: "custom", message: "act output is neither success nor safe error" });
   }
-});
+}).meta({ oneOf: actToolOneOf });
 
 export type ObservationOutput = z.infer<typeof ObservationOutputSchema>;
 export type ActOutput = z.infer<typeof ActOutputSchema>;

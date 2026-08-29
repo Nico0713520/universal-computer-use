@@ -5,6 +5,7 @@
   "publishConfig": { "access": "public" },
   "files": [
     "dist",
+    "scripts/run-development-acceptance.mjs",
     "skills",
     "integrations",
     "engine.lock.json",

@@ -354,6 +354,7 @@ describe("release verification", () => {
       "dist/mcp/main.js",
       "dist/mcp/server.js",
       "dist/protocol.js",
+      "scripts/run-development-acceptance.mjs",
       "skills/computer-use/SKILL.md",
       "integrations/generic/mcp.json",
       "integrations/codex/README.md",

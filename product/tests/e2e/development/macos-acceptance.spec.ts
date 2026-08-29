@@ -22,7 +22,20 @@ const EVIDENCE_SCHEMA = new URL("./evidence.schema.json", import.meta.url);
 const WINDOW_TITLE = "Computer Use Deterministic Desktop Harness";
 const PNG_MAGIC = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
-type HarnessState = Readonly<{ clicks: number; double_clicks: number }>;
+type HarnessState = Readonly<{ clicks: number; pixel_clicks: number }>;
+type Point = Readonly<{ x: number; y: number }>;
+type FixtureLayout = Readonly<{
+  controls?: Record<string, Point>;
+  viewport?: {
+    ready?: unknown;
+    browser_css?: {
+      outer_width?: unknown;
+      outer_height?: unknown;
+      inner_width?: unknown;
+      inner_height?: unknown;
+    } | null;
+  };
+}>;
 type PublicBounds = Readonly<{ x: number; y: number; width: number; height: number }>;
 type PublicElement = Readonly<{
   element_ref?: unknown;
@@ -37,6 +50,7 @@ type StructuredResult = Readonly<{
   visual_status?: unknown;
   windows?: readonly PublicWindow[];
   elements?: readonly PublicElement[];
+  screenshot?: { width?: unknown; height?: unknown };
   code?: unknown;
 }>;
 type Connection = Readonly<{ client: Client; transport: StdioClientTransport }>;
@@ -62,30 +76,35 @@ async function startFixture(): Promise<Readonly<{ child: ChildProcess; url: stri
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"],
   });
-  if (child.stdout === null || child.stderr === null) throw new Error("fixture_stdio_unavailable");
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  let stderr = "";
-  child.stderr.on("data", (chunk: string) => { stderr += chunk; });
-  const line = await Promise.race([
-    new Promise<string>((resolvePromise) => {
-      let pending = "";
-      child.stdout?.on("data", (chunk: string) => {
-        pending += chunk;
-        const newline = pending.indexOf("\n");
-        if (newline >= 0) resolvePromise(pending.slice(0, newline));
-      });
-    }),
-    once(child, "exit").then(([code]) => {
-      throw new Error(`fixture_exited_before_ready:${String(code)}:${stderr}`);
-    }),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("fixture_start_timeout")), 5_000)),
-  ]);
-  const ready = JSON.parse(line) as { url?: unknown };
-  if (typeof ready.url !== "string" || !ready.url.startsWith("http://127.0.0.1:")) {
-    throw new Error("fixture_ready_message_invalid");
+  try {
+    if (child.stdout === null || child.stderr === null) throw new Error("fixture_stdio_unavailable");
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    let stderr = "";
+    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    const line = await Promise.race([
+      new Promise<string>((resolvePromise) => {
+        let pending = "";
+        child.stdout?.on("data", (chunk: string) => {
+          pending += chunk;
+          const newline = pending.indexOf("\n");
+          if (newline >= 0) resolvePromise(pending.slice(0, newline));
+        });
+      }),
+      once(child, "exit").then(([code]) => {
+        throw new Error(`fixture_exited_before_ready:${String(code)}:${stderr}`);
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("fixture_start_timeout")), 5_000)),
+    ]);
+    const ready = JSON.parse(line) as { url?: unknown };
+    if (typeof ready.url !== "string" || !ready.url.startsWith("http://127.0.0.1:")) {
+      throw new Error("fixture_ready_message_invalid");
+    }
+    return { child, url: ready.url };
+  } catch (error) {
+    await stopProcess(child).catch(() => undefined);
+    throw error;
   }
-  return { child, url: ready.url };
 }
 
 async function fixtureJson<T>(url: string, path: string, init?: RequestInit): Promise<T> {
@@ -94,11 +113,11 @@ async function fixtureJson<T>(url: string, path: string, init?: RequestInit): Pr
   return response.json() as Promise<T>;
 }
 
-async function waitForFixture(url: string): Promise<void> {
+async function waitForFixture(url: string): Promise<FixtureLayout> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    const layout = await fixtureJson<{ viewport?: { ready?: unknown } }>(url, "/layout");
-    if (layout.viewport?.ready === true) return;
+    const layout = await fixtureJson<FixtureLayout>(url, "/layout");
+    if (layout.viewport?.ready === true) return layout;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
   }
   throw new Error("fixture_viewport_timeout");
@@ -149,8 +168,13 @@ async function connectClient(name: string): Promise<Connection> {
     stderr: "pipe",
   });
   const client = new Client({ name, version: "1.0.0" });
-  await client.connect(transport);
-  return { client, transport };
+  try {
+    await client.connect(transport);
+    return { client, transport };
+  } catch (error) {
+    await Promise.allSettled([client.close(), transport.close()]);
+    throw error;
+  }
 }
 
 async function closeConnection(connection: Connection | undefined): Promise<void> {
@@ -190,13 +214,44 @@ function requireWindow(result: CallToolResult): string {
 
 function requireElement(result: CallToolResult, label: string): Readonly<{
   elementRef: string;
-  bounds: PublicBounds;
 }> {
   const candidate = (structured(result).elements ?? []).find((element) => element.label === label);
-  if (typeof candidate?.element_ref !== "string" || candidate.bounds === undefined) {
+  if (typeof candidate?.element_ref !== "string") {
     throw new Error(`mcp_element_missing:${label}`);
   }
-  return { elementRef: candidate.element_ref, bounds: candidate.bounds };
+  return { elementRef: candidate.element_ref };
+}
+
+function fixedVisualPoint(
+  layout: FixtureLayout,
+  result: CallToolResult,
+  controlId: string,
+): Point {
+  const control = layout.controls?.[controlId];
+  const browser = layout.viewport?.browser_css;
+  const screenshot = structured(result).screenshot;
+  if (control === undefined || browser === null || browser === undefined || screenshot === undefined) {
+    throw new Error(`fixture_visual_geometry_missing:${controlId}`);
+  }
+  const values = [
+    browser.outer_width,
+    browser.outer_height,
+    browser.inner_width,
+    browser.inner_height,
+    screenshot.width,
+    screenshot.height,
+  ];
+  if (!values.every((value) => typeof value === "number" && Number.isFinite(value) && value > 0)) {
+    throw new Error(`fixture_visual_geometry_invalid:${controlId}`);
+  }
+  const [outerWidth, outerHeight, innerWidth, innerHeight, screenshotWidth, screenshotHeight] =
+    values as number[];
+  const contentLeft = (outerWidth - innerWidth) / 2;
+  const contentTop = outerHeight - innerHeight;
+  return {
+    x: Math.round((contentLeft + control.x) * (screenshotWidth / outerWidth)),
+    y: Math.round((contentTop + control.y) * (screenshotHeight / outerHeight)),
+  };
 }
 
 async function callTool(
@@ -247,7 +302,7 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
         body: "{}",
       });
       browser = await launchBrowser(fixture.url);
-      await waitForFixture(fixture.url);
+      const fixtureLayout = await waitForFixture(fixture.url);
 
       connection = await recorder.measure("mcp_start", () => connectClient("ucu-development-acceptance-1"));
       expect(connection.client.getInstructions()).toContain("Observe before the first action");
@@ -326,11 +381,11 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
       recorder.recordScenario("background_element_effect", true);
 
       const freshWindowSnapshot = requireSnapshot(elementActed);
-      const freshSingleClick = requireElement(elementActed, "Single click");
-      const coordinate = {
-        x: Math.round(freshSingleClick.bounds.x + freshSingleClick.bounds.width / 2),
-        y: Math.round(freshSingleClick.bounds.y + freshSingleClick.bounds.height / 2),
-      };
+      // Derive this point only from the fixture's fixed visual geometry,
+      // browser-reported outer/inner size, and returned screenshot size. It is
+      // intentionally independent of Accessibility bounds, so equal-and-
+      // opposite projection bugs cannot make the coordinate lane false-pass.
+      const coordinate = fixedVisualPoint(fixtureLayout, elementActed, "double-target");
       const beforeCoordinate = await fixtureJson<HarnessState>(fixture.url, "/state");
       const coordinateActed = await recorder.measure("coordinate_action", () => callTool(
         connection!.client,
@@ -347,7 +402,7 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
       expectPng(coordinateActed);
       await waitForState(
         fixture.url,
-        (state) => state.clicks === beforeCoordinate.clicks + 1,
+        (state) => state.pixel_clicks === beforeCoordinate.pixel_clicks + 1,
       );
       recorder.recordScenario("window_coordinate_effect", true);
 
