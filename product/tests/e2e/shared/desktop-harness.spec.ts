@@ -22,6 +22,12 @@ type Layout = Readonly<{
   }>;
 }>;
 type HarnessState = Readonly<{
+  semantic_sequence: readonly string[];
+  text_write_count: number;
+  overlay_enabled: boolean;
+  overlay_clicks: number;
+  reset_generation: number;
+  reset_ack_generation: number;
   clicks: number;
   double_clicks: number;
   context_menus: number;
@@ -42,6 +48,112 @@ type Observation = Readonly<{
 const E2E_ENABLED = process.env.CUA_E2E === "1";
 const FIXTURE_SCRIPT = resolve("tests/fixtures/desktop-harness/server.mjs");
 const MCP_SCRIPT = resolve("dist/mcp/main.js");
+
+async function startContractHarness(): Promise<Readonly<{
+  child: ChildProcess;
+  url: string;
+}>> {
+  const child = spawn(process.execPath, [FIXTURE_SCRIPT], {
+    cwd: process.cwd(),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (child.stdout === null || child.stderr === null) throw new Error("fixture_stdio_unavailable");
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stderr = "";
+  child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  const line = await Promise.race([
+    new Promise<string>((resolvePromise) => {
+      let pending = "";
+      child.stdout?.on("data", (chunk: string) => {
+        pending += chunk;
+        const newline = pending.indexOf("\n");
+        if (newline >= 0) resolvePromise(pending.slice(0, newline));
+      });
+    }),
+    once(child, "exit").then(([code]) => {
+      throw new Error(`fixture_exited_before_ready:${String(code)}:${stderr}`);
+    }),
+  ]);
+  const ready = JSON.parse(line) as { url?: unknown };
+  if (typeof ready.url !== "string") throw new Error("fixture_ready_invalid");
+  return { child, url: ready.url };
+}
+
+describe("deterministic desktop harness reset and oracle contract", () => {
+  it("publishes independent semantic, text, overlay and acknowledged reset state", async () => {
+    const fixture = await startContractHarness();
+    try {
+      const state = await fetch(`${fixture.url}/state`).then((response) => response.json()) as HarnessState;
+      expect(state).toMatchObject({
+        semantic_sequence: [],
+        text_write_count: 0,
+        overlay_enabled: false,
+        overlay_clicks: 0,
+        reset_generation: 0,
+        reset_ack_generation: -1,
+      });
+
+      const layout = await fetch(`${fixture.url}/layout`).then((response) => response.json()) as Layout;
+      expect(layout.controls).toMatchObject({
+        "semantic-alpha": { x: 108, y: 596 },
+        "semantic-beta": { x: 228, y: 596 },
+        "overlay-toggle": { x: 472, y: 596 },
+        "overlay-target": { x: 640, y: 600 },
+      });
+      const page = await fetch(fixture.url).then((response) => response.text());
+      expect(page).toContain('id="semantic-alpha-input" type="checkbox" aria-label="Semantic Alpha"');
+      expect(page).toContain('id="overlay-toggle-input" type="checkbox" aria-label="Toggle pixel overlay"');
+
+      const reset = await fetch(`${fixture.url}/reset`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }).then((response) => response.json()) as HarnessState;
+      expect(reset).toMatchObject({ reset_generation: 1, reset_ack_generation: 0 });
+      await expect(fetch(`${fixture.url}/generation`).then((response) => response.json()))
+        .resolves.toEqual({ reset_generation: 1 });
+
+      const acknowledged = await fetch(`${fixture.url}/event`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "reset_ack", generation: 1 }),
+      }).then((response) => response.json()) as HarnessState;
+      expect(acknowledged).toMatchObject({ reset_generation: 1, reset_ack_generation: 1 });
+
+      await fetch(`${fixture.url}/event`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "semantic", value: "alpha" }),
+      });
+      await fetch(`${fixture.url}/event`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "text", value: "nonce" }),
+      });
+      await fetch(`${fixture.url}/event`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "overlay_toggle" }),
+      });
+      await fetch(`${fixture.url}/event`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "overlay_click" }),
+      });
+      const changed = await fetch(`${fixture.url}/state`).then((response) => response.json()) as HarnessState;
+      expect(changed).toMatchObject({
+        semantic_sequence: ["alpha"],
+        text: "nonce",
+        text_write_count: 1,
+        overlay_enabled: true,
+        overlay_clicks: 1,
+      });
+    } finally {
+      await waitForExit(fixture.child);
+    }
+  });
+});
 
 let harnessProcess: ChildProcess | undefined;
 let harnessUrl = "";
@@ -303,7 +415,12 @@ describe.skipIf(!E2E_ENABLED)("deterministic desktop harness through real stdio 
       "double-target",
       "drag-source",
       "drop-target",
+      "overlay-target",
+      "overlay-toggle",
       "scroll-target",
+      "semantic-alpha",
+      "semantic-beta",
+      "semantic-gamma",
       "state-view",
       "static-target",
       "text-target",

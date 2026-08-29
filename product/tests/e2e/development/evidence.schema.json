@@ -1,69 +1,40 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://universal-computer-use.invalid/schemas/macos-development-acceptance-v1.json",
+  "$id": "https://universal-computer-use.invalid/schemas/macos-development-acceptance-v2.json",
   "title": "Redacted macOS Development Acceptance Evidence",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "evidence_type",
-    "status",
-    "metadata",
-    "scenarios",
-    "timings",
-    "cleanup_passed",
-    "timestamp"
-  ],
+  "required": ["schema_version", "evidence_type", "status", "metadata", "scenarios", "timings", "performance", "adaptive_correctness", "real_app_smoke", "cleanup_passed", "timestamp"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "evidence_type": { "const": "computer-use-macos-development-acceptance" },
-    "status": { "enum": ["passed", "degraded"] },
+    "status": { "enum": ["passed", "degraded", "failed"] },
     "metadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "product_version",
-        "protocol_version",
-        "engine_version",
-        "macos_version",
-        "architecture"
-      ],
+      "required": ["product_version", "protocol_version", "engine_version", "macos_version", "architecture"],
       "properties": {
         "product_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
         "protocol_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
         "engine_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-        "macos_version": {
-          "type": "string",
-          "pattern": "^[0-9]+(?:\\.[0-9]+){0,3}$",
-          "maxLength": 32
-        },
+        "macos_version": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){0,3}$", "maxLength": 32 },
         "architecture": { "enum": ["arm64", "x86_64"] }
       }
     },
     "scenarios": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "two_tool_inventory",
-        "desktop_png",
-        "fresh_snapshot",
-        "stale_snapshot_rejected",
-        "exact_window_discovered",
-        "window_png_and_element",
-        "background_element_effect",
-        "window_coordinate_effect",
-        "old_refs_rejected_after_reconnect"
-      ],
+      "required": ["two_tool_inventory", "desktop_png", "fresh_snapshot", "stale_snapshot_rejected", "exact_window_discovered", "window_png_and_element", "background_element_effect", "window_coordinate_effect", "old_refs_rejected_after_reconnect"],
       "properties": {
-        "two_tool_inventory": { "const": true },
-        "desktop_png": { "const": true },
-        "fresh_snapshot": { "const": true },
-        "stale_snapshot_rejected": { "const": true },
-        "exact_window_discovered": { "const": true },
-        "window_png_and_element": { "const": true },
-        "background_element_effect": { "const": true },
-        "window_coordinate_effect": { "const": true },
-        "old_refs_rejected_after_reconnect": { "const": true }
+        "two_tool_inventory": { "type": "boolean" },
+        "desktop_png": { "type": "boolean" },
+        "fresh_snapshot": { "type": "boolean" },
+        "stale_snapshot_rejected": { "type": "boolean" },
+        "exact_window_discovered": { "type": "boolean" },
+        "window_png_and_element": { "type": "boolean" },
+        "background_element_effect": { "type": "boolean" },
+        "window_coordinate_effect": { "type": "boolean" },
+        "old_refs_rejected_after_reconnect": { "type": "boolean" }
       }
     },
     "timings": {
@@ -73,106 +44,127 @@
       "uniqueItems": true,
       "prefixItems": [
         {
-          "type": "object",
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
           "required": ["name", "duration_ms", "target_ms", "hard_limit_ms", "status"],
-          "properties": {
-            "name": { "const": "mcp_start" },
-            "duration_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
-            "target_ms": { "const": 2000 },
-            "hard_limit_ms": { "const": 10000 },
-            "status": { "enum": ["target_met", "degraded"] }
-          }
+          "properties": { "name": { "const": "mcp_start" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }, "target_ms": { "const": 2000 }, "hard_limit_ms": { "const": 10000 }, "status": { "enum": ["target_met", "degraded", "failed"] } }
         },
         {
-          "type": "object",
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
           "required": ["name", "duration_ms", "target_ms", "hard_limit_ms", "status"],
-          "properties": {
-            "name": { "const": "desktop_observe" },
-            "duration_ms": { "type": "integer", "minimum": 0, "maximum": 3000 },
-            "target_ms": { "const": 1000 },
-            "hard_limit_ms": { "const": 3000 },
-            "status": { "enum": ["target_met", "degraded"] }
-          }
+          "properties": { "name": { "const": "desktop_observe" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }, "target_ms": { "const": 1000 }, "hard_limit_ms": { "const": 3000 }, "status": { "enum": ["target_met", "degraded", "failed"] } }
         },
         {
-          "type": "object",
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
           "required": ["name", "duration_ms", "target_ms", "hard_limit_ms", "status"],
-          "properties": {
-            "name": { "const": "window_discover" },
-            "duration_ms": { "type": "integer", "minimum": 0, "maximum": 3000 },
-            "target_ms": { "const": 1000 },
-            "hard_limit_ms": { "const": 3000 },
-            "status": { "enum": ["target_met", "degraded"] }
-          }
+          "properties": { "name": { "const": "window_discover" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }, "target_ms": { "const": 1000 }, "hard_limit_ms": { "const": 3000 }, "status": { "enum": ["target_met", "degraded", "failed"] } }
         },
         {
-          "type": "object",
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
           "required": ["name", "duration_ms", "target_ms", "hard_limit_ms", "status"],
-          "properties": {
-            "name": { "const": "window_observe" },
-            "duration_ms": { "type": "integer", "minimum": 0, "maximum": 3000 },
-            "target_ms": { "const": 1000 },
-            "hard_limit_ms": { "const": 3000 },
-            "status": { "enum": ["target_met", "degraded"] }
-          }
+          "properties": { "name": { "const": "window_observe" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }, "target_ms": { "const": 1000 }, "hard_limit_ms": { "const": 3000 }, "status": { "enum": ["target_met", "degraded", "failed"] } }
         },
         {
-          "type": "object",
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
           "required": ["name", "duration_ms", "target_ms", "hard_limit_ms", "status"],
-          "properties": {
-            "name": { "const": "coordinate_action" },
-            "duration_ms": { "type": "integer", "minimum": 0, "maximum": 3000 },
-            "target_ms": { "const": 1000 },
-            "hard_limit_ms": { "const": 3000 },
-            "status": { "enum": ["target_met", "degraded"] }
-          }
+          "properties": { "name": { "const": "coordinate_action" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }, "target_ms": { "const": 1000 }, "hard_limit_ms": { "const": 3000 }, "status": { "enum": ["target_met", "degraded", "failed"] } }
         },
         {
-          "type": "object",
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
           "required": ["name", "duration_ms", "target_ms", "hard_limit_ms", "status"],
-          "properties": {
-            "name": { "const": "element_action" },
-            "duration_ms": { "type": "integer", "minimum": 0, "maximum": 8000 },
-            "target_ms": { "const": 3000 },
-            "hard_limit_ms": { "const": 8000 },
-            "status": { "enum": ["target_met", "degraded"] }
-          }
+          "properties": { "name": { "const": "element_action" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }, "target_ms": { "const": 3000 }, "hard_limit_ms": { "const": 8000 }, "status": { "enum": ["target_met", "degraded", "failed"] } }
         },
         {
-          "type": "object",
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
           "required": ["name", "duration_ms", "target_ms", "hard_limit_ms", "status"],
-          "properties": {
-            "name": { "const": "mcp_reconnect" },
-            "duration_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
-            "target_ms": { "const": 2000 },
-            "hard_limit_ms": { "const": 10000 },
-            "status": { "enum": ["target_met", "degraded"] }
-          }
+          "properties": { "name": { "const": "mcp_reconnect" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }, "target_ms": { "const": 2000 }, "hard_limit_ms": { "const": 10000 }, "status": { "enum": ["target_met", "degraded", "failed"] } }
         }
       ],
       "items": false
     },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window_visual_observe", "window_semantic_observe", "semantic_action_next_state", "pixel_action_next_state"],
+      "properties": {
+        "window_visual_observe": {
+          "type": "object", "additionalProperties": false,
+          "required": ["sample_count", "p50_ms", "p95_ms", "max_ms", "slo", "status"],
+          "properties": {
+            "sample_count": { "const": 30 }, "p50_ms": { "type": "number", "minimum": 0 }, "p95_ms": { "type": "number", "minimum": 0 }, "max_ms": { "type": "number", "minimum": 0 },
+            "slo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 700 }, "p95_ms": { "const": 1500 } } },
+            "status": { "enum": ["passed", "failed"] }
+          }
+        },
+        "window_semantic_observe": {
+          "type": "object", "additionalProperties": false,
+          "required": ["sample_count", "p50_ms", "p95_ms", "max_ms", "slo", "status"],
+          "properties": {
+            "sample_count": { "const": 30 }, "p50_ms": { "type": "number", "minimum": 0 }, "p95_ms": { "type": "number", "minimum": 0 }, "max_ms": { "type": "number", "minimum": 0 },
+            "slo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 400 }, "p95_ms": { "const": 1000 } } },
+            "status": { "enum": ["passed", "failed"] }
+          }
+        },
+        "semantic_action_next_state": {
+          "type": "object", "additionalProperties": false,
+          "required": ["sample_count", "p50_ms", "p95_ms", "max_ms", "slo", "status"],
+          "properties": {
+            "sample_count": { "const": 30 }, "p50_ms": { "type": "number", "minimum": 0 }, "p95_ms": { "type": "number", "minimum": 0 }, "max_ms": { "type": "number", "minimum": 0 },
+            "slo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 1000 }, "p95_ms": { "const": 2000 } } },
+            "status": { "enum": ["passed", "failed"] }
+          }
+        },
+        "pixel_action_next_state": {
+          "type": "object", "additionalProperties": false,
+          "required": ["sample_count", "p50_ms", "p95_ms", "max_ms", "slo", "status"],
+          "properties": {
+            "sample_count": { "const": 30 }, "p50_ms": { "type": "number", "minimum": 0 }, "p95_ms": { "type": "number", "minimum": 0 }, "max_ms": { "type": "number", "minimum": 0 },
+            "slo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 1500 }, "p95_ms": { "const": 3000 } } },
+            "status": { "enum": ["passed", "failed"] }
+          }
+        }
+      }
+    },
+    "adaptive_correctness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no_fixed_action_delay", "semantic_sequence", "pixel_once", "unique_input_once", "visual_recovery_once", "focus_preserved"],
+      "properties": {
+        "no_fixed_action_delay": { "type": "boolean" },
+        "semantic_sequence": { "type": "boolean" },
+        "pixel_once": { "type": "boolean" },
+        "unique_input_once": { "type": "boolean" },
+        "visual_recovery_once": { "type": "boolean" },
+        "focus_preserved": { "type": "boolean" }
+      }
+    },
+    "real_app_smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calculator_703", "textedit_unique_value", "textedit_single_write"],
+      "properties": {
+        "calculator_703": { "type": "boolean" },
+        "textedit_unique_value": { "type": "boolean" },
+        "textedit_single_write": { "type": "boolean" },
+        "error_code": { "enum": ["calculator_unavailable", "textedit_unavailable", "unsupported_locale", "verification_failed"] },
+        "cleanup_failed": { "const": true }
+      }
+    },
     "cleanup_passed": { "const": true },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
-      "maxLength": 40
-    }
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$", "maxLength": 40 }
   },
   "oneOf": [
     {
       "type": "object",
-      "required": ["status", "timings"],
+      "required": ["status", "scenarios", "timings", "performance", "adaptive_correctness", "real_app_smoke"],
       "properties": {
         "status": { "const": "passed" },
+        "scenarios": {
+          "type": "object",
+          "required": ["two_tool_inventory", "desktop_png", "fresh_snapshot", "stale_snapshot_rejected", "exact_window_discovered", "window_png_and_element", "background_element_effect", "window_coordinate_effect", "old_refs_rejected_after_reconnect"],
+          "properties": {
+            "two_tool_inventory": { "const": true }, "desktop_png": { "const": true }, "fresh_snapshot": { "const": true }, "stale_snapshot_rejected": { "const": true }, "exact_window_discovered": { "const": true }, "window_png_and_element": { "const": true }, "background_element_effect": { "const": true }, "window_coordinate_effect": { "const": true }, "old_refs_rejected_after_reconnect": { "const": true }
+          }
+        },
         "timings": {
           "type": "array",
           "prefixItems": [
@@ -183,15 +175,123 @@
             { "type": "object", "required": ["status"], "properties": { "status": { "const": "target_met" } } },
             { "type": "object", "required": ["status"], "properties": { "status": { "const": "target_met" } } },
             { "type": "object", "required": ["status"], "properties": { "status": { "const": "target_met" } } }
-          ],
-          "items": false
+          ]
+        },
+        "performance": {
+          "type": "object",
+          "required": ["window_visual_observe", "window_semantic_observe", "semantic_action_next_state", "pixel_action_next_state"],
+          "properties": {
+            "window_visual_observe": { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "type": "number", "maximum": 700 }, "p95_ms": { "type": "number", "maximum": 1500 } } },
+            "window_semantic_observe": { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "type": "number", "maximum": 400 }, "p95_ms": { "type": "number", "maximum": 1000 } } },
+            "semantic_action_next_state": { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "type": "number", "maximum": 1000 }, "p95_ms": { "type": "number", "maximum": 2000 } } },
+            "pixel_action_next_state": { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "type": "number", "maximum": 1500 }, "p95_ms": { "type": "number", "maximum": 3000 } } }
+          }
+        },
+        "adaptive_correctness": {
+          "type": "object",
+          "required": ["no_fixed_action_delay", "semantic_sequence", "pixel_once", "unique_input_once", "visual_recovery_once", "focus_preserved"],
+          "properties": {
+            "no_fixed_action_delay": { "const": true },
+            "semantic_sequence": { "const": true },
+            "pixel_once": { "const": true },
+            "unique_input_once": { "const": true },
+            "visual_recovery_once": { "const": true },
+            "focus_preserved": { "const": true }
+          }
+        },
+        "real_app_smoke": {
+          "type": "object", "additionalProperties": false,
+          "required": ["calculator_703", "textedit_unique_value", "textedit_single_write"],
+          "properties": { "calculator_703": { "const": true }, "textedit_unique_value": { "const": true }, "textedit_single_write": { "const": true } }
         }
       }
     },
     {
       "type": "object",
-      "required": ["status"],
-      "properties": { "status": { "const": "degraded" } }
+      "required": ["status", "scenarios", "timings", "performance", "adaptive_correctness", "real_app_smoke"],
+      "properties": {
+        "status": { "const": "degraded" },
+        "scenarios": {
+          "type": "object",
+          "required": ["two_tool_inventory", "desktop_png", "fresh_snapshot", "stale_snapshot_rejected", "exact_window_discovered", "window_png_and_element", "background_element_effect", "window_coordinate_effect", "old_refs_rejected_after_reconnect"],
+          "properties": {
+            "two_tool_inventory": { "const": true }, "desktop_png": { "const": true }, "fresh_snapshot": { "const": true }, "stale_snapshot_rejected": { "const": true }, "exact_window_discovered": { "const": true }, "window_png_and_element": { "const": true }, "background_element_effect": { "const": true }, "window_coordinate_effect": { "const": true }, "old_refs_rejected_after_reconnect": { "const": true }
+          }
+        },
+        "timings": {
+          "type": "array",
+          "contains": { "type": "object", "required": ["status"], "properties": { "status": { "const": "degraded" } } },
+          "minContains": 1,
+          "prefixItems": [
+            { "type": "object", "required": ["status"], "properties": { "status": { "enum": ["target_met", "degraded"] } } },
+            { "type": "object", "required": ["status"], "properties": { "status": { "enum": ["target_met", "degraded"] } } },
+            { "type": "object", "required": ["status"], "properties": { "status": { "enum": ["target_met", "degraded"] } } },
+            { "type": "object", "required": ["status"], "properties": { "status": { "enum": ["target_met", "degraded"] } } },
+            { "type": "object", "required": ["status"], "properties": { "status": { "enum": ["target_met", "degraded"] } } },
+            { "type": "object", "required": ["status"], "properties": { "status": { "enum": ["target_met", "degraded"] } } },
+            { "type": "object", "required": ["status"], "properties": { "status": { "enum": ["target_met", "degraded"] } } }
+          ]
+        },
+        "performance": {
+          "type": "object",
+          "required": ["window_visual_observe", "window_semantic_observe", "semantic_action_next_state", "pixel_action_next_state"],
+          "properties": {
+            "window_visual_observe": { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "type": "number", "maximum": 700 }, "p95_ms": { "type": "number", "maximum": 1500 } } },
+            "window_semantic_observe": { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "type": "number", "maximum": 400 }, "p95_ms": { "type": "number", "maximum": 1000 } } },
+            "semantic_action_next_state": { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "type": "number", "maximum": 1000 }, "p95_ms": { "type": "number", "maximum": 2000 } } },
+            "pixel_action_next_state": { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "type": "number", "maximum": 1500 }, "p95_ms": { "type": "number", "maximum": 3000 } } }
+          }
+        },
+        "adaptive_correctness": {
+          "type": "object",
+          "required": ["no_fixed_action_delay", "semantic_sequence", "pixel_once", "unique_input_once", "visual_recovery_once", "focus_preserved"],
+          "properties": {
+            "no_fixed_action_delay": { "const": true },
+            "semantic_sequence": { "const": true },
+            "pixel_once": { "const": true },
+            "unique_input_once": { "const": true },
+            "visual_recovery_once": { "const": true },
+            "focus_preserved": { "const": true }
+          }
+        },
+        "real_app_smoke": {
+          "type": "object", "additionalProperties": false,
+          "required": ["calculator_703", "textedit_unique_value", "textedit_single_write"],
+          "properties": { "calculator_703": { "const": true }, "textedit_unique_value": { "const": true }, "textedit_single_write": { "const": true } }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["status", "scenarios", "timings", "performance", "adaptive_correctness", "real_app_smoke"],
+      "properties": { "status": { "const": "failed" } },
+      "anyOf": [
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["two_tool_inventory"], "properties": { "two_tool_inventory": { "const": false } } } } },
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["desktop_png"], "properties": { "desktop_png": { "const": false } } } } },
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["fresh_snapshot"], "properties": { "fresh_snapshot": { "const": false } } } } },
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["stale_snapshot_rejected"], "properties": { "stale_snapshot_rejected": { "const": false } } } } },
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["exact_window_discovered"], "properties": { "exact_window_discovered": { "const": false } } } } },
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["window_png_and_element"], "properties": { "window_png_and_element": { "const": false } } } } },
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["background_element_effect"], "properties": { "background_element_effect": { "const": false } } } } },
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["window_coordinate_effect"], "properties": { "window_coordinate_effect": { "const": false } } } } },
+        { "type": "object", "required": ["scenarios"], "properties": { "scenarios": { "type": "object", "required": ["old_refs_rejected_after_reconnect"], "properties": { "old_refs_rejected_after_reconnect": { "const": false } } } } },
+        { "type": "object", "required": ["timings"], "properties": { "timings": { "type": "array", "contains": { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } }, "minContains": 1 } } },
+        { "type": "object", "required": ["performance"], "properties": { "performance": { "type": "object", "required": ["window_visual_observe"], "properties": { "window_visual_observe": { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } } } } } },
+        { "type": "object", "required": ["performance"], "properties": { "performance": { "type": "object", "required": ["window_semantic_observe"], "properties": { "window_semantic_observe": { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } } } } } },
+        { "type": "object", "required": ["performance"], "properties": { "performance": { "type": "object", "required": ["semantic_action_next_state"], "properties": { "semantic_action_next_state": { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } } } } } },
+        { "type": "object", "required": ["performance"], "properties": { "performance": { "type": "object", "required": ["pixel_action_next_state"], "properties": { "pixel_action_next_state": { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } } } } } },
+        { "type": "object", "required": ["adaptive_correctness"], "properties": { "adaptive_correctness": { "type": "object", "required": ["no_fixed_action_delay"], "properties": { "no_fixed_action_delay": { "const": false } } } } },
+        { "type": "object", "required": ["adaptive_correctness"], "properties": { "adaptive_correctness": { "type": "object", "required": ["semantic_sequence"], "properties": { "semantic_sequence": { "const": false } } } } },
+        { "type": "object", "required": ["adaptive_correctness"], "properties": { "adaptive_correctness": { "type": "object", "required": ["pixel_once"], "properties": { "pixel_once": { "const": false } } } } },
+        { "type": "object", "required": ["adaptive_correctness"], "properties": { "adaptive_correctness": { "type": "object", "required": ["unique_input_once"], "properties": { "unique_input_once": { "const": false } } } } },
+        { "type": "object", "required": ["adaptive_correctness"], "properties": { "adaptive_correctness": { "type": "object", "required": ["visual_recovery_once"], "properties": { "visual_recovery_once": { "const": false } } } } },
+        { "type": "object", "required": ["adaptive_correctness"], "properties": { "adaptive_correctness": { "type": "object", "required": ["focus_preserved"], "properties": { "focus_preserved": { "const": false } } } } },
+        { "type": "object", "required": ["real_app_smoke"], "properties": { "real_app_smoke": { "type": "object", "required": ["calculator_703"], "properties": { "calculator_703": { "const": false } } } } },
+        { "type": "object", "required": ["real_app_smoke"], "properties": { "real_app_smoke": { "type": "object", "required": ["textedit_unique_value"], "properties": { "textedit_unique_value": { "const": false } } } } },
+        { "type": "object", "required": ["real_app_smoke"], "properties": { "real_app_smoke": { "type": "object", "required": ["textedit_single_write"], "properties": { "textedit_single_write": { "const": false } } } } },
+        { "type": "object", "required": ["real_app_smoke"], "properties": { "real_app_smoke": { "type": "object", "required": ["error_code"] } } },
+        { "type": "object", "required": ["real_app_smoke"], "properties": { "real_app_smoke": { "type": "object", "required": ["cleanup_failed"], "properties": { "cleanup_failed": { "const": true } } } } }
+      ]
     }
   ]
 }

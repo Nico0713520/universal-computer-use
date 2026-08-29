@@ -68,6 +68,21 @@
       outline: 5px solid #ffbf47;
       outline-offset: 2px;
     }
+    .semantic-choice {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .semantic-choice input {
+      width: 20px;
+      height: 20px;
+      margin: 0;
+    }
+    .semantic-choice:focus-within {
+      outline: 5px solid #ffbf47;
+      outline-offset: 2px;
+    }
     #click-target { left: 56px; top: 104px; width: 160px; height: 72px; }
     #double-target { left: 240px; top: 104px; width: 160px; height: 72px; }
     #context-target { left: 424px; top: 104px; width: 160px; height: 72px; }
@@ -121,6 +136,21 @@
       background: #f6f0ff;
       border-color: #65459a;
     }
+    #semantic-alpha { left: 56px; top: 564px; width: 104px; height: 64px; }
+    #semantic-beta { left: 176px; top: 564px; width: 104px; height: 64px; }
+    #semantic-gamma { left: 296px; top: 564px; width: 104px; height: 64px; }
+    #overlay-toggle { left: 416px; top: 564px; width: 112px; height: 64px; }
+    #overlay-target {
+      position: fixed;
+      left: 560px;
+      top: 560px;
+      width: 160px;
+      height: 80px;
+      border: 4px solid #8b3a16;
+      border-radius: 10px;
+      background: #fde7d8;
+    }
+    #overlay-target.overlay-on { background: #ff9d5c; }
     #state-view {
       left: 768px;
       top: 80px;
@@ -140,7 +170,7 @@
     #fixture-label {
       position: fixed;
       left: 56px;
-      top: 588px;
+      top: 680px;
       width: 664px;
       height: 92px;
       margin: 0;
@@ -159,13 +189,18 @@
     <button id="click-target" class="control" type="button">Single click</button>
     <button id="double-target" class="control" type="button">Double click</button>
     <button id="context-target" class="control" type="button">Right click</button>
-    <input id="text-target" class="control" type="text" autocomplete="off" spellcheck="false" autofocus aria-label="Type target" placeholder="Type here">
+    <input id="text-target" class="control" type="text" autocomplete="off" spellcheck="false" autofocus aria-label="Unique text value" placeholder="Type here">
     <section id="scroll-target" class="control" tabindex="-1" aria-label="Scroll target">
       <div id="scroll-content">Scroll oracle<br>01<br>02<br>03<br>04<br>05<br>06<br>07<br>08<br>09<br>10<br>11<br>12<br>13<br>14<br>15</div>
     </section>
     <div id="drag-source" class="control" draggable="true">Drag source</div>
     <div id="drop-target" class="control">Drop target</div>
     <div id="static-target" class="control">Move / static</div>
+    <label id="semantic-alpha" class="control semantic-choice"><input id="semantic-alpha-input" type="checkbox" aria-label="Semantic Alpha">Alpha</label>
+    <label id="semantic-beta" class="control semantic-choice"><input id="semantic-beta-input" type="checkbox" aria-label="Semantic Beta">Beta</label>
+    <label id="semantic-gamma" class="control semantic-choice"><input id="semantic-gamma-input" type="checkbox" aria-label="Semantic Gamma">Gamma</label>
+    <label id="overlay-toggle" class="control semantic-choice"><input id="overlay-toggle-input" type="checkbox" aria-label="Toggle pixel overlay">Overlay</label>
+    <canvas id="overlay-target" width="160" height="80" aria-label="Pixel overlay target"></canvas>
     <pre id="state-view" aria-label="External oracle mirror">loading</pre>
     <p id="fixture-label">Every visible control has a fixed CSS rectangle. The test reads results from the loopback server's external oracle, never from the action result or browser DOM automation.</p>
   </main>
@@ -177,9 +212,11 @@
     const byId = (id) => document.getElementById(id);
     const stateView = byId("state-view");
     let queue = Promise.resolve();
+    let resetGeneration = -1;
 
     function render(state) {
       stateView.textContent = JSON.stringify(state, null, 2);
+      byId("overlay-target").classList.toggle("overlay-on", state.overlay_enabled === true);
     }
 
     function record(kind, payload = {}) {
@@ -213,6 +250,15 @@
     }
 
     byId("click-target").addEventListener("click", () => record("click"));
+    function pressAndRecord(id, kind, payload = {}) {
+      byId(id).checked = true;
+      return record(kind, payload);
+    }
+    byId("semantic-alpha-input").addEventListener("click", () => pressAndRecord("semantic-alpha-input", "semantic", { value: "alpha" }));
+    byId("semantic-beta-input").addEventListener("click", () => pressAndRecord("semantic-beta-input", "semantic", { value: "beta" }));
+    byId("semantic-gamma-input").addEventListener("click", () => pressAndRecord("semantic-gamma-input", "semantic", { value: "gamma" }));
+    byId("overlay-toggle-input").addEventListener("click", () => pressAndRecord("overlay-toggle-input", "overlay_toggle"));
+    byId("overlay-target").addEventListener("click", () => record("overlay_click"));
     byId("double-target").addEventListener("click", () => record("pixel_click"));
     byId("double-target").addEventListener("dblclick", () => record("double_click"));
     byId("context-target").addEventListener("contextmenu", (event) => {
@@ -240,11 +286,25 @@
     });
 
     window.addEventListener("resize", reportViewport);
+    async function synchronizeReset() {
+      const generationResponse = await fetch("/generation", { cache: "no-store" });
+      const generationState = await generationResponse.json();
+      if (generationState.reset_generation !== resetGeneration) {
+        resetGeneration = generationState.reset_generation;
+        byId("text-target").value = "";
+        byId("overlay-target").classList.remove("overlay-on");
+        for (const id of ["semantic-alpha-input", "semantic-beta-input", "semantic-gamma-input", "overlay-toggle-input"]) {
+          byId(id).checked = false;
+        }
+        await record("reset_ack", { generation: resetGeneration });
+        return;
+      }
+    }
     window.addEventListener("load", async () => {
-      const response = await fetch("/state", { cache: "no-store" });
-      render(await response.json());
+      await synchronizeReset();
       await reportViewport();
       byId("text-target").focus();
+      window.setInterval(() => { void synchronizeReset(); }, 50);
     });
   </script>
 </body>

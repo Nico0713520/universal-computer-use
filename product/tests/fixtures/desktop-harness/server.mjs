@@ -20,6 +20,11 @@ const CONTROL_CENTERS = Object.freeze({
   "drag-source": Object.freeze({ x: 136, y: 482 }),
   "drop-target": Object.freeze({ x: 388, y: 482 }),
   "static-target": Object.freeze({ x: 640, y: 482 }),
+  "semantic-alpha": Object.freeze({ x: 108, y: 596 }),
+  "semantic-beta": Object.freeze({ x: 228, y: 596 }),
+  "semantic-gamma": Object.freeze({ x: 348, y: 596 }),
+  "overlay-toggle": Object.freeze({ x: 472, y: 596 }),
+  "overlay-target": Object.freeze({ x: 640, y: 600 }),
   "state-view": Object.freeze({ x: 996, y: 400 }),
 });
 
@@ -30,6 +35,12 @@ let viewport = emptyViewport();
 function freshState() {
   return {
     generation,
+    reset_generation: generation,
+    reset_ack_generation: generation - 1,
+    semantic_sequence: [],
+    text_write_count: 0,
+    overlay_enabled: false,
+    overlay_clicks: 0,
     clicks: 0,
     pixel_clicks: 0,
     double_clicks: 0,
@@ -153,6 +164,29 @@ function applyEvent(event) {
         throw new HttpError(400, "invalid_text");
       }
       state.text = event.value;
+      state.text_write_count += 1;
+      break;
+    case "semantic":
+      requireExactKeys(event, ["kind", "value"]);
+      if (!["alpha", "beta", "gamma"].includes(event.value)) {
+        throw new HttpError(400, "invalid_semantic_value");
+      }
+      state.semantic_sequence.push(event.value);
+      break;
+    case "overlay_toggle":
+      requireExactKeys(event, ["kind"]);
+      state.overlay_enabled = !state.overlay_enabled;
+      break;
+    case "overlay_click":
+      requireExactKeys(event, ["kind"]);
+      state.overlay_clicks += 1;
+      break;
+    case "reset_ack":
+      requireExactKeys(event, ["kind", "generation"]);
+      if (!Number.isSafeInteger(event.generation) || event.generation !== state.reset_generation) {
+        throw new HttpError(409, "reset_generation_mismatch");
+      }
+      state.reset_ack_generation = event.generation;
       break;
     case "keypress":
       requireExactKeys(event, ["kind", "key"]);
@@ -227,6 +261,7 @@ export function startDesktopHarness() {
       const allowed = new Map([
         ["/", "GET"],
         ["/layout", "GET"],
+        ["/generation", "GET"],
         ["/state", "GET"],
         ["/reset", "POST"],
         ["/event", "POST"],
@@ -264,6 +299,10 @@ export function startDesktopHarness() {
       }
       if (requestUrl.pathname === "/state") {
         json(response, 200, state);
+        return;
+      }
+      if (requestUrl.pathname === "/generation") {
+        json(response, 200, { reset_generation: state.reset_generation });
         return;
       }
       if (requestUrl.pathname === "/reset") {

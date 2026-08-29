@@ -3,11 +3,28 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  scanCanonicalSkillFixedDelay,
   scanDelayCalls,
+  scanNoFixedActionDelay,
   scanProductionDelayCalls,
 } from "../helpers/fixed-delay-scan.js";
 
 describe("no fixed action delay contract", () => {
+  it("rejects a canonical Skill directive that adds a universal post-action wait", () => {
+    for (const directive of [
+      "Always wait 3 seconds after every action.",
+      "Wait 3 seconds after every action.",
+      "Sleep after each action.",
+    ]) {
+      expect(scanCanonicalSkillFixedDelay(directive), directive).toEqual([
+        { path: "skills/computer-use/SKILL.md", line: 1, callee: "fixed_post_action_wait" },
+      ]);
+    }
+    expect(scanCanonicalSkillFixedDelay(
+      "Never insert a fixed post-action wait. Use explicit wait(ms) only when loading is visible.",
+    )).toEqual([]);
+  });
+
   it("finds direct, aliased, member, and Promise-wrapped fixed delays", () => {
     const findings = scanDelayCalls([{
       path: "src/core/poisoned.ts",
@@ -75,5 +92,6 @@ describe("no fixed action delay contract", () => {
     const productRoot = fileURLToPath(new URL("../..", import.meta.url));
 
     await expect(scanProductionDelayCalls(productRoot)).resolves.toEqual([]);
+    await expect(scanNoFixedActionDelay(productRoot)).resolves.toEqual([]);
   });
 });

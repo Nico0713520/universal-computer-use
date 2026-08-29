@@ -180,3 +180,28 @@ export async function scanProductionDelayCalls(root: string): Promise<DelayFindi
   })));
   return scanDelayCalls(sources);
 }
+
+export function scanCanonicalSkillFixedDelay(text: string): DelayFinding[] {
+  const directives = [
+    /\b(?:wait|sleep)\b.*\bafter (?:every|each) action\b/i,
+    /\bafter (?:every|each) action\b.*\b(?:wait|sleep)\b/i,
+  ];
+  return text.split(/\r?\n/u).flatMap((line, index) =>
+    !/\b(?:never|do not|don't|must not|no universal)\b/i.test(line) &&
+      directives.some((directive) => directive.test(line))
+      ? [{
+          path: "skills/computer-use/SKILL.md",
+          line: index + 1,
+          callee: "fixed_post_action_wait",
+        }]
+      : []);
+}
+
+export async function scanNoFixedActionDelay(root: string): Promise<DelayFinding[]> {
+  const productRoot = path.basename(root) === "src" ? path.dirname(root) : root;
+  const [sourceFindings, skill] = await Promise.all([
+    scanProductionDelayCalls(productRoot),
+    readFile(path.join(productRoot, "skills/computer-use/SKILL.md"), "utf8"),
+  ]);
+  return [...sourceFindings, ...scanCanonicalSkillFixedDelay(skill)];
+}

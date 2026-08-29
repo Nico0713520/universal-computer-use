@@ -31,7 +31,7 @@ function successfulDoctor(): Record<string, unknown> {
 
 function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
   return {
-    schema_version: 1,
+    schema_version: 2,
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
     metadata: {
@@ -61,9 +61,49 @@ function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
       { name: "element_action", duration_ms: 100, target_ms: 3_000, hard_limit_ms: 8_000, status: "target_met" },
       { name: "mcp_reconnect", duration_ms: 100, target_ms: 2_000, hard_limit_ms: 10_000, status: "target_met" },
     ],
+    performance: {
+      window_visual_observe: {
+        sample_count: 30, p50_ms: 100, p95_ms: 200, max_ms: 300,
+        slo: { p50_ms: 700, p95_ms: 1_500 }, status: "passed",
+      },
+      window_semantic_observe: {
+        sample_count: 30, p50_ms: 100, p95_ms: 200, max_ms: 300,
+        slo: { p50_ms: 400, p95_ms: 1_000 }, status: "passed",
+      },
+      semantic_action_next_state: {
+        sample_count: 30, p50_ms: 100, p95_ms: 200, max_ms: 300,
+        slo: { p50_ms: 1_000, p95_ms: 2_000 }, status: "passed",
+      },
+      pixel_action_next_state: {
+        sample_count: 30, p50_ms: 100, p95_ms: 200, max_ms: 300,
+        slo: { p50_ms: 1_500, p95_ms: 3_000 }, status: "passed",
+      },
+    },
+    adaptive_correctness: {
+      no_fixed_action_delay: true,
+      semantic_sequence: true,
+      pixel_once: true,
+      unique_input_once: true,
+      visual_recovery_once: true,
+      focus_preserved: true,
+    },
+    real_app_smoke: {
+      calculator_703: true,
+      textedit_unique_value: true,
+      textedit_single_write: true,
+    },
     cleanup_passed: cleanupPassed,
     timestamp: "2026-08-29T12:34:56.000Z",
   };
+}
+
+function failedEvidence(
+  mutate: (evidence: Record<string, unknown>) => void,
+): Record<string, unknown> {
+  const evidence = simulatedEvidence();
+  evidence.status = "failed";
+  mutate(evidence);
+  return evidence;
 }
 
 async function run(
@@ -110,6 +150,14 @@ async function fixturePath(name: string): Promise<string> {
 }
 
 describe("macOS development acceptance launcher", () => {
+  it("uses checkout-local build and test tooling without a registry lookup", async () => {
+    const source = await readFile(SCRIPT, "utf8");
+
+    expect(source).not.toContain('runProcess("npx"');
+    expect(source).toContain('runProcess("npm", ["run", "build"]');
+    expect(source).toContain('node_modules/vitest/vitest.mjs');
+  });
+
   it("fails before creating evidence on a non-macOS host", async () => {
     const path = await fixturePath("evidence.json");
     const result = await run(path, { CUA_ACCEPTANCE_TEST_PLATFORM: "win32" });
@@ -210,6 +258,75 @@ describe("macOS development acceptance launcher", () => {
       stdout: "",
       stderr: "acceptance_failed:evidence_missing_or_invalid\n",
     });
+  });
+
+  it("preserves the child diagnostic when the real lane exits before evidence exists", async () => {
+    const path = await fixturePath("evidence.json");
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_CHILD_OMIT_EVIDENCE: "1",
+      CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC: "interactive_session_required",
+      CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE: "1",
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "interactive_session_required\nacceptance_failed:evidence_missing_or_invalid\n",
+    });
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each([
+    ["failed performance profile", failedEvidence((evidence) => {
+      const profile = (evidence.performance as Record<string, Record<string, unknown>>)
+        .window_visual_observe;
+      profile.status = "failed";
+      profile.p50_ms = 701;
+    })],
+    ["false Calculator smoke", failedEvidence((evidence) => {
+      const smoke = evidence.real_app_smoke as Record<string, unknown>;
+      smoke.calculator_703 = false;
+      smoke.error_code = "calculator_unavailable";
+    })],
+    ["false TextEdit smoke", failedEvidence((evidence) => {
+      const smoke = evidence.real_app_smoke as Record<string, unknown>;
+      smoke.textedit_unique_value = false;
+      smoke.textedit_single_write = false;
+      smoke.error_code = "textedit_unavailable";
+    })],
+    ["unsupported locale", failedEvidence((evidence) => {
+      const smoke = evidence.real_app_smoke as Record<string, unknown>;
+      smoke.textedit_unique_value = false;
+      smoke.textedit_single_write = false;
+      smoke.error_code = "unsupported_locale";
+    })],
+    ["old hard timing failure", failedEvidence((evidence) => {
+      const timing = (evidence.timings as Array<Record<string, unknown>>)[5]!;
+      timing.duration_ms = 8_001;
+      timing.status = "failed";
+    })],
+    ["false adaptive correctness", failedEvidence((evidence) => {
+      const adaptive = evidence.adaptive_correctness as Record<string, unknown>;
+      adaptive.visual_recovery_once = false;
+    })],
+    ["real-app cleanup failure", failedEvidence((evidence) => {
+      (evidence.real_app_smoke as Record<string, unknown>).cleanup_failed = true;
+    })],
+  ])("retains schema-valid failed evidence for %s and exits nonzero", async (_label, evidence) => {
+    const path = await fixturePath("evidence.json");
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_CHILD_RESULT: JSON.stringify(evidence),
+      CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE: "1",
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(`${JSON.stringify({
+      status: "failed",
+      evidence_path: path,
+      cleanup_passed: true,
+    })}\nacceptance_failed:gate_failed\n`);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual(evidence);
   });
 
   it("rejects test injection outside an explicit test process", async () => {

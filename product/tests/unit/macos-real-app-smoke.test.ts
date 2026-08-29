@@ -1,0 +1,279 @@
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { describe, expect, it } from "vitest";
+
+import {
+  cleanupSmokeResources,
+  cleanupOwnedTextEdit,
+  ownFreshTextEditWindow,
+  restoreCalculator,
+} from "../e2e/development/macos-real-app-smoke.js";
+
+const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64");
+
+function result(structuredContent: Record<string, unknown>, image = false): CallToolResult {
+  return {
+    content: image
+      ? [{ type: "image", mimeType: "image/png", data: PNG }]
+      : [{ type: "text", text: "ok" }],
+    structuredContent,
+  };
+}
+
+function desktop(snapshot: string, windows: readonly string[]): CallToolResult {
+  return result({
+    snapshot_id: snapshot,
+    apps: [{ app_ref: "app_textedit", display_name: "TextEdit", running: windows.length > 0 }],
+    windows: windows.map((window_ref) => ({
+      window_ref,
+      app_ref: "app_textedit",
+      app_name: "TextEdit",
+      title: window_ref,
+    })),
+  }, true);
+}
+
+function windowState(snapshot: string, windowRef: string, editable = false): CallToolResult {
+  return result({
+    snapshot_id: snapshot,
+    target: { kind: "window", window_ref: windowRef, app_ref: "app_textedit" },
+    elements: editable
+      ? [{
+          element_ref: `element_${snapshot}`,
+          role: "AXTextArea",
+          label: "Body",
+          value: "nonce",
+          actions: ["set_value"],
+        }]
+      : [],
+  }, true);
+}
+
+function acted(snapshot: string, windowRef = "owned"): CallToolResult {
+  return result({
+    snapshot_id: snapshot,
+    next_state: "available",
+    target: { kind: "window", window_ref: windowRef, app_ref: "app_textedit" },
+    action_result: { status: "executed", effect: "confirmed", delivery: "background" },
+    verification: { status: "satisfied" },
+    elements: [{
+      element_ref: `element_${snapshot}`,
+      role: "AXTextArea",
+      label: "Body",
+      value: "",
+      actions: ["set_value"],
+    }],
+  });
+}
+
+function calculatorState(snapshot: string, windowRef: string): CallToolResult {
+  return result({
+    snapshot_id: snapshot,
+    target: { kind: "window", window_ref: windowRef, app_ref: "app_calculator" },
+    elements: [{
+      element_ref: `clear_${snapshot}`,
+      role: "AXButton",
+      label: "AC",
+      actions: ["click"],
+    }],
+  }, true);
+}
+
+function calculatorActed(snapshot: string, windowRef: string): CallToolResult {
+  return result({
+    snapshot_id: snapshot,
+    next_state: "available",
+    target: { kind: "window", window_ref: windowRef, app_ref: "app_calculator" },
+    action_result: { status: "executed", effect: "confirmed", delivery: "background" },
+    verification: { status: "satisfied" },
+    elements: [{
+      element_ref: `display_${snapshot}`,
+      role: "AXStaticText",
+      label: "Display",
+      value: "0",
+    }],
+  });
+}
+
+function saveSheet(snapshot: string, windowRef: string): CallToolResult {
+  return result({
+    snapshot_id: snapshot,
+    target: { kind: "window", window_ref: windowRef, app_ref: "app_textedit" },
+    elements: [{
+      element_ref: `discard_${snapshot}`,
+      role: "AXButton",
+      label: "Don't Save",
+      actions: ["click"],
+    }],
+  }, true);
+}
+
+function scriptedClient(
+  responses: readonly CallToolResult[],
+  calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>>,
+): Client {
+  let index = 0;
+  return {
+    callTool: async (request: Readonly<{ name: string; arguments?: Record<string, unknown> }>) => {
+      calls.push(request);
+      const response = responses[index++];
+      if (response === undefined) throw new Error("unexpected_call");
+      return response;
+    },
+  } as unknown as Client;
+}
+
+describe("TextEdit owned-window smoke", () => {
+  it("launches from the desktop when no window exists and owns only the one new ref", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      desktop("desktop-1", []),
+      acted("launch-next"),
+      desktop("desktop-2", ["owned"]),
+    ], calls);
+
+    await expect(ownFreshTextEditWindow(client)).resolves.toBe("owned");
+    expect(calls.map((call) => call.name)).toEqual([
+      "computer_observe",
+      "computer_act",
+      "computer_observe",
+    ]);
+    expect(calls[1]?.arguments).toMatchObject({ action: { type: "launch_app" } });
+    expect(JSON.stringify(calls)).not.toContain("set_value");
+  });
+
+  it("creates from an existing window and proves exactly one new ref before any mutation", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      desktop("desktop-1", ["preexisting"]),
+      windowState("source", "preexisting"),
+      acted("created", "preexisting"),
+      desktop("desktop-2", ["preexisting", "owned"]),
+    ], calls);
+
+    await expect(ownFreshTextEditWindow(client)).resolves.toBe("owned");
+    expect(calls[2]?.arguments).toMatchObject({
+      action: { type: "keypress", keys: ["cmd", "n"] },
+      delivery: "foreground",
+    });
+    expect(JSON.stringify(calls)).not.toContain("set_value");
+  });
+
+  it("closes only the owned ref and proves it disappeared without inventing an empty AXValue", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      windowState("fresh-before-clear", "owned", true),
+      acted("after-close"),
+      desktop("desktop-after", ["preexisting"]),
+    ], calls);
+
+    await expect(cleanupOwnedTextEdit(
+      client,
+      "owned",
+      windowState("before-clear", "owned", true),
+    )).resolves.toBeUndefined();
+    expect(calls[1]?.arguments).toMatchObject({
+      action: { type: "keypress", keys: ["cmd", "w"] },
+      delivery: "foreground",
+    });
+    expect(calls[2]?.arguments).toMatchObject({
+      discover: { query: "com.apple.TextEdit" },
+    });
+    expect(calls[1]?.arguments?.snapshot_id).toBe("fresh-before-clear");
+    expect(JSON.stringify(calls)).not.toContain("set_value");
+  });
+
+  it("fails cleanup when the owned ref survives close", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      windowState("fresh-before-clear", "owned", true),
+      acted("after-close"),
+      desktop("desktop-after", ["preexisting", "owned"]),
+      windowState("sheet-without-discard", "owned"),
+    ], calls);
+
+    await expect(cleanupOwnedTextEdit(
+      client,
+      "owned",
+      windowState("before-clear", "owned", true),
+    )).rejects.toThrow("verification_failed");
+  });
+});
+
+describe("Calculator cleanup", () => {
+  it("re-observes the exact operated window before AC after an intermediate action failure", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      calculatorState("fresh-cleanup", "calculator-owned"),
+      calculatorActed("after-clear", "calculator-owned"),
+    ], calls);
+
+    await expect(restoreCalculator(client, true, "calculator-owned")).resolves.toBeUndefined();
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      name: "computer_observe",
+      arguments: {
+        target: { kind: "window", window_ref: "calculator-owned" },
+      },
+    });
+    expect(calls[1]).toMatchObject({
+      name: "computer_act",
+      arguments: {
+        snapshot_id: "fresh-cleanup",
+        action: { type: "click", element_ref: "clear_fresh-cleanup" },
+      },
+    });
+  });
+
+  it("still cleans the owned TextEdit window when Calculator restoration fails", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const calculatorObserveFailure: CallToolResult = {
+      isError: true,
+      content: [{ type: "text", text: "window gone" }],
+      structuredContent: { code: "window_not_found" },
+    };
+    const textCurrent = windowState("text-before-clear", "text-owned", true);
+    const client = scriptedClient([
+      calculatorObserveFailure,
+      windowState("fresh-text-cleanup", "text-owned", true),
+      acted("text-after-close", "text-owned"),
+      desktop("desktop-after", ["preexisting"]),
+    ], calls);
+
+    await expect(cleanupSmokeResources(client, {
+      calculatorTouched: true,
+      calculatorWindowRef: "calculator-owned",
+      ownedTextEditWindow: "text-owned",
+      textEditCurrent: textCurrent,
+    })).resolves.toBe(false);
+    expect(calls.some((call) => call.arguments?.action !== undefined &&
+      (call.arguments.action as { type?: unknown }).type === "set_value")).toBe(false);
+    expect(calls.some((call) => call.arguments?.action !== undefined &&
+      (call.arguments.action as { type?: unknown }).type === "keypress")).toBe(true);
+  });
+
+  it("dismisses a save sheet only on the exact owned TextEdit ref", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      windowState("fresh-text-cleanup", "text-owned", true),
+      acted("text-after-close", "text-owned"),
+      desktop("desktop-sheet", ["preexisting", "text-owned"]),
+      saveSheet("sheet", "text-owned"),
+      acted("discarded", "text-owned"),
+      desktop("desktop-after", ["preexisting"]),
+    ], calls);
+
+    await expect(cleanupOwnedTextEdit(
+      client,
+      "text-owned",
+      result({ isError: true, target: { kind: "window", window_ref: "text-owned" } }),
+    )).resolves.toBeUndefined();
+    expect(calls[0]?.arguments).toMatchObject({
+      target: { kind: "window", window_ref: "text-owned" },
+    });
+    expect(calls[4]?.arguments).toMatchObject({
+      action: { type: "click", element_ref: "discard_sheet" },
+    });
+    expect(JSON.stringify(calls)).not.toContain("preexisting\",\"action");
+  });
+});

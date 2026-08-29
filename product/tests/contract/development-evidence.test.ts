@@ -19,7 +19,7 @@ async function evidenceParser(): Promise<z.ZodType> {
 
 function completeEvidence(): JsonRecord {
   return {
-    schema_version: 1,
+    schema_version: 2,
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
     metadata: {
@@ -49,6 +49,53 @@ function completeEvidence(): JsonRecord {
       { name: "element_action", duration_ms: 100, target_ms: 3_000, hard_limit_ms: 8_000, status: "target_met" },
       { name: "mcp_reconnect", duration_ms: 100, target_ms: 2_000, hard_limit_ms: 10_000, status: "target_met" },
     ],
+    performance: {
+      window_visual_observe: {
+        sample_count: 30,
+        p50_ms: 500,
+        p95_ms: 1_200,
+        max_ms: 1_300,
+        slo: { p50_ms: 700, p95_ms: 1_500 },
+        status: "passed",
+      },
+      window_semantic_observe: {
+        sample_count: 30,
+        p50_ms: 300,
+        p95_ms: 800,
+        max_ms: 900,
+        slo: { p50_ms: 400, p95_ms: 1_000 },
+        status: "passed",
+      },
+      semantic_action_next_state: {
+        sample_count: 30,
+        p50_ms: 800,
+        p95_ms: 1_800,
+        max_ms: 1_900,
+        slo: { p50_ms: 1_000, p95_ms: 2_000 },
+        status: "passed",
+      },
+      pixel_action_next_state: {
+        sample_count: 30,
+        p50_ms: 1_200,
+        p95_ms: 2_800,
+        max_ms: 2_900,
+        slo: { p50_ms: 1_500, p95_ms: 3_000 },
+        status: "passed",
+      },
+    },
+    adaptive_correctness: {
+      no_fixed_action_delay: true,
+      semantic_sequence: true,
+      pixel_once: true,
+      unique_input_once: true,
+      visual_recovery_once: true,
+      focus_preserved: true,
+    },
+    real_app_smoke: {
+      calculator_703: true,
+      textedit_unique_value: true,
+      textedit_single_write: true,
+    },
     cleanup_passed: true,
     timestamp: "2026-08-29T12:34:56.000Z",
   };
@@ -83,6 +130,8 @@ describe("macOS development acceptance evidence", () => {
     const failedScenario = completeEvidence();
     (failedScenario.scenarios as JsonRecord).desktop_png = false;
     expect(parser.safeParse(failedScenario).success).toBe(false);
+    failedScenario.status = "failed";
+    expect(parser.safeParse(failedScenario).success).toBe(true);
 
     const missingTiming = completeEvidence();
     (missingTiming.timings as JsonRecord[]).pop();
@@ -102,6 +151,84 @@ describe("macOS development acceptance evidence", () => {
     expect(parser.safeParse(evidence).success).toBe(false);
   });
 
+  it("accepts a truthful failed artifact when a legacy timing exceeds its hard limit", async () => {
+    const parser = await evidenceParser();
+    const evidence = completeEvidence();
+    evidence.status = "failed";
+    (evidence.timings as JsonRecord[])[5].duration_ms = 8_001;
+    (evidence.timings as JsonRecord[])[5].status = "failed";
+
+    expect(parser.safeParse(evidence).success).toBe(true);
+  });
+
+  it("requires all four fixed 30-sample aggregate profiles and real-app smoke", async () => {
+    const parser = await evidenceParser();
+
+    const missingProfile = completeEvidence();
+    delete (missingProfile.performance as JsonRecord).window_semantic_observe;
+    expect(parser.safeParse(missingProfile).success).toBe(false);
+
+    for (const sampleCount of [29, 31]) {
+      const wrongCount = completeEvidence();
+      ((wrongCount.performance as JsonRecord).window_visual_observe as JsonRecord).sample_count = sampleCount;
+      expect(parser.safeParse(wrongCount).success, `sample_count=${sampleCount}`).toBe(false);
+    }
+
+    const missingSmoke = completeEvidence();
+    delete missingSmoke.real_app_smoke;
+    expect(parser.safeParse(missingSmoke).success).toBe(false);
+  });
+
+  it("rejects an impossible passed aggregate and raw sample arrays", async () => {
+    const parser = await evidenceParser();
+    const incorrectRank = completeEvidence();
+    ((incorrectRank.performance as JsonRecord).window_visual_observe as JsonRecord).p50_ms = 701;
+    expect(parser.safeParse(incorrectRank).success).toBe(false);
+
+    const rawSamples = completeEvidence();
+    ((rawSamples.performance as JsonRecord).window_visual_observe as JsonRecord).samples = [100];
+    expect(parser.safeParse(rawSamples).success).toBe(false);
+  });
+
+  it("requires overall status to reflect performance and real-app smoke", async () => {
+    const parser = await evidenceParser();
+
+    const failedProfile = completeEvidence();
+    ((failedProfile.performance as JsonRecord).window_semantic_observe as JsonRecord).status = "failed";
+    expect(parser.safeParse(failedProfile).success).toBe(false);
+    failedProfile.status = "failed";
+    expect(parser.safeParse(failedProfile).success).toBe(true);
+
+    const falseSmoke = completeEvidence();
+    (falseSmoke.real_app_smoke as JsonRecord).textedit_unique_value = false;
+    expect(parser.safeParse(falseSmoke).success).toBe(false);
+    falseSmoke.status = "failed";
+    (falseSmoke.real_app_smoke as JsonRecord).error_code = "verification_failed";
+    expect(parser.safeParse(falseSmoke).success).toBe(true);
+
+    const cleanupFailure = completeEvidence();
+    cleanupFailure.status = "failed";
+    (cleanupFailure.real_app_smoke as JsonRecord).cleanup_failed = true;
+    expect(parser.safeParse(cleanupFailure).success).toBe(true);
+  });
+
+  it("requires explicit static and adaptive correctness evidence", async () => {
+    const parser = await evidenceParser();
+    const missing = completeEvidence();
+    delete missing.adaptive_correctness;
+    expect(parser.safeParse(missing).success).toBe(false);
+
+    const falseProof = completeEvidence();
+    (falseProof.adaptive_correctness as JsonRecord).no_fixed_action_delay = false;
+    expect(parser.safeParse(falseProof).success).toBe(false);
+    falseProof.status = "failed";
+    expect(parser.safeParse(falseProof).success).toBe(true);
+
+    const unknown = completeEvidence();
+    (unknown.adaptive_correctness as JsonRecord).raw_findings = [];
+    expect(parser.safeParse(unknown).success).toBe(false);
+  });
+
   it("rejects screenshots, content, machine identity and opaque execution references recursively", async () => {
     const parser = await evidenceParser();
     const injections: Array<[string, (value: JsonRecord) => void]> = [
@@ -119,6 +246,24 @@ describe("macOS development acceptance evidence", () => {
       ["snapshot", (value) => { (value.timings as JsonRecord[])[0].snapshot_id = "snap_private"; }],
       ["ref", (value) => { (value.timings as JsonRecord[])[0].window_ref = "wref_private"; }],
       ["token", (value) => { (value.timings as JsonRecord[])[0].element_token = "token_private"; }],
+      ["performance screenshot", (value) => {
+        ((value.performance as JsonRecord).window_visual_observe as JsonRecord).screenshot = "png";
+      }],
+      ["performance text", (value) => {
+        ((value.performance as JsonRecord).window_visual_observe as JsonRecord).text = "private text";
+      }],
+      ["performance ref", (value) => {
+        ((value.performance as JsonRecord).window_visual_observe as JsonRecord).window_ref = "wref_private";
+      }],
+      ["performance path", (value) => {
+        ((value.performance as JsonRecord).window_visual_observe as JsonRecord).path = "/private/tmp";
+      }],
+      ["performance pid", (value) => {
+        ((value.performance as JsonRecord).window_visual_observe as JsonRecord).pid = 123;
+      }],
+      ["smoke environment", (value) => {
+        (value.real_app_smoke as JsonRecord).environment = { HOME: "/private/user" };
+      }],
     ];
 
     for (const [label, inject] of injections) {

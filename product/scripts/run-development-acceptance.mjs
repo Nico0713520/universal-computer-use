@@ -12,8 +12,17 @@ const PRODUCT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_BROWSER = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const SOURCE_ACCEPTANCE_FILES = [
   "tests/e2e/development/macos-acceptance.spec.ts",
+  "tests/e2e/development/macos-acceptance-support.ts",
+  "tests/e2e/development/macos-acceptance-result-checks.ts",
+  "tests/e2e/development/macos-real-app-smoke.ts",
+  "tests/e2e/development/performance-recorder.ts",
   "tests/e2e/development/evidence.schema.json",
+  "tests/helpers/fixed-delay-scan.ts",
+  "tests/fixtures/focus-sentinel/main.swift",
+  "tests/fixtures/focus-sentinel/Info.plist",
+  "tests/fixtures/desktop-harness/index.html",
   "tests/fixtures/desktop-harness/server.mjs",
+  "skills/computer-use/SKILL.md",
 ];
 const TEST_KEYS = [
   "CUA_ACCEPTANCE_TEST_PLATFORM",
@@ -21,6 +30,9 @@ const TEST_KEYS = [
   "CUA_ACCEPTANCE_TEST_DOCTOR_JSON",
   "CUA_ACCEPTANCE_TEST_BROWSER",
   "CUA_ACCEPTANCE_TEST_CHILD_RESULT",
+  "CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE",
+  "CUA_ACCEPTANCE_TEST_CHILD_OMIT_EVIDENCE",
+  "CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC",
 ];
 
 class AcceptanceFailure extends Error {
@@ -82,9 +94,9 @@ function validDoctor(value, lockedVersion) {
 }
 
 async function validEvidence(value) {
-  if (!(value?.schema_version === 1 &&
+  if (!(value?.schema_version === 2 &&
     value.evidence_type === "computer-use-macos-development-acceptance" &&
-    (value.status === "passed" || value.status === "degraded") &&
+    (value.status === "passed" || value.status === "degraded" || value.status === "failed") &&
     typeof value.cleanup_passed === "boolean")) return false;
   const schema = JSON.parse(await readFile(
     join(PRODUCT_DIR, "tests/e2e/development/evidence.schema.json"),
@@ -174,7 +186,7 @@ async function main() {
         throw new AcceptanceFailure("acceptance_preflight_failed:doctor_failed");
       }
     } else {
-      const build = await runProcess("npx", ["--yes", "pnpm@9.0.4", "build"]);
+      const build = await runProcess("npm", ["run", "build"]);
       if (build.code !== 0) {
         throw new AcceptanceFailure("acceptance_preflight_failed:build_failed", build.stderr || build.stdout);
       }
@@ -204,6 +216,8 @@ async function main() {
       throw new AcceptanceFailure("acceptance_preflight_failed:browser_missing");
     }
 
+    let childFailed = false;
+    let childDiagnostic = "";
     if (testMode) {
       let simulated;
       try {
@@ -211,12 +225,20 @@ async function main() {
       } catch {
         throw new AcceptanceFailure("acceptance_failed:acceptance_lane_failed");
       }
-      await writeFile(selected.path, `${JSON.stringify(simulated, null, 2)}\n`, { flag: "wx" });
+      if (process.env.CUA_ACCEPTANCE_TEST_CHILD_OMIT_EVIDENCE !== "1") {
+        await writeFile(selected.path, `${JSON.stringify(simulated, null, 2)}\n`, { flag: "wx" });
+      }
+      const simulatedExitCode = process.env.CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE ?? "0";
+      if (simulatedExitCode !== "0" && simulatedExitCode !== "1") {
+        throw new AcceptanceFailure("acceptance_failed:acceptance_lane_failed");
+      }
+      childFailed = simulatedExitCode === "1";
+      childDiagnostic = process.env.CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC ?? "";
     } else {
       const child = await runProcess(
-        "npx",
+        process.execPath,
         [
-          "--yes", "pnpm@9.0.4", "exec", "vitest", "run",
+          join(PRODUCT_DIR, "node_modules/vitest/vitest.mjs"), "run",
           "tests/e2e/development/macos-acceptance.spec.ts",
           "--sequence.concurrent=false", "--reporter=basic",
         ],
@@ -229,25 +251,42 @@ async function main() {
           },
         },
       );
-      if (child.code !== 0) {
-        throw new AcceptanceFailure(
-          "acceptance_failed:acceptance_lane_failed",
-          [child.stdout, child.stderr].filter(Boolean).join("\n"),
-        );
-      }
+      childFailed = child.code !== 0;
+      childDiagnostic = [child.stdout, child.stderr].filter(Boolean).join("\n");
     }
 
     let evidence;
     try {
       evidence = JSON.parse(await readFile(selected.path, "utf8"));
     } catch {
-      throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
+      throw new AcceptanceFailure(
+        "acceptance_failed:evidence_missing_or_invalid",
+        childDiagnostic,
+      );
     }
     if (evidence.cleanup_passed !== true) {
       throw new AcceptanceFailure("acceptance_failed:cleanup_failed");
     }
     if (!(await validEvidence(evidence))) {
       throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
+    }
+
+    if (evidence.status === "failed") {
+      completed = true;
+      throw new AcceptanceFailure(
+        "acceptance_failed:gate_failed",
+        JSON.stringify({
+          status: evidence.status,
+          evidence_path: selected.path,
+          cleanup_passed: evidence.cleanup_passed,
+        }),
+      );
+    }
+    if (childFailed) {
+      throw new AcceptanceFailure(
+        "acceptance_failed:acceptance_lane_failed",
+        childDiagnostic,
+      );
     }
 
     completed = true;
