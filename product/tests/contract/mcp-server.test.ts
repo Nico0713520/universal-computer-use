@@ -63,6 +63,27 @@ describe("computer use MCP contract", () => {
     });
   });
 
+  it("publishes a self-contained safe control loop in MCP initialization", async () => {
+    const { runtime } = fixtureRuntime();
+    const client = await connectedClient(runtime);
+    const instructions = client.getInstructions();
+
+    expect(instructions).toBeTypeOf("string");
+    const opening = instructions!.slice(0, 512);
+    for (const phrase of [
+      "Observe before the first action",
+      "exact window",
+      "one action",
+      "latest snapshot",
+      "computer_act returns",
+      "Never blindly retry",
+      "Stop",
+    ]) {
+      expect(opening).toContain(phrase);
+    }
+    expect(instructions).not.toMatch(/embedded model|bypass|computer_verify/i);
+  });
+
   it("returns matching structured data and one PNG image for observe and act", async () => {
     const { runtime } = fixtureRuntime({ dataBase64: "cG5nLWZpeHR1cmU=" });
     const client = await connectedClient(runtime);

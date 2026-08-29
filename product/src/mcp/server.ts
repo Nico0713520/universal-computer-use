@@ -9,11 +9,14 @@ import {
 } from "../protocol.js";
 import { PRODUCT_VERSION } from "../version.js";
 import { handleAct, handleObserve } from "./handlers.js";
+import { MCP_SERVER_INSTRUCTIONS } from "./instructions.js";
 
 export function createComputerUseServer(runtime: ComputerUseRuntime): McpServer {
   const server = new McpServer({
     name: "universal-computer-use",
     version: PRODUCT_VERSION,
+  }, {
+    instructions: MCP_SERVER_INSTRUCTIONS,
   });
 
   server.registerTool(
