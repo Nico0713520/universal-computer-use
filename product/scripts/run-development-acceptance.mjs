@@ -11,6 +11,7 @@ const PRODUCT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_BROWSER = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const TEST_KEYS = [
   "CUA_ACCEPTANCE_TEST_PLATFORM",
+  "CUA_ACCEPTANCE_TEST_MACOS_VERSION",
   "CUA_ACCEPTANCE_TEST_DOCTOR_JSON",
   "CUA_ACCEPTANCE_TEST_BROWSER",
   "CUA_ACCEPTANCE_TEST_CHILD_RESULT",
@@ -115,6 +116,21 @@ async function main() {
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < 22 || (major === 22 && minor < 19)) {
     throw new AcceptanceFailure("acceptance_preflight_failed:node_version");
+  }
+
+  let hostVersion;
+  if (testMode) {
+    hostVersion = process.env.CUA_ACCEPTANCE_TEST_MACOS_VERSION ?? "";
+  } else {
+    const checkedVersion = await runProcess("/usr/bin/sw_vers", ["-productVersion"]);
+    if (checkedVersion.code !== 0) {
+      throw new AcceptanceFailure("acceptance_preflight_failed:macos_version");
+    }
+    hostVersion = checkedVersion.stdout.trim();
+  }
+  const versionMatch = /^(\d+)(?:\.\d+){1,3}$/.exec(hostVersion);
+  if (versionMatch === null || Number(versionMatch[1]) < 14) {
+    throw new AcceptanceFailure("acceptance_preflight_failed:macos_version");
   }
 
   const { evidencePath: configuredPath } = parseArguments(process.argv.slice(2));

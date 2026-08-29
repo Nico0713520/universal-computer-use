@@ -57,6 +57,7 @@ async function run(
       NODE_ENV: "test",
       CUA_ACCEPTANCE_TEST_MODE: "1",
       CUA_ACCEPTANCE_TEST_PLATFORM: "darwin",
+      CUA_ACCEPTANCE_TEST_MACOS_VERSION: "15.6.1",
       CUA_ACCEPTANCE_TEST_DOCTOR_JSON: JSON.stringify(successfulDoctor()),
       CUA_ACCEPTANCE_TEST_BROWSER: process.execPath,
       CUA_ACCEPTANCE_TEST_CHILD_RESULT: JSON.stringify(simulatedEvidence()),
@@ -104,6 +105,18 @@ describe("macOS development acceptance launcher", () => {
       code: 1,
       stdout: "",
       stderr: "acceptance_preflight_failed:doctor_failed\n",
+    });
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects macOS versions older than the supported development floor", async () => {
+    const path = await fixturePath("evidence.json");
+    const result = await run(path, { CUA_ACCEPTANCE_TEST_MACOS_VERSION: "13.7.8" });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "acceptance_preflight_failed:macos_version\n",
     });
     await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
   });
