@@ -4,7 +4,7 @@ This plugin uses the host Agent's current multimodal model. It does not contain 
 
 ## Start with doctor
 
-Run `computer-use doctor --json`. A healthy report has `ok:true`, the exact engine version from `product/engine.lock.json`, every required tool, an unlocked interactive desktop and one successful primary-display PNG observation.
+Run `computer-use doctor --json`. A healthy report has `ok:true`, the exact engine version from `product/engine.lock.json`, every required tool, an unlocked interactive desktop and one successful primary-display PNG observation. On macOS the command first performs a bounded, read-only frontmost-session probe; it refuses `loginwindow` or an unverifiable interactive session before asking Cua to capture the screen.
 
 `engine_version_mismatch` means the installed Runtime and lock differ. Do not follow `latest`, use a nightly, or edit the lock by hand. Either reinstall the exact lock with `computer-use setup --development` for local development, or stage and prove a formal release before public use. Ordinary `computer-use setup` deliberately rejects the current development-only lock.
 
@@ -44,7 +44,7 @@ If a host sees text but not the screenshot, it does not support MCP `ImageConten
 
 Runtime metadata logs are JSONL on the MCP process's standard error. They contain only timestamp, per-process hashes, tool/action type, duration, route/effect/delivery and stable error code. They must not contain screenshot bytes, typed text, key contents, clipboard data, model prompts or environment values. Standard output is reserved for MCP frames.
 
-The real platform, host and soak evidence files belong outside the repository. They are strict, redacted JSON without screenshots or traces. CI uploads JSON evidence only.
+The real platform, host and soak evidence files belong outside the repository. They are strict, redacted JSON without screenshots or traces. A macOS development run that cannot build complete schema-v3 evidence writes a separate sibling `*.diagnostic.json` after cleanup; it is a failure report, never passing evidence. CI uploads JSON evidence only.
 
 ## Development setup and uninstall
 

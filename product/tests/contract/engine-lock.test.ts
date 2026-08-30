@@ -16,8 +16,8 @@ describe("engine lock", () => {
       await readFile(new URL("../../package.json", import.meta.url), "utf8"),
     ) as { version?: unknown };
 
-    expect(manifest.version).toBe("0.2.2");
-    expect(PRODUCT_VERSION).toBe("0.2.2");
+    expect(manifest.version).toBe("0.2.3");
+    expect(PRODUCT_VERSION).toBe("0.2.3");
     expect(PROTOCOL_VERSION).toBe("1.2.0");
   });
 
@@ -25,8 +25,8 @@ describe("engine lock", () => {
     const readme = await readFile(new URL("../../../README.md", import.meta.url), "utf8");
 
     expect(readme).toContain("| Capability | Code | Contract | macOS real | Named host | Release |");
-    expect(readme).toMatch(/^\| macOS exact window \| complete \| passed \| development-passed \| pending \| blocked \|$/m);
-    expect(readme).toMatch(/^\| macOS background semantic action \| complete \| passed \| development-passed \| pending \| blocked \|$/m);
+    expect(readme).toMatch(/^\| macOS exact window \| complete \| passed \| v0\.2\.1 evidence only \| pending \| blocked \|$/m);
+    expect(readme).toMatch(/^\| macOS background semantic action \| complete \| passed \| v0\.2\.1 evidence only \| pending \| blocked \|$/m);
     expect(readme).toMatch(/^\| Windows DPI \| harness complete \| passed \| pending real hardware \| pending \| blocked \|$/m);
     expect(readme).toMatch(/^\| Windows exact window \| blocked upstream \| truthful refusal \| unavailable \| unavailable \| blocked \|$/m);
   });

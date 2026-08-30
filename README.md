@@ -32,7 +32,7 @@ macOS / Windows desktop
 
 The adapter exposes one UCU session to the host but keeps Cua's mutually exclusive desktop- and window-capture scopes in separate internal sessions. Desktop calls stay on the desktop scope; exact window screenshots and background element actions stay on the window scope.
 
-Product `0.2.2` uses protocol `1.2.0` and keeps the public MCP surface at exactly two tools:
+Product `0.2.3` uses protocol `1.2.0` and keeps the public MCP surface at exactly two tools:
 
 - `computer_observe` returns a one-use `snapshot_id` for the desktop or an exact window, with a PNG when a visual frame is requested and bounded elements for window observations.
 - `computer_act` validates and consumes that snapshot, executes exactly one action, and returns the fresh target state plus a new snapshot ID.
@@ -60,18 +60,18 @@ The npm package name is reserved in the project metadata but is not published ye
 
 ## Current status
 
-The v0.2.2 developer preview now includes a schema-v2 macOS lane with four fixed 5-warm-up/30-sample performance profiles, nearest-rank p50/p95 gates, an explicit production/Canonical-Skill fixed-delay scan, separate deterministic semantic/pixel/one-write/visual-recovery/focus proofs, and owned Calculator/TextEdit smoke. Exact semantic-input evidence uses an owned native AppKit control rather than an untrusted browser AX echo. Deterministic contracts are green. The latest completed real artifact is still the earlier v0.2.1 development evidence; fresh v0.2.2 p50/p95 results remain pending and are not claimed here.
+The v0.2.3 developer preview makes the macOS acceptance lane truthful and diagnosable without changing tool behavior or claiming lower Cua action latency. Schema-v3 evidence records exact correctness counts, classified failures and redacted per-stage aggregates for four fixed 5-warm-up/30-sample profiles; a fatal harness failure writes a separate redacted diagnostic instead of a partial or falsely passing report. The lane still proves the production/Canonical-Skill fixed-delay scan, semantic sequence, exactly-once pixel/input effects, visual recovery, native focus preservation and owned Calculator/TextEdit smoke. Deterministic contracts are green. The latest completed real artifact is still the earlier v0.2.1 development evidence; failed or incomplete v0.2.2 attempts are not promotion evidence, and fresh v0.2.3 real results are not claimed until the three-run gate completes.
 
 | Capability | Code | Contract | macOS real | Named host | Release |
 |---|---|---|---|---|---|
-| Desktop observe/act | complete | passed | development-passed | pending | blocked |
-| macOS exact window | complete | passed | development-passed | pending | blocked |
-| macOS background semantic action | complete | passed | development-passed | pending | blocked |
+| Desktop observe/act | complete | passed | v0.2.1 evidence only | pending | blocked |
+| macOS exact window | complete | passed | v0.2.1 evidence only | pending | blocked |
+| macOS background semantic action | complete | passed | v0.2.1 evidence only | pending | blocked |
 | Windows desktop | complete | passed | n/a in this lane | pending | blocked |
 | Windows DPI | harness complete | passed | pending real hardware | pending | blocked |
 | Windows exact window | blocked upstream | truthful refusal | unavailable | unavailable | blocked |
 
-`development-passed` is local developer evidence, not a Beta/Stable claim. Codex, Kimi, HanaAgent and WorkBuddy still need direct named-host image/loop evidence. Windows still needs physical 100%/125%/150% DPI runs, and the pinned Cua 0.22.2 Windows window APIs remain upstream stubs.
+The historical v0.2.1 record is local developer evidence, not a Beta/Stable claim. Codex, Kimi, HanaAgent and WorkBuddy still need direct named-host image/loop evidence. Windows still needs physical 100%/125%/150% DPI runs, and the pinned Cua 0.22.2 Windows window APIs remain upstream stubs.
 
 ## Documentation
 
