@@ -17,6 +17,7 @@ import {
 import {
   PerformanceRecorder,
   PERFORMANCE_SCENARIO_NAMES,
+  type PerformanceSample,
   type PerformanceScenarioName,
 } from "./performance-recorder.js";
 import { runRealAppSmoke } from "./macos-real-app-smoke.js";
@@ -75,7 +76,7 @@ import {
 const REAL_ACCEPTANCE = process.env.CUA_DEVELOPMENT_ACCEPTANCE === "1";
 const EVIDENCE_SCHEMA = new URL("./evidence.schema.json", import.meta.url);
 
-type IterationResult = Readonly<{ durationMs: number; correctnessPassed: boolean }>;
+type IterationResult = PerformanceSample;
 
 async function discoverFixture(client: Connection["client"]): Promise<Readonly<{
   result: CallToolResult;
@@ -173,7 +174,11 @@ async function performanceIteration(
     }));
     const correctnessPassed = measured.result !== undefined &&
       validFixtureObserve(measured.result, includeScreenshot);
-    return { durationMs: measured.durationMs, correctnessPassed };
+    return {
+      durationMs: measured.durationMs,
+      outcome: correctnessPassed ? "passed" : "oracle_mismatch",
+      stages: {},
+    };
   }
 
   if (name === "semantic_action_next_state") {
@@ -202,7 +207,11 @@ async function performanceIteration(
         oracleText: oracle.text,
         oracleWriteCount: oracle.text_write_count,
       });
-    return { durationMs: measured.durationMs, correctnessPassed };
+    return {
+      durationMs: measured.durationMs,
+      outcome: correctnessPassed ? "passed" : "oracle_mismatch",
+      stages: {},
+    };
   }
 
   const grounded = await observeFixture(client, windowRef, true);
@@ -223,7 +232,11 @@ async function performanceIteration(
     beforeClicks: initialState.pixel_clicks,
     afterClicks: oracle.pixel_clicks,
   });
-  return { durationMs: measured.durationMs, correctnessPassed };
+  return {
+    durationMs: measured.durationMs,
+    outcome: correctnessPassed ? "passed" : "oracle_mismatch",
+    stages: {},
+  };
 }
 
 async function runPerformanceProfiles(
