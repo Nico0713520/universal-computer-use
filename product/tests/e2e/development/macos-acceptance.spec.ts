@@ -670,11 +670,12 @@ async function runFixtureCorrectness(
       let current = await observeFixture(
         client,
         sentinelWindowRef,
-        true,
+        false,
         FOCUS_SENTINEL_TEXT_LABEL,
       );
       const backgroundGrounding = requireSnapshot(current);
       const nativeText = requireElement(current, FOCUS_SENTINEL_TEXT_LABEL);
+      const identityBefore = await frontmostIdentity();
       const nonce = `ucu-focus-${Date.now()}`;
       current = await callTool(
         client,
@@ -682,10 +683,12 @@ async function runFixtureCorrectness(
         buildSemanticSetValueRequest(backgroundGrounding, nativeText.elementRef, nonce),
       );
       const textState = await waitForFocusSentinelText(sentinel, nonce);
-      const identity = await frontmostIdentity();
+      const identityAfter = await frontmostIdentity();
       return sentinelAlive(sentinel) &&
-        identity.bundleIdentifier === CHROME_BUNDLE_ID &&
-        identity.processIdentifier === browserPid &&
+        identityBefore.bundleIdentifier === CHROME_BUNDLE_ID &&
+        identityBefore.processIdentifier === browserPid &&
+        identityAfter.bundleIdentifier === CHROME_BUNDLE_ID &&
+        identityAfter.processIdentifier === browserPid &&
         validEmptyTextGrounding(nativeInitialState, nativeText) &&
         validSemanticSetValueResult(current, {
           groundingSnapshot: backgroundGrounding,
