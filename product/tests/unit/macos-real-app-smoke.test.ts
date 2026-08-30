@@ -244,6 +244,9 @@ describe("TextEdit owned-window smoke", () => {
       windowState("fresh-before-clear", "owned", true),
       acted("after-close"),
       desktop("desktop-after", ["preexisting", "owned"]),
+      windowState("retry-close", "owned", true),
+      acted("after-retry"),
+      desktop("desktop-after-retry", ["preexisting", "owned"]),
       windowState("sheet-without-discard", "owned"),
     ], calls);
 
@@ -253,6 +256,28 @@ describe("TextEdit owned-window smoke", () => {
       windowState("before-clear", "owned", true),
       0,
     )).rejects.toThrow("verification_failed");
+  });
+
+  it("retries one exact-window close when the first keypress has no effect", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      windowState("fresh-before-close", "owned", true),
+      acted("after-close"),
+      desktop("desktop-still-open", ["preexisting", "owned"]),
+      windowState("retry-close", "owned", true),
+      acted("after-retry"),
+      desktop("desktop-after", ["preexisting"]),
+    ], calls);
+
+    await expect(cleanupOwnedTextEdit(
+      client,
+      "owned",
+      windowState("old", "owned", true),
+      0,
+    )).resolves.toBeUndefined();
+    expect(calls.filter((call) =>
+      (call.arguments?.action as { type?: unknown } | undefined)?.type === "keypress"))
+      .toHaveLength(2);
   });
 });
 
@@ -360,6 +385,8 @@ describe("Calculator cleanup", () => {
       calculatorState("fresh-cleanup", "calculator-owned"),
       calculatorActed("after-clear", "calculator-owned"),
       calculatorState("still-703", "calculator-owned"),
+      calculatorActed("after-second-clear", "calculator-owned"),
+      calculatorState("still-703-again", "calculator-owned"),
     ], calls);
 
     await expect(restoreCalculator(
@@ -369,6 +396,29 @@ describe("Calculator cleanup", () => {
       calculatorState("verified-703", "calculator-owned"),
       async () => true,
     )).rejects.toThrow("verification_failed");
+  });
+
+  it("retries idempotent AC once when the calibrated result survives the first clear", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      calculatorState("fresh-cleanup", "calculator-owned"),
+      calculatorActed("after-clear", "calculator-owned"),
+      calculatorState("still-703", "calculator-owned"),
+      calculatorActed("after-second-clear", "calculator-owned"),
+      calculatorState("cleared", "calculator-owned"),
+    ], calls);
+    let checks = 0;
+
+    await expect(restoreCalculator(
+      client,
+      true,
+      "calculator-owned",
+      calculatorState("verified-703", "calculator-owned"),
+      async () => (checks += 1) === 1,
+    )).resolves.toBeUndefined();
+    expect(calls.filter((call) =>
+      (call.arguments?.action as { type?: unknown } | undefined)?.type === "click"))
+      .toHaveLength(2);
   });
 
   it("still cleans the owned TextEdit window when Calculator restoration fails", async () => {

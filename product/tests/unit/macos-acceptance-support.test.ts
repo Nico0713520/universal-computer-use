@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   attachAcceptanceTelemetry,
+  backgroundTargetStayedCovered,
   buildOwnedApplicationActivationScript,
   parseFocusSentinelStateLine,
   requireInteractiveSession,
@@ -75,5 +76,25 @@ describe("owned AppKit fixture state", () => {
       bundleIdentifier: "com.apple.finder",
       processIdentifier: 405,
     })).not.toThrow();
+  });
+
+  it("attributes focus correctly when an unrelated app wins the foreground", () => {
+    const chrome = { bundleIdentifier: "com.google.Chrome", processIdentifier: 101 };
+    const target = { bundleIdentifier: "dev.ucu.target", processIdentifier: 202 };
+
+    expect(backgroundTargetStayedCovered(chrome, chrome, chrome, target)).toBe(true);
+    expect(backgroundTargetStayedCovered(
+      chrome,
+      { bundleIdentifier: "com.openai.codex", processIdentifier: 303 },
+      chrome,
+      target,
+    )).toBe(true);
+    expect(backgroundTargetStayedCovered(chrome, target, chrome, target)).toBe(false);
+    expect(backgroundTargetStayedCovered(
+      { bundleIdentifier: "com.apple.Finder", processIdentifier: 404 },
+      chrome,
+      chrome,
+      target,
+    )).toBe(false);
   });
 });

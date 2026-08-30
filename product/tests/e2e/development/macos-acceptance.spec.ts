@@ -44,10 +44,12 @@ import {
 } from "./macos-acceptance-result-checks.js";
 import {
   CHROME_BUNDLE_ID,
+  FOCUS_SENTINEL_BUNDLE_ID,
   FOCUS_SENTINEL_TEXT_LABEL,
   FOCUS_SENTINEL_WINDOW_TITLE,
   WINDOW_TITLE,
   activateOwnedApplication,
+  backgroundTargetStayedCovered,
   activateFocusSentinel,
   callTool,
   cleanupBrowser,
@@ -694,10 +696,12 @@ async function runFixtureCorrectness(
       const textState = await waitForFocusSentinelText(sentinel, nonce);
       const identityAfter = await frontmostIdentity();
       return sentinelAlive(sentinel) &&
-        identityBefore.bundleIdentifier === CHROME_BUNDLE_ID &&
-        identityBefore.processIdentifier === browserPid &&
-        identityAfter.bundleIdentifier === CHROME_BUNDLE_ID &&
-        identityAfter.processIdentifier === browserPid &&
+        backgroundTargetStayedCovered(
+          identityBefore,
+          identityAfter,
+          { bundleIdentifier: CHROME_BUNDLE_ID, processIdentifier: browserPid },
+          { bundleIdentifier: FOCUS_SENTINEL_BUNDLE_ID, processIdentifier: sentinel.pid },
+        ) &&
         validEmptyTextGrounding(nativeInitialState, nativeText) &&
         validSemanticSetValueResult(current, {
           groundingSnapshot: backgroundGrounding,

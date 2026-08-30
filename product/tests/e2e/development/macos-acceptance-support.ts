@@ -559,6 +559,21 @@ export function requireInteractiveSession(identity: FrontmostIdentity): void {
   }
 }
 
+export function backgroundTargetStayedCovered(
+  before: FrontmostIdentity,
+  after: FrontmostIdentity,
+  expectedForeground: FrontmostIdentity,
+  backgroundTarget: FrontmostIdentity,
+): boolean {
+  const startedWithExpectedForeground =
+    before.bundleIdentifier === expectedForeground.bundleIdentifier &&
+    before.processIdentifier === expectedForeground.processIdentifier;
+  const targetBecameForeground =
+    after.bundleIdentifier === backgroundTarget.bundleIdentifier &&
+    after.processIdentifier === backgroundTarget.processIdentifier;
+  return startedWithExpectedForeground && !targetBecameForeground;
+}
+
 export function buildOwnedApplicationActivationScript(identity: FrontmostIdentity): string {
   if (!Number.isSafeInteger(identity.processIdentifier) || identity.processIdentifier <= 0 ||
       identity.bundleIdentifier.length === 0) {

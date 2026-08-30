@@ -252,9 +252,17 @@ export async function restoreCalculator(
     current,
     ["AC", "Clear", "All Clear", "清除", "全部清除"],
   );
-  const observed = await observeWindow(client, windowRef, true);
+  let observed = await observeWindow(client, windowRef, true);
   if (await verifyVisibleText(observed, "703")) {
-    throw new SmokeFailure("verification_failed");
+    await clickCalculatorControl(
+      client,
+      observed,
+      ["AC", "Clear", "All Clear", "清除", "全部清除"],
+    );
+    observed = await observeWindow(client, windowRef, true);
+    if (await verifyVisibleText(observed, "703")) {
+      throw new SmokeFailure("verification_failed");
+    }
   }
 }
 
@@ -395,7 +403,7 @@ export async function cleanupOwnedTextEdit(
   // (and explicitly discarding its sheet when present) is the trustworthy
   // cleanup postcondition; the final ref-set difference proves it.
   if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) {
-    const sheet = await observeWindow(client, ownedWindowRef, true);
+    let sheet = await observeWindow(client, ownedWindowRef, true);
     const discard = uniqueElement(sheet, (element) => labelIs(element, [
       "Don't Save",
       "Delete",
@@ -403,10 +411,44 @@ export async function cleanupOwnedTextEdit(
       "不保存",
       "删除",
     ]));
-    if (typeof discard?.element_ref !== "string") throw new SmokeFailure("verification_failed");
+    if (typeof discard?.element_ref === "string") {
+      requireSuccessfulState(await callTool(client, "computer_act", {
+        snapshot_id: requireSnapshot(sheet),
+        action: { type: "click", element_ref: discard.element_ref },
+        delivery: "background",
+        next_observation: { mode: "semantic" },
+      }));
+      if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) {
+        throw new SmokeFailure("verification_failed");
+      }
+      return;
+    }
+
+    // Closing an owned test window is idempotent. If the first routed hotkey
+    // was dropped, retry once against a fresh snapshot of the same exact ref;
+    // never broaden cleanup to another TextEdit window.
+    await callTool(client, "computer_act", {
+      snapshot_id: requireSnapshot(sheet),
+      action: { type: "keypress", keys: ["cmd", "w"] },
+      delivery: "foreground",
+      next_observation: { mode: "semantic" },
+    });
+    if (await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) return;
+
+    sheet = await observeWindow(client, ownedWindowRef, true);
+    const finalDiscard = uniqueElement(sheet, (element) => labelIs(element, [
+      "Don't Save",
+      "Delete",
+      "不存储",
+      "不保存",
+      "删除",
+    ]));
+    if (typeof finalDiscard?.element_ref !== "string") {
+      throw new SmokeFailure("verification_failed");
+    }
     requireSuccessfulState(await callTool(client, "computer_act", {
       snapshot_id: requireSnapshot(sheet),
-      action: { type: "click", element_ref: discard.element_ref },
+      action: { type: "click", element_ref: finalDiscard.element_ref },
       delivery: "background",
       next_observation: { mode: "semantic" },
     }));
