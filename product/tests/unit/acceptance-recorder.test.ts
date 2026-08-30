@@ -318,33 +318,6 @@ describe("AcceptanceRecorder", () => {
     }).status).toBe("failed");
   });
 
-  it("accepts one explicitly reported pixel fallback miss without relaxing semantic profiles", async () => {
-    const performance = structuredClone(PASSING_PERFORMANCE) as CorrectnessAwarePerformanceEvidence;
-    const pixel = performance.pixel_action_next_state as {
-      correct_count: number;
-      failed_count: number;
-      success_rate: number;
-      correctness_status: "passed" | "failed";
-      failure_counts: Record<string, number>;
-      status: "passed" | "failed";
-    };
-    pixel.correct_count = 29;
-    pixel.failed_count = 1;
-    pixel.success_rate = 29 / 30;
-    pixel.correctness_status = "passed";
-    pixel.failure_counts = { oracle_mismatch: 1 };
-    pixel.status = "passed";
-
-    const result = evidence(await passingRecorder(), true, performance);
-    expect(result.status).toBe("passed");
-    expect(result.performance.pixel_action_next_state).toMatchObject({
-      correct_count: 29,
-      failed_count: 1,
-      correctness_status: "passed",
-      failure_counts: { oracle_mismatch: 1 },
-    });
-  });
-
   it("fails evidence when any explicit adaptive correctness proof is false", async () => {
     const recorder = await passingRecorder();
     const result = recorder.evidence(

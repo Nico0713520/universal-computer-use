@@ -1,7 +1,6 @@
 import {
   PERFORMANCE_SCENARIO_NAMES,
   PERFORMANCE_SLOS,
-  performanceCorrectnessPassed,
   type CorrectnessAwarePerformanceEvidence,
   type CorrectnessAwarePerformanceProfile,
   type PerformanceFailureKind,
@@ -201,15 +200,9 @@ function validatePerformanceProfile(
   const p50 = value.p50_ms;
   const p95 = value.p95_ms;
   const max = value.max_ms;
-  const failureCountsForGate = isRecord(value.failure_counts)
-    ? value.failure_counts as Partial<Record<PerformanceFailureKind, number>>
-    : {};
   const latencyPassed = typeof p50 === "number" && typeof p95 === "number"
     && p50 <= expectedSlo.p50_ms && p95 <= expectedSlo.p95_ms;
-  const expectedCorrectnessStatus = Number.isInteger(correctCount)
-    && performanceCorrectnessPassed(name, correctCount as number, failureCountsForGate)
-    ? "passed"
-    : "failed";
+  const expectedCorrectnessStatus = correctCount === 30 ? "passed" : "failed";
   const expectedLatencyStatus = latencyPassed ? "passed" : "failed";
   const expectedStatus = expectedCorrectnessStatus === "passed" && expectedLatencyStatus === "passed"
     ? "passed"

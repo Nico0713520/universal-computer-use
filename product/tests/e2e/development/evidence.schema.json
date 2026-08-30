@@ -53,7 +53,7 @@
           "allOf": [
             { "$ref": "#/$defs/performanceProfile" },
             { "$ref": "#/$defs/pixelActionStatus" },
-            { "$ref": "#/$defs/passedPixelActionOrFailed" }
+            { "$ref": "#/$defs/passedActionOrFailed" }
           ]
         }
       }
@@ -319,44 +319,6 @@
     "passedActionOrFailed": {
       "oneOf": [
         { "type": "object", "required": ["status", "correct_count", "failed_count", "success_rate", "latency_status", "correctness_status", "failure_counts", "stages"], "properties": { "status": { "const": "passed" }, "correct_count": { "const": 30 }, "failed_count": { "const": 0 }, "success_rate": { "const": 1 }, "latency_status": { "const": "passed" }, "correctness_status": { "const": "passed" }, "failure_counts": { "type": "object", "additionalProperties": false, "properties": {} }, "stages": { "$ref": "#/$defs/completeActionStages" } } },
-        { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } }
-      ]
-    },
-    "passedPixelActionOrFailed": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["status", "correct_count", "failed_count", "success_rate", "latency_status", "correctness_status", "failure_counts", "stages"],
-          "properties": {
-            "status": { "const": "passed" },
-            "correct_count": { "const": 30 },
-            "failed_count": { "const": 0 },
-            "success_rate": { "const": 1 },
-            "latency_status": { "const": "passed" },
-            "correctness_status": { "const": "passed" },
-            "failure_counts": { "type": "object", "additionalProperties": false, "properties": {} },
-            "stages": { "$ref": "#/$defs/completeActionStages" }
-          }
-        },
-        {
-          "type": "object",
-          "required": ["status", "correct_count", "failed_count", "success_rate", "latency_status", "correctness_status", "failure_counts", "stages"],
-          "properties": {
-            "status": { "const": "passed" },
-            "correct_count": { "const": 29 },
-            "failed_count": { "const": 1 },
-            "success_rate": { "const": 0.9666666666666667 },
-            "latency_status": { "const": "passed" },
-            "correctness_status": { "const": "passed" },
-            "failure_counts": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["oracle_mismatch"],
-              "properties": { "oracle_mismatch": { "const": 1 } }
-            },
-            "stages": { "$ref": "#/$defs/completeActionStages" }
-          }
-        },
         { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } }
       ]
     },

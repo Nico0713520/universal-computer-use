@@ -84,27 +84,6 @@ export const PERFORMANCE_SLOS: Readonly<
   pixel_action_next_state: { p50_ms: 1_500, p95_ms: 3_000 },
 };
 
-export const PERFORMANCE_MIN_CORRECT_COUNT: Readonly<Record<PerformanceScenarioName, number>> = {
-  window_visual_observe: 30,
-  window_semantic_observe: 30,
-  semantic_action_next_state: 30,
-  pixel_action_next_state: 29,
-};
-
-export function performanceCorrectnessPassed(
-  name: PerformanceScenarioName,
-  correctCount: number,
-  failureCounts: Readonly<Partial<Record<PerformanceFailureKind, number>>>,
-): boolean {
-  if (correctCount < PERFORMANCE_MIN_CORRECT_COUNT[name]) return false;
-  const failures = Object.entries(failureCounts);
-  if (correctCount === 30) return failures.length === 0;
-  return name === "pixel_action_next_state"
-    && correctCount === 29
-    && failures.length === 1
-    && failureCounts.oracle_mismatch === 1;
-}
-
 const PERFORMANCE_OUTCOMES = new Set<PerformanceOutcome>([
   "passed",
   "tool_error",
@@ -226,15 +205,13 @@ export class PerformanceRecorder {
       const latencyStatus = summary.p50_ms <= slo.p50_ms && summary.p95_ms <= slo.p95_ms
         ? "passed"
         : "failed";
+      const correctnessStatus = correctCount === 30 ? "passed" : "failed";
       const failureCounts: Partial<Record<PerformanceFailureKind, number>> = {};
       for (const sample of samples) {
         if (sample.outcome !== "passed") {
           failureCounts[sample.outcome] = (failureCounts[sample.outcome] ?? 0) + 1;
         }
       }
-      const correctnessStatus = performanceCorrectnessPassed(name, correctCount, failureCounts)
-        ? "passed"
-        : "failed";
       const stages: Partial<Record<PerformanceStageName, PerformanceStageAggregate>> = {};
       for (const stageName of PERFORMANCE_STAGE_NAMES) {
         const stageSamples = samples.flatMap((sample) => {
