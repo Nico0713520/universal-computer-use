@@ -37,19 +37,31 @@ function desktop(snapshot: string, windows: readonly string[]): CallToolResult {
   }, true);
 }
 
-function windowState(snapshot: string, windowRef: string, editable = false): CallToolResult {
+function windowState(
+  snapshot: string,
+  windowRef: string,
+  editable = false,
+  chineseMenu = false,
+): CallToolResult {
   return result({
     snapshot_id: snapshot,
+    screenshot: { width: 800, height: 600 },
     target: { kind: "window", window_ref: windowRef, app_ref: "app_textedit" },
-    elements: editable
-      ? [{
+    elements: [
+      ...(editable ? [{
           element_ref: `element_${snapshot}`,
           role: "AXTextArea",
           label: "Body",
           value: "nonce",
           actions: ["set_value"],
-        }]
-      : [],
+        }] : []),
+      ...(chineseMenu ? [{
+        element_ref: `menu_${snapshot}`,
+        role: "AXMenuBarItem",
+        label: "文件",
+        actions: ["click"],
+      }] : []),
+    ],
   }, true);
 }
 
@@ -196,8 +208,7 @@ describe("TextEdit owned-window smoke", () => {
     )).resolves.toBeUndefined();
     expect(calls[1]?.arguments).toMatchObject({
       snapshot_id: "fresh-before-clear",
-      action: { type: "keypress", keys: ["cmd", "w"] },
-      delivery: "foreground",
+      action: { type: "invoke_menu", path: ["File", "Close"] },
     });
     expect(calls[2]?.arguments).toMatchObject({
       discover: { query: "com.apple.TextEdit" },
@@ -244,9 +255,6 @@ describe("TextEdit owned-window smoke", () => {
       windowState("fresh-before-clear", "owned", true),
       acted("after-close"),
       desktop("desktop-after", ["preexisting", "owned"]),
-      windowState("retry-close", "owned", true),
-      acted("after-retry"),
-      desktop("desktop-after-retry", ["preexisting", "owned"]),
       windowState("sheet-without-discard", "owned"),
     ], calls);
 
@@ -258,14 +266,11 @@ describe("TextEdit owned-window smoke", () => {
     )).rejects.toThrow("verification_failed");
   });
 
-  it("retries one exact-window close when the first keypress has no effect", async () => {
+  it("uses the localized exact-window menu path when the AX menu is Chinese", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([
-      windowState("fresh-before-close", "owned", true),
+      windowState("fresh-before-close", "owned", true, true),
       acted("after-close"),
-      desktop("desktop-still-open", ["preexisting", "owned"]),
-      windowState("retry-close", "owned", true),
-      acted("after-retry"),
       desktop("desktop-after", ["preexisting"]),
     ], calls);
 
@@ -275,9 +280,9 @@ describe("TextEdit owned-window smoke", () => {
       windowState("old", "owned", true),
       0,
     )).resolves.toBeUndefined();
-    expect(calls.filter((call) =>
-      (call.arguments?.action as { type?: unknown } | undefined)?.type === "keypress"))
-      .toHaveLength(2);
+    expect(calls[1]?.arguments).toMatchObject({
+      action: { type: "invoke_menu", path: ["文件", "关闭"] },
+    });
   });
 });
 
@@ -446,7 +451,7 @@ describe("Calculator cleanup", () => {
     expect(calls.some((call) => call.arguments?.action !== undefined &&
       (call.arguments.action as { type?: unknown }).type === "set_value")).toBe(false);
     expect(calls.some((call) => call.arguments?.action !== undefined &&
-      (call.arguments.action as { type?: unknown }).type === "keypress")).toBe(true);
+      (call.arguments.action as { type?: unknown }).type === "invoke_menu")).toBe(true);
   });
 
   it("dismisses a save sheet only on the exact owned TextEdit ref", async () => {

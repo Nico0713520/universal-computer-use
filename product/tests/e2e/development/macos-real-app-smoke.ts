@@ -355,24 +355,28 @@ export function validTextEditSetValueResult(
     matches.length === 1 && verificationState;
 }
 
-async function textEditWindowRefs(client: Client): Promise<ReadonlySet<string>> {
+async function textEditWindows(client: Client): Promise<readonly PublicWindow[]> {
   const result = await callTool(client, "computer_observe", {
     target: { kind: "desktop" },
     discover: { apps: true, windows: true, query: "com.apple.TextEdit" },
   });
   if (result.isError === true || !hasPng(result)) throw new SmokeFailure("verification_failed");
-  return new Set((structured(result).windows ?? []).flatMap((window) =>
-    typeof window.window_ref === "string" ? [window.window_ref] : []));
+  return structured(result).windows ?? [];
 }
 
 async function waitForTextEditWindowGone(
   client: Client,
   ownedWindowRef: string,
   timeoutMs = 5_000,
+  ownedTitle?: string,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   do {
-    if (!(await textEditWindowRefs(client)).has(ownedWindowRef)) return true;
+    const windows = await textEditWindows(client);
+    const ownedStillVisible = ownedTitle === undefined
+      ? windows.some((window) => window.window_ref === ownedWindowRef)
+      : windows.some((window) => window.title === ownedTitle && window.is_on_screen !== false);
+    if (!ownedStillVisible) return true;
     if (Date.now() >= deadline) return false;
     await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
   } while (true);
@@ -383,27 +387,41 @@ export async function cleanupOwnedTextEdit(
   ownedWindowRef: string | undefined,
   _current: CallToolResult | undefined,
   closePollTimeoutMs = 5_000,
+  ownedTitle?: string,
 ): Promise<void> {
   if (ownedWindowRef === undefined) return;
-  // The mutation result may be an error or already consumed. Cleanup always
-  // reacquires the exact proven-owned window instead of trusting cached state.
-  const state = await observeWindow(client, ownedWindowRef, false);
-  // A foreground keypress is routed through the exact window snapshot. This
-  // avoids app-global menu ambiguity when the user already has other TextEdit
-  // documents open, while the ref-disappearance oracle remains authoritative
-  // even if destroying the target makes the action result unverifiable.
-  await callTool(client, "computer_act", {
-    snapshot_id: requireSnapshot(state),
-    action: { type: "keypress", keys: ["cmd", "w"] },
-    delivery: "foreground",
-    next_observation: { mode: "semantic" },
-  });
+  // invoke_menu is the one Cua macOS primitive that makes the exact pid/window
+  // key, resolves each live AX menu hop, and restores the prior foreground.
+  // Try only closed, localized TextEdit path variants; a refused path consumes
+  // its snapshot, so every candidate reacquires the exact owned ref.
+  let state = await observeWindow(client, ownedWindowRef, false);
+  const hasChineseMenu = (structured(state).elements ?? []).some((element) =>
+    normalized(element.label) === "文件");
+  const englishPaths = [["File", "Close"], ["File", "Close Window"]] as const;
+  const chinesePaths = [["文件", "关闭"], ["文件", "关闭窗口"]] as const;
+  const paths = hasChineseMenu
+    ? [...chinesePaths, ...englishPaths]
+    : [...englishPaths, ...chinesePaths];
+  let closeExecuted = false;
+  for (const path of paths) {
+    const result = await callTool(client, "computer_act", {
+      snapshot_id: requireSnapshot(state),
+      action: { type: "invoke_menu", path },
+      next_observation: { mode: "semantic" },
+    });
+    if (result.isError !== true && structured(result).action_result?.status === "executed") {
+      closeExecuted = true;
+      break;
+    }
+    state = await observeWindow(client, ownedWindowRef, false);
+  }
+  if (!closeExecuted) throw new SmokeFailure("verification_failed");
   // Empty AXValue is absent in the locked Cua 0.22.2 contract, so cleanup must
   // not fabricate an empty readback. Destroying the exact owned unsaved window
   // (and explicitly discarding its sheet when present) is the trustworthy
-  // cleanup postcondition; the final ref-set difference proves it.
-  if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) {
-    let sheet = await observeWindow(client, ownedWindowRef, true);
+  // cleanup postcondition; the unique owned title becoming non-visible proves it.
+  if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs, ownedTitle)) {
+    const sheet = await observeWindow(client, ownedWindowRef, true);
     const discard = uniqueElement(sheet, (element) => labelIs(element, [
       "Don't Save",
       "Delete",
@@ -418,43 +436,12 @@ export async function cleanupOwnedTextEdit(
         delivery: "background",
         next_observation: { mode: "semantic" },
       }));
-      if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) {
+      if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs, ownedTitle)) {
         throw new SmokeFailure("verification_failed");
       }
       return;
     }
-
-    // Closing an owned test window is idempotent. If the first routed hotkey
-    // was dropped, retry once against a fresh snapshot of the same exact ref;
-    // never broaden cleanup to another TextEdit window.
-    await callTool(client, "computer_act", {
-      snapshot_id: requireSnapshot(sheet),
-      action: { type: "keypress", keys: ["cmd", "w"] },
-      delivery: "foreground",
-      next_observation: { mode: "semantic" },
-    });
-    if (await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) return;
-
-    sheet = await observeWindow(client, ownedWindowRef, true);
-    const finalDiscard = uniqueElement(sheet, (element) => labelIs(element, [
-      "Don't Save",
-      "Delete",
-      "不存储",
-      "不保存",
-      "删除",
-    ]));
-    if (typeof finalDiscard?.element_ref !== "string") {
-      throw new SmokeFailure("verification_failed");
-    }
-    requireSuccessfulState(await callTool(client, "computer_act", {
-      snapshot_id: requireSnapshot(sheet),
-      action: { type: "click", element_ref: finalDiscard.element_ref },
-      delivery: "background",
-      next_observation: { mode: "semantic" },
-    }));
-    if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) {
-      throw new SmokeFailure("verification_failed");
-    }
+    throw new SmokeFailure("verification_failed");
   }
 }
 
@@ -467,6 +454,7 @@ export async function cleanupSmokeResources(
     ownedTextEditWindow: string | undefined;
     textEditCurrent: CallToolResult | undefined;
     ownedTextEditRoot?: string | undefined;
+    ownedTextEditTitle?: string | undefined;
   }>,
 ): Promise<boolean> {
   let passed = true;
@@ -485,6 +473,8 @@ export async function cleanupSmokeResources(
       client,
       resources.ownedTextEditWindow,
       resources.textEditCurrent,
+      5_000,
+      resources.ownedTextEditTitle,
     );
   } catch {
     passed = false;
@@ -506,6 +496,7 @@ export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
   let ownedTextEditWindow: string | undefined;
   let textEditCurrent: CallToolResult | undefined;
   let ownedTextEditRoot: string | undefined;
+  let ownedTextEditTitle: string | undefined;
   let calculatorPassed = false;
   let textEditPassed = false;
   let textEditSingleWrite = false;
@@ -526,7 +517,8 @@ export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
 
   try {
     ownedTextEditRoot = await mkdtemp(join(tmpdir(), "ucu-textedit-smoke-"));
-    const documentPath = join(ownedTextEditRoot, "owned.txt");
+    ownedTextEditTitle = `ucu-${randomUUID()}.txt`;
+    const documentPath = join(ownedTextEditRoot, ownedTextEditTitle);
     await writeFile(documentPath, "", { flag: "wx" });
     ownedTextEditWindow = await ownFreshTextEditWindow(client, documentPath);
     const textEdit = await runTextEdit(client, ownedTextEditWindow);
@@ -545,6 +537,7 @@ export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
     ownedTextEditWindow,
     textEditCurrent,
     ownedTextEditRoot,
+    ownedTextEditTitle,
   });
   if (!cleanupPassed) failure ??= "verification_failed";
 
