@@ -7,7 +7,6 @@ import type { PerformanceScenarioName } from "./performance-recorder.js";
 export type PerformancePreparationDependencies = Readonly<{
   readFixtureState: () => Promise<HarnessState>;
   resetSentinelText: () => Promise<FocusSentinelState>;
-  preparePixelTarget: () => Promise<void>;
 }>;
 
 export type PreparedPerformanceState =
@@ -31,14 +30,5 @@ export async function preparePerformanceScenario(
   if (name === "semantic_action_next_state") {
     return { kind: "semantic", sentinelState: await dependencies.resetSentinelText() };
   }
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      await dependencies.preparePixelTarget();
-      return { kind: "pixel", fixtureState: await dependencies.readFixtureState() };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError;
+  return { kind: "pixel", fixtureState: await dependencies.readFixtureState() };
 }

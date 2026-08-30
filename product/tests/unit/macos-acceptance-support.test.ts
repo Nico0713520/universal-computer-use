@@ -82,17 +82,15 @@ describe("owned AppKit fixture state", () => {
     const chrome = { bundleIdentifier: "com.google.Chrome", processIdentifier: 101 };
     const target = { bundleIdentifier: "dev.ucu.target", processIdentifier: 202 };
 
-    expect(backgroundTargetStayedCovered(chrome, chrome, chrome, target)).toBe(true);
+    expect(backgroundTargetStayedCovered(chrome, chrome, target)).toBe(true);
     expect(backgroundTargetStayedCovered(
       chrome,
       { bundleIdentifier: "com.openai.codex", processIdentifier: 303 },
-      chrome,
       target,
     )).toBe(true);
-    expect(backgroundTargetStayedCovered(chrome, target, chrome, target)).toBe(false);
+    expect(backgroundTargetStayedCovered(chrome, target, target)).toBe(false);
     expect(backgroundTargetStayedCovered(
-      { bundleIdentifier: "com.apple.Finder", processIdentifier: 404 },
-      chrome,
+      target,
       chrome,
       target,
     )).toBe(false);

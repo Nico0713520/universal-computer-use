@@ -60,18 +60,19 @@ The npm package name is reserved in the project metadata but is not published ye
 
 ## Current status
 
-The v0.2.3 developer preview makes the macOS acceptance lane truthful and diagnosable without changing tool behavior or claiming lower Cua action latency. Schema-v3 evidence records exact correctness counts, classified failures and redacted per-stage aggregates for four fixed 5-warm-up/30-sample profiles; a fatal harness failure writes a separate redacted diagnostic instead of a partial or falsely passing report. The lane still proves the production/Canonical-Skill fixed-delay scan, semantic sequence, exactly-once pixel/input effects, visual recovery, native focus preservation and owned Calculator/TextEdit smoke. Deterministic contracts are green. The latest completed real artifact is still the earlier v0.2.1 development evidence; failed or incomplete v0.2.2 attempts are not promotion evidence, and fresh v0.2.3 real results are not claimed until the three-run gate completes.
+The v0.2.3 developer preview now measures the macOS path without forcing the target window to the foreground. Schema-v3 evidence records exact correctness counts, classified failures and redacted per-stage aggregates for four fixed 5-warm-up/30-sample profiles; a fatal harness failure writes a separate redacted diagnostic instead of a partial or falsely passing report. On this Mac, three consecutive covered-window profiles during concurrent WorkBuddy activity each produced 30/30 background pixel effects, with p50 266–268 ms and p95 285–373 ms; semantic background actions also stayed 30/30. Deterministic contracts are green. These are local development measurements, not promotion evidence: the complete three-run lane is still pending on a clean macOS account because old TextEdit artifacts from pre-v0.2.3 diagnostics make the real-app cleanup lane non-independent.
 
 | Capability | Code | Contract | macOS real | Named host | Release |
 |---|---|---|---|---|---|
-| Desktop observe/act | complete | passed | v0.2.1 evidence only | pending | blocked |
-| macOS exact window | complete | passed | v0.2.1 evidence only | pending | blocked |
-| macOS background semantic action | complete | passed | v0.2.1 evidence only | pending | blocked |
+| Desktop observe/act | complete | passed | current local profiles passed | pending | blocked |
+| macOS exact window | complete | passed | current local profiles passed | pending | blocked |
+| macOS background semantic action | complete | passed | 3 × 30/30 local | pending | blocked |
+| macOS covered-window pixel action | complete | passed | 3 × 30/30 local | pending | blocked |
 | Windows desktop | complete | passed | n/a in this lane | pending | blocked |
 | Windows DPI | harness complete | passed | pending real hardware | pending | blocked |
 | Windows exact window | blocked upstream | truthful refusal | unavailable | unavailable | blocked |
 
-The historical v0.2.1 record is local developer evidence, not a Beta/Stable claim. Codex, Kimi, HanaAgent and WorkBuddy still need direct named-host image/loop evidence. Windows still needs physical 100%/125%/150% DPI runs, and the pinned Cua 0.22.2 Windows window APIs remain upstream stubs.
+No local profile is a Beta/Stable claim. Codex, Kimi, HanaAgent and WorkBuddy still need direct named-host image/loop evidence, and the complete macOS lane must be rerun on a clean account. Windows still needs physical 100%/125%/150% DPI runs, and the pinned Cua 0.22.2 Windows window APIs remain upstream stubs.
 
 ## Documentation
 

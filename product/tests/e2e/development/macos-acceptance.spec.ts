@@ -271,7 +271,7 @@ function validPixelPerformanceContract(
     state.snapshot_id !== groundingSnapshot &&
     state.consumed_snapshot_id === groundingSnapshot &&
     state.action_result?.status === "executed" &&
-    state.action_result.delivery === "foreground" &&
+    state.action_result.delivery === "background" &&
     state.observation_mode === "visual" &&
     state.visual_status === "available" &&
     hasPng(result);
@@ -307,7 +307,6 @@ async function performanceIteration(
   layout: FixtureLayout,
   sentinel: FocusSentinel,
   sentinelWindowRef: string,
-  browserPid: number,
 ): Promise<IterationResult> {
   const preparationStartedAt = performance.now();
   let prepared: Awaited<ReturnType<typeof preparePerformanceScenario>>;
@@ -315,12 +314,6 @@ async function performanceIteration(
     prepared = await preparePerformanceScenario(name, {
       readFixtureState: () => fixtureJson<HarnessState>(fixture.url, "/state"),
       resetSentinelText: () => resetFocusSentinelText(sentinel),
-      preparePixelTarget: async () => {
-        await activateOwnedApplication({
-          bundleIdentifier: CHROME_BUNDLE_ID,
-          processIdentifier: browserPid,
-        });
-      },
     });
   } catch {
     return preparationFailureSample(preparationStartedAt);
@@ -486,7 +479,7 @@ async function performanceIteration(
   const request = {
     snapshot_id: groundingSnapshot,
     action: { type: "click", ...point },
-    delivery: "foreground",
+    delivery: "background",
     next_observation: { mode: "visual" },
   } as const;
   const cursor = connection.telemetry.cursor();
@@ -531,7 +524,6 @@ async function runPerformanceProfiles(
   layout: FixtureLayout,
   sentinel: FocusSentinel,
   sentinelWindowRef: string,
-  browserPid: number,
   fatalDiagnostic: FatalDiagnosticTracker,
   signal: AbortSignal,
 ): Promise<ReturnType<PerformanceRecorder["performance"]>> {
@@ -553,7 +545,6 @@ async function runPerformanceProfiles(
         layout,
         sentinel,
         sentinelWindowRef,
-        browserPid,
       );
       signal.throwIfAborted();
       if (index < 5) recorder.recordWarmup(name, sample);
@@ -699,7 +690,6 @@ async function runFixtureCorrectness(
         backgroundTargetStayedCovered(
           identityBefore,
           identityAfter,
-          { bundleIdentifier: CHROME_BUNDLE_ID, processIdentifier: browserPid },
           { bundleIdentifier: FOCUS_SENTINEL_BUNDLE_ID, processIdentifier: sentinel.pid },
         ) &&
         validEmptyTextGrounding(nativeInitialState, nativeText) &&
@@ -988,7 +978,6 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
         layout,
         sentinel,
         sentinelWindowRef,
-        browser.pid,
         fatalDiagnostic,
         signal,
       );

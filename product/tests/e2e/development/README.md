@@ -10,7 +10,7 @@ This source-only lane proves the current developer preview through the two publi
 - Screen Recording and Accessibility granted to Cua Driver. Successful `computer-use doctor --json` capture is the preflight proof.
 - No other agent or person competing for the same desktop while the deterministic fixture runs.
 
-The command never restarts or stops a shared Cua daemon. It starts only an isolated browser profile, a loopback fixture, one ad-hoc-signed AppKit focus sentinel with an owned native text field, and its own stdio MCP process. The native field—not an untrusted browser AX echo—provides the exact semantic `set_value`/one-write oracle. Calculator is re-observed on the exact operated window, its controlled `703` result is verified with the built-in macOS Vision framework, and AC cleanup proves that calibrated result disappeared from the same window. TextEdit setup creates an empty file in a private temporary directory and asks LaunchServices to open only that file; all discovery, unique-value mutation, exact-window close, save-sheet handling and disappearance proof then use the public MCP tools. Cua 0.22.2 omits empty AX values, so cleanup never fabricates an empty readback. Pre-existing user documents are never edited or closed, and bounded 50 ms polling exits immediately when the owned ref disappears rather than imposing a fixed post-action delay. A real-app cleanup failure is reported separately as `real_app_smoke.cleanup_failed:true` without overwriting an earlier locale/application error code.
+The command never restarts or stops a shared Cua daemon. It starts only an isolated browser profile, a loopback fixture, one ad-hoc-signed AppKit focus sentinel with an owned native text field, and its own stdio MCP process. The native field—not an untrusted browser AX echo—provides the exact semantic `set_value`/one-write oracle. Calculator is re-observed on the exact operated window, its controlled `703` result is verified with the built-in macOS Vision framework, and AC cleanup proves that calibrated result disappeared from the same window. TextEdit setup creates a uniquely named empty file in a private temporary directory and asks LaunchServices to open only that file; discovery and unique-value mutation use the public MCP tools, then cleanup saves that owned temporary document through the exact native menu before closing it. Cua 0.22.2 omits empty AX values, so cleanup never fabricates an empty readback. Pre-existing user documents are never edited or closed, and bounded 50 ms polling exits immediately when the owned title disappears rather than imposing a fixed post-action delay. A real-app cleanup failure is reported separately as `real_app_smoke.cleanup_failed:true` without overwriting an earlier locale/application error code.
 
 ## Run
 
@@ -32,12 +32,14 @@ After dependencies are installed, the acceptance launcher uses only the checkout
 
 Each performance profile performs five unrecorded warm-ups followed by exactly 30 measured calls. Reset, discovery, initial snapshot creation and external-oracle polling stay outside the timed interval. Durations use the external MCP wall clock and nearest-rank p50/p95; existing redacted runtime metadata also separates queue, engine execution, post-action observation, projection and transport overhead where applicable:
 
-| Profile | p50 gate | p95 gate |
-|---|---:|---:|
-| exact-window visual observe | 700 ms | 1,500 ms |
-| exact-window semantic observe | 400 ms | 1,000 ms |
-| background `set_value` + semantic next state | 1,500 ms | 2,000 ms |
-| foreground pixel action + visual next state | 1,500 ms | 3,000 ms |
+| Profile | Correctness gate | p50 gate | p95 gate |
+|---|---:|---:|---:|
+| exact-window visual observe | 30/30 | 700 ms | 1,500 ms |
+| exact-window semantic observe | 30/30 | 400 ms | 1,000 ms |
+| background `set_value` + semantic next state | 30/30 | 1,500 ms | 2,000 ms |
+| background pixel action + visual next state | 30/30 | 1,500 ms | 3,000 ms |
+
+The background pixel profile deliberately does not activate the fixture app during preparation. It proves PID/window-routed input while another app may remain frontmost. Any missed action, tool error, contract mismatch, target loss, fixture failure or telemetry gap fails the profile; the harness never retries a measured action.
 
 There is no universal post-action sleep. The evidence includes the result of a static scan over `product/src/**` and the Canonical Skill; fixture synchronization uses only bounded external-oracle polling, and failures are never deleted or rerun as replacement samples.
 

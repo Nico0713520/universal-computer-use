@@ -25,8 +25,9 @@ describe("engine lock", () => {
     const readme = await readFile(new URL("../../../README.md", import.meta.url), "utf8");
 
     expect(readme).toContain("| Capability | Code | Contract | macOS real | Named host | Release |");
-    expect(readme).toMatch(/^\| macOS exact window \| complete \| passed \| v0\.2\.1 evidence only \| pending \| blocked \|$/m);
-    expect(readme).toMatch(/^\| macOS background semantic action \| complete \| passed \| v0\.2\.1 evidence only \| pending \| blocked \|$/m);
+    expect(readme).toMatch(/^\| macOS exact window \| complete \| passed \| current local profiles passed \| pending \| blocked \|$/m);
+    expect(readme).toMatch(/^\| macOS background semantic action \| complete \| passed \| 3 × 30\/30 local \| pending \| blocked \|$/m);
+    expect(readme).toMatch(/^\| macOS covered-window pixel action \| complete \| passed \| 3 × 30\/30 local \| pending \| blocked \|$/m);
     expect(readme).toMatch(/^\| Windows DPI \| harness complete \| passed \| pending real hardware \| pending \| blocked \|$/m);
     expect(readme).toMatch(/^\| Windows exact window \| blocked upstream \| truthful refusal \| unavailable \| unavailable \| blocked \|$/m);
   });

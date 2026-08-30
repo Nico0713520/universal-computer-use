@@ -284,6 +284,31 @@ describe("TextEdit owned-window smoke", () => {
       action: { type: "invoke_menu", path: ["文件", "关闭"] },
     });
   });
+
+  it("saves its uniquely titled temporary document before closing it", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      windowState("fresh-before-save", "owned", true),
+      acted("after-save"),
+      windowState("fresh-before-close", "owned", true),
+      acted("after-close"),
+      desktop("desktop-after", ["preexisting"]),
+    ], calls);
+
+    await expect(cleanupOwnedTextEdit(
+      client,
+      "owned",
+      windowState("old", "owned", true),
+      0,
+      "ucu-owned.txt",
+    )).resolves.toBeUndefined();
+    expect(calls[1]?.arguments).toMatchObject({
+      action: { type: "invoke_menu", path: ["File", "Save"] },
+    });
+    expect(calls[3]?.arguments).toMatchObject({
+      action: { type: "invoke_menu", path: ["File", "Close"] },
+    });
+  });
 });
 
 describe("Calculator cleanup", () => {

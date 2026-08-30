@@ -562,16 +562,15 @@ export function requireInteractiveSession(identity: FrontmostIdentity): void {
 export function backgroundTargetStayedCovered(
   before: FrontmostIdentity,
   after: FrontmostIdentity,
-  expectedForeground: FrontmostIdentity,
   backgroundTarget: FrontmostIdentity,
 ): boolean {
-  const startedWithExpectedForeground =
-    before.bundleIdentifier === expectedForeground.bundleIdentifier &&
-    before.processIdentifier === expectedForeground.processIdentifier;
+  const targetWasForeground =
+    before.bundleIdentifier === backgroundTarget.bundleIdentifier &&
+    before.processIdentifier === backgroundTarget.processIdentifier;
   const targetBecameForeground =
     after.bundleIdentifier === backgroundTarget.bundleIdentifier &&
     after.processIdentifier === backgroundTarget.processIdentifier;
-  return startedWithExpectedForeground && !targetBecameForeground;
+  return !targetWasForeground && !targetBecameForeground;
 }
 
 export function buildOwnedApplicationActivationScript(identity: FrontmostIdentity): string {

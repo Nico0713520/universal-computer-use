@@ -402,6 +402,22 @@ export async function cleanupOwnedTextEdit(
   const paths = hasChineseMenu
     ? [...chinesePaths, ...englishPaths]
     : [...englishPaths, ...chinesePaths];
+  if (ownedTitle !== undefined) {
+    const englishSavePaths = [["File", "Save"]] as const;
+    const chineseSavePaths = [["文件", "存储"], ["文件", "保存"]] as const;
+    const savePaths = hasChineseMenu
+      ? [...chineseSavePaths, ...englishSavePaths]
+      : [...englishSavePaths, ...chineseSavePaths];
+    for (const path of savePaths) {
+      const result = await callTool(client, "computer_act", {
+        snapshot_id: requireSnapshot(state),
+        action: { type: "invoke_menu", path },
+        next_observation: { mode: "semantic" },
+      });
+      state = await observeWindow(client, ownedWindowRef, false);
+      if (result.isError !== true && structured(result).action_result?.status === "executed") break;
+    }
+  }
   let closeExecuted = false;
   for (const path of paths) {
     const result = await callTool(client, "computer_act", {
