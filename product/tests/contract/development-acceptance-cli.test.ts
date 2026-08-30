@@ -1,7 +1,7 @@
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -29,13 +29,55 @@ function successfulDoctor(): Record<string, unknown> {
   };
 }
 
+function performanceStages(action: boolean): Record<string, unknown> {
+  const summary = (p50: number, p95: number, max: number) => ({
+    sample_count: 30,
+    p50_ms: p50,
+    p95_ms: p95,
+    max_ms: max,
+  });
+  return {
+    queue_wait: summary(1, 2, 3),
+    ...(action ? { engine_execute: summary(20, 25, 30) } : {}),
+    post_action_observe: summary(50, 60, 70),
+    projection: summary(2, 3, 4),
+    tool_total: summary(55, 65, 75),
+    transport_overhead: summary(5, 6, 7),
+  };
+}
+
+function performanceProfile(
+  p50: number,
+  p95: number,
+  max: number,
+  sloP50: number,
+  sloP95: number,
+  action: boolean,
+): Record<string, unknown> {
+  return {
+    sample_count: 30,
+    correct_count: 30,
+    failed_count: 0,
+    success_rate: 1,
+    p50_ms: p50,
+    p95_ms: p95,
+    max_ms: max,
+    slo: { p50_ms: sloP50, p95_ms: sloP95 },
+    latency_status: "passed",
+    correctness_status: "passed",
+    failure_counts: {},
+    stages: performanceStages(action),
+    status: "passed",
+  };
+}
+
 function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
   return {
-    schema_version: 2,
+    schema_version: 3,
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
     metadata: {
-      product_version: "0.2.2",
+      product_version: "0.2.3",
       protocol_version: "1.2.0",
       engine_version: "0.22.2",
       macos_version: "15.6.1",
@@ -62,22 +104,10 @@ function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
       { name: "mcp_reconnect", duration_ms: 100, target_ms: 2_000, hard_limit_ms: 10_000, status: "target_met" },
     ],
     performance: {
-      window_visual_observe: {
-        sample_count: 30, p50_ms: 100, p95_ms: 200, max_ms: 300,
-        slo: { p50_ms: 700, p95_ms: 1_500 }, status: "passed",
-      },
-      window_semantic_observe: {
-        sample_count: 30, p50_ms: 100, p95_ms: 200, max_ms: 300,
-        slo: { p50_ms: 400, p95_ms: 1_000 }, status: "passed",
-      },
-      semantic_action_next_state: {
-        sample_count: 30, p50_ms: 100, p95_ms: 200, max_ms: 300,
-        slo: { p50_ms: 1_000, p95_ms: 2_000 }, status: "passed",
-      },
-      pixel_action_next_state: {
-        sample_count: 30, p50_ms: 100, p95_ms: 200, max_ms: 300,
-        slo: { p50_ms: 1_500, p95_ms: 3_000 }, status: "passed",
-      },
+      window_visual_observe: performanceProfile(100, 200, 300, 700, 1_500, false),
+      window_semantic_observe: performanceProfile(100, 200, 300, 400, 1_000, false),
+      semantic_action_next_state: performanceProfile(100, 200, 300, 1_000, 2_000, true),
+      pixel_action_next_state: performanceProfile(100, 200, 300, 1_500, 3_000, true),
     },
     adaptive_correctness: {
       no_fixed_action_delay: true,
@@ -97,6 +127,24 @@ function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
   };
 }
 
+function simulatedDiagnostic(): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    evidence_type: "computer-use-macos-development-fatal-diagnostic",
+    status: "failed",
+    phase: "performance",
+    scenario: "semantic_action_next_state",
+    sample_kind: "measured",
+    sample_index: 4,
+    error_code: "fixture_reset_ack_timeout",
+    elapsed_ms: 103_000,
+    owned_processes: { fixture: false, browser: false, sentinel: false, mcp: false },
+    last_tool: { name: "computer_act", error_code: null },
+    cleanup_passed: true,
+    timestamp: "2026-08-30T00:00:00.000Z",
+  };
+}
+
 function failedEvidence(
   mutate: (evidence: Record<string, unknown>) => void,
 ): Record<string, unknown> {
@@ -107,7 +155,7 @@ function failedEvidence(
 }
 
 async function run(
-  evidencePath: string,
+  evidencePath: string | undefined,
   overrides: NodeJS.ProcessEnv = {},
   extraArgs: readonly string[] = [],
   packageManagerSeparator = false,
@@ -115,8 +163,7 @@ async function run(
   const child = spawn(process.execPath, [
     SCRIPT,
     ...(packageManagerSeparator ? ["--"] : []),
-    "--evidence",
-    evidencePath,
+    ...(evidencePath === undefined ? [] : ["--evidence", evidencePath]),
     ...extraArgs,
   ], {
     cwd: process.cwd(),
@@ -156,6 +203,32 @@ describe("macOS development acceptance launcher", () => {
     expect(source).not.toContain('runProcess("npx"');
     expect(source).toContain('runProcess("npm", ["run", "build"]');
     expect(source).toContain('node_modules/vitest/vitest.mjs');
+  });
+
+  it("refuses an installed-package layout before loading source-only Ajv", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ucu-acceptance-installed-test-"));
+    temporaryRoots.push(root);
+    const copiedScript = join(root, "scripts", "run-development-acceptance.mjs");
+    await mkdir(dirname(copiedScript), { recursive: true });
+    await copyFile(SCRIPT, copiedScript);
+    const child = spawn(process.execPath, [copiedScript], {
+      cwd: root,
+      env: { PATH: process.env.PATH, NODE_ENV: "production" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    const [code] = await once(child, "exit");
+
+    expect({ code, stdout, stderr }).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "acceptance_preflight_failed:source_checkout_required\n",
+    });
   });
 
   it("fails before creating evidence on a non-macOS host", async () => {
@@ -233,6 +306,20 @@ describe("macOS development acceptance launcher", () => {
     expect(await readFile(path, "utf8")).toBe("owned-by-user\n");
   });
 
+  it("refuses to start when the sibling diagnostic path already exists", async () => {
+    const path = await fixturePath("evidence.json");
+    const diagnosticPath = `${path}.diagnostic.json`;
+    await writeFile(diagnosticPath, "owned-by-user\n");
+    const result = await run(path);
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "acceptance_preflight_failed:diagnostic_path_exists\n",
+    });
+    expect(await readFile(diagnosticPath, "utf8")).toBe("owned-by-user\n");
+  });
+
   it("turns a child cleanup failure into a nonzero stable result", async () => {
     const path = await fixturePath("evidence.json");
     const result = await run(path, {
@@ -260,28 +347,129 @@ describe("macOS development acceptance launcher", () => {
     });
   });
 
-  it("preserves the child diagnostic when the real lane exits before evidence exists", async () => {
+  it.each([
+    ["protocol", "protocol_version", "9.9.9"],
+    ["engine", "engine_version", "9.9.9"],
+  ])("rejects evidence with the wrong frozen %s version", async (_label, field, version) => {
+    const path = await fixturePath("evidence.json");
+    const malformed = simulatedEvidence();
+    (malformed.metadata as Record<string, unknown>)[field] = version;
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_CHILD_RESULT: JSON.stringify(malformed),
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "acceptance_failed:evidence_missing_or_invalid\n",
+    });
+  });
+
+  it("does not leak raw child stderr when no validated artifact exists", async () => {
     const path = await fixturePath("evidence.json");
     const result = await run(path, {
       CUA_ACCEPTANCE_TEST_CHILD_OMIT_EVIDENCE: "1",
-      CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC: "interactive_session_required",
+      CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC: "/private/user/secret stack and typed text",
       CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE: "1",
     });
 
     expect(result).toEqual({
       code: 1,
       stdout: "",
-      stderr: "interactive_session_required\nacceptance_failed:evidence_missing_or_invalid\n",
+      stderr: "acceptance_failed:evidence_missing_or_invalid\n",
     });
     await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("accepts only a strict fatal diagnostic, prints its path, and never treats it as evidence", async () => {
+    const path = await fixturePath("evidence.json");
+    const diagnosticPath = `${path}.diagnostic.json`;
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_CHILD_OMIT_EVIDENCE: "1",
+      CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC_RESULT: JSON.stringify(simulatedDiagnostic()),
+      CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE: "1",
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: `${JSON.stringify({
+        status: "failed",
+        diagnostic_path: diagnosticPath,
+        cleanup_passed: true,
+      })}\nacceptance_failed:fatal_diagnostic\n`,
+    });
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(JSON.parse(await readFile(diagnosticPath, "utf8"))).toEqual(simulatedDiagnostic());
+  });
+
+  it("preserves an auto-created private directory when it contains a valid diagnostic", async () => {
+    const result = await run(undefined, {
+      CUA_ACCEPTANCE_TEST_CHILD_OMIT_EVIDENCE: "1",
+      CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC_RESULT: JSON.stringify(simulatedDiagnostic()),
+      CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE: "1",
+    });
+    const [summary] = result.stderr.trim().split("\n");
+    const diagnosticPath = (JSON.parse(summary!) as { diagnostic_path: string }).diagnostic_path;
+    temporaryRoots.push(dirname(diagnosticPath));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(await readFile(diagnosticPath, "utf8"))).toEqual(simulatedDiagnostic());
+  });
+
+  it("fails closed when evidence and a diagnostic coexist", async () => {
+    const path = await fixturePath("evidence.json");
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC_RESULT: JSON.stringify(simulatedDiagnostic()),
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: `${JSON.stringify({
+        status: "failed",
+        evidence_path: path,
+        diagnostic_path: `${path}.diagnostic.json`,
+      })}\nacceptance_failed:artifact_conflict\n`,
+    });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual(simulatedEvidence());
+    expect(JSON.parse(await readFile(`${path}.diagnostic.json`, "utf8"))).toEqual(simulatedDiagnostic());
+  });
+
+  it("prints both preserved paths when conflicting artifacts coexist in an auto-created directory", async () => {
+    const result = await run(undefined, {
+      CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC_RESULT: JSON.stringify(simulatedDiagnostic()),
+    });
+    const [summaryLine, failureLine] = result.stderr.trim().split("\n");
+    const summary = JSON.parse(summaryLine!) as {
+      status: string;
+      evidence_path: string;
+      diagnostic_path: string;
+    };
+    temporaryRoots.push(dirname(summary.evidence_path));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(failureLine).toBe("acceptance_failed:artifact_conflict");
+    expect(summary).toEqual({
+      status: "failed",
+      evidence_path: summary.evidence_path,
+      diagnostic_path: `${summary.evidence_path}.diagnostic.json`,
+    });
+    expect(JSON.parse(await readFile(summary.evidence_path, "utf8"))).toEqual(simulatedEvidence());
+    expect(JSON.parse(await readFile(summary.diagnostic_path, "utf8"))).toEqual(simulatedDiagnostic());
   });
 
   it.each([
     ["failed performance profile", failedEvidence((evidence) => {
       const profile = (evidence.performance as Record<string, Record<string, unknown>>)
         .window_visual_observe;
+      profile.latency_status = "failed";
       profile.status = "failed";
       profile.p50_ms = 701;
+      profile.p95_ms = 800;
+      profile.max_ms = 900;
     })],
     ["false Calculator smoke", failedEvidence((evidence) => {
       const smoke = evidence.real_app_smoke as Record<string, unknown>;

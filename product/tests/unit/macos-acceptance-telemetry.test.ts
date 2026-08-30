@@ -33,6 +33,7 @@ describe("macOS acceptance telemetry collector", () => {
     ["wrong tool", record("computer_act", { tool_total_ms: 10 }), "computer_observe"],
     ["negative timing", record("computer_observe", { tool_total_ms: -1 }), "computer_observe"],
     ["unknown timing", record("computer_observe", { tool_total_ms: 10, secret_ms: 1 }), "computer_observe"],
+    ["incomplete timing", record("computer_observe", { tool_total_ms: 10 }), "computer_observe"],
   ] as const)("returns undefined for %s", (_name, input, expectedTool) => {
     const collector = new AcceptanceTelemetryCollector();
     const cursor = collector.cursor();
@@ -79,11 +80,23 @@ describe("macOS acceptance telemetry collector", () => {
       tool_name: "computer_act",
       snapshot_id: "private",
       prompt: "private",
-      timings: { engine_execute_ms: 4, tool_total_ms: 9 },
+      timings: {
+        queue_wait_ms: 1,
+        engine_execute_ms: 4,
+        post_action_observe_ms: 2,
+        projection_ms: 1,
+        tool_total_ms: 9,
+      },
     })}\n`);
 
     const projected = collector.consumeOne(cursor, "computer_act");
-    expect(projected).toEqual({ engine_execute: 4, tool_total: 9 });
+    expect(projected).toEqual({
+      queue_wait: 1,
+      engine_execute: 4,
+      post_action_observe: 2,
+      projection: 1,
+      tool_total: 9,
+    });
     expect(JSON.stringify(projected)).not.toMatch(/private|snapshot|prompt|timestamp/);
   });
 
@@ -91,9 +104,19 @@ describe("macOS acceptance telemetry collector", () => {
     const collector = new AcceptanceTelemetryCollector();
     const cursor = collector.cursor();
     const waiting = collector.waitForOne(cursor, "computer_observe", 100);
-    setImmediate(() => collector.ingest(record("computer_observe", { tool_total_ms: 4 })));
+    setImmediate(() => collector.ingest(record("computer_observe", {
+      queue_wait_ms: 0,
+      post_action_observe_ms: 2,
+      projection_ms: 1,
+      tool_total_ms: 4,
+    })));
 
-    await expect(waiting).resolves.toEqual({ tool_total: 4 });
+    await expect(waiting).resolves.toEqual({
+      queue_wait: 0,
+      post_action_observe: 2,
+      projection: 1,
+      tool_total: 4,
+    });
   });
 
   it("poisons correlation after a missing record until the collector is cleared", async () => {
@@ -108,8 +131,47 @@ describe("macOS acceptance telemetry collector", () => {
 
     collector.clear();
     const recoveredCursor = collector.cursor();
-    collector.ingest(record("computer_observe", { tool_total_ms: 5 }));
+    collector.ingest(record("computer_observe", {
+      queue_wait_ms: 0,
+      post_action_observe_ms: 2,
+      projection_ms: 1,
+      tool_total_ms: 5,
+    }));
     await expect(collector.waitForOne(recoveredCursor, "computer_observe", 10))
-      .resolves.toEqual({ tool_total: 5 });
+      .resolves.toEqual({
+        queue_wait: 0,
+        post_action_observe: 2,
+        projection: 1,
+        tool_total: 5,
+      });
+  });
+
+  it("does not let a late duplicate record disappear behind the next cursor", async () => {
+    const collector = new AcceptanceTelemetryCollector();
+    const firstCursor = collector.cursor();
+    collector.ingest(record("computer_observe", {
+      queue_wait_ms: 0,
+      post_action_observe_ms: 2,
+      projection_ms: 1,
+      tool_total_ms: 4,
+    }));
+    await expect(collector.waitForOne(firstCursor, "computer_observe", 10)).resolves.toBeDefined();
+
+    collector.ingest(record("computer_observe", {
+      queue_wait_ms: 0,
+      post_action_observe_ms: 3,
+      projection_ms: 1,
+      tool_total_ms: 5,
+    }));
+    const nextCursor = collector.cursor();
+    collector.ingest(record("computer_observe", {
+      queue_wait_ms: 0,
+      post_action_observe_ms: 2,
+      projection_ms: 1,
+      tool_total_ms: 4,
+    }));
+
+    await expect(collector.waitForOne(nextCursor, "computer_observe", 10))
+      .resolves.toBeUndefined();
   });
 });

@@ -2,8 +2,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 
 import { loadEngineLock } from "../../../src/engine/lock.js";
 import { PRODUCT_VERSION, PROTOCOL_VERSION } from "../../../src/version.js";
@@ -11,9 +11,14 @@ import { scanNoFixedActionDelay } from "../../helpers/fixed-delay-scan.js";
 import {
   ACCEPTANCE_SCENARIO_NAMES,
   AcceptanceRecorder,
+  validateDevelopmentEvidenceSemantics,
   type AdaptiveCorrectnessEvidence,
   type RealAppSmokeEvidence,
 } from "./acceptance-recorder.js";
+import {
+  FatalDiagnosticTracker,
+  runFatalGuardedLifecycle,
+} from "./fatal-diagnostic.js";
 import {
   PerformanceRecorder,
   PERFORMANCE_SCENARIO_NAMES,
@@ -78,8 +83,34 @@ import {
 
 const REAL_ACCEPTANCE = process.env.CUA_DEVELOPMENT_ACCEPTANCE === "1";
 const EVIDENCE_SCHEMA = new URL("./evidence.schema.json", import.meta.url);
+const ACCEPTANCE_DEADLINE_MS = 540_000;
 
 type IterationResult = PerformanceSample;
+
+function withFatalToolTracking(
+  connection: Connection,
+  tracker: FatalDiagnosticTracker,
+): Connection {
+  const client = new Proxy(connection.client, {
+    get(target, property) {
+      if (property !== "callTool") {
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      return async (...args: unknown[]) => {
+        const request = args[0] as { name?: unknown } | undefined;
+        const name = request?.name === "computer_observe" || request?.name === "computer_act"
+          ? request.name
+          : undefined;
+        if (name !== undefined) tracker.recordTool(name, null);
+        const result = await Reflect.apply(target.callTool, target, args) as CallToolResult;
+        if (name !== undefined) tracker.recordToolResult(name, result);
+        return result;
+      };
+    },
+  });
+  return { ...connection, client };
+}
 
 async function discoverFixture(client: Connection["client"]): Promise<Readonly<{
   result: CallToolResult;
@@ -490,10 +521,18 @@ async function runPerformanceProfiles(
   layout: FixtureLayout,
   sentinel: FocusSentinel,
   sentinelWindowRef: string,
+  fatalDiagnostic: FatalDiagnosticTracker,
+  signal: AbortSignal,
 ): Promise<ReturnType<PerformanceRecorder["performance"]>> {
   const recorder = new PerformanceRecorder();
   for (const name of PERFORMANCE_SCENARIO_NAMES) {
     for (let index = 0; index < 35; index += 1) {
+      signal.throwIfAborted();
+      fatalDiagnostic.setPerformanceSample(
+        name,
+        index < 5 ? "warmup" : "measured",
+        index < 5 ? index : index - 5,
+      );
       const sample = await performanceIteration(
         name,
         index,
@@ -504,6 +543,7 @@ async function runPerformanceProfiles(
         sentinel,
         sentinelWindowRef,
       );
+      signal.throwIfAborted();
       if (index < 5) recorder.recordWarmup(name, sample);
       else recorder.recordMeasured(name, sample);
     }
@@ -671,11 +711,12 @@ async function runFixtureCorrectness(
   return { semanticSequence, uniqueText, overlayOnce, focusPreserved };
 }
 
-async function evidenceParser(): Promise<z.ZodType> {
+async function validateEvidence(value: unknown): Promise<void> {
   const schema = JSON.parse(await readFile(EVIDENCE_SCHEMA, "utf8")) as Record<string, unknown>;
-  const { oneOf, ...strictBase } = schema;
-  if (!Array.isArray(oneOf)) throw new Error("development evidence status contract is missing");
-  return z.pipe(z.fromJSONSchema(strictBase as never), z.fromJSONSchema(schema as never));
+  const validate = new Ajv2020({ allErrors: true, strict: false, validateFormats: false })
+    .compile(schema);
+  if (!validate(value)) throw new Error("acceptance_evidence_invalid");
+  validateDevelopmentEvidenceSemantics(value);
 }
 
 describe("macOS development acceptance opt-in", () => {
@@ -691,10 +732,14 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
     if (evidencePath === undefined || !evidencePath.startsWith("/")) {
       throw new Error("acceptance_evidence_path_missing");
     }
+    const diagnosticPath = process.env.CUA_DEVELOPMENT_DIAGNOSTIC_PATH;
+    if (diagnosticPath === undefined || !diagnosticPath.startsWith("/")) {
+      throw new Error("acceptance_diagnostic_path_missing");
+    }
 
     const recorder = new AcceptanceRecorder();
+    const fatalDiagnostic = new FatalDiagnosticTracker();
     for (const name of ACCEPTANCE_SCENARIO_NAMES) recorder.recordScenario(name, false);
-    const lock = await loadEngineLock();
     let fixture: FixtureProcess | undefined;
     let browser: BrowserProcess | undefined;
     let sentinel: FocusSentinel | undefined;
@@ -715,9 +760,13 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
       visual_recovery_once: false,
       focus_preserved: false,
     };
-    let gateFailure: unknown;
-
-    try {
+    const lifecycle = await runFatalGuardedLifecycle({
+      diagnosticPath,
+      tracker: fatalDiagnostic,
+      timeoutMs: ACCEPTANCE_DEADLINE_MS,
+      operation: async (signal) => {
+      const lock = await loadEngineLock();
+      signal.throwIfAborted();
       requireInteractiveSession(await frontmostIdentity());
       fixture = await startFixture();
       browser = await launchBrowser(fixture.url);
@@ -728,9 +777,13 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
         processIdentifier: browser.pid,
       });
       sentinel = await startFocusSentinel();
+      signal.throwIfAborted();
 
-      connection = await recorder.measure("mcp_start", () =>
-        connectClient("ucu-development-acceptance-1"));
+      connection = withFatalToolTracking(
+        await recorder.measure("mcp_start", () => connectClient("ucu-development-acceptance-1")),
+        fatalDiagnostic,
+      );
+      fatalDiagnostic.setPhase("correctness");
       const sentinelWindowRef = await discoverSentinel(connection.client);
       const tools = await connection.client.listTools();
       recorder.recordScenario(
@@ -881,7 +934,7 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
           browser.pid,
         );
       } catch {
-        // Correctness failures belong in schema-v2 evidence. The subsequent
+        // Correctness failures belong in complete schema-v3 evidence. The subsequent
         // 140-call performance run remains the target-health check; if the
         // fixture or window is truly dead it fails there as a fatal no-evidence
         // condition instead of being mislabeled as a boolean regression.
@@ -929,19 +982,28 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
         layout,
         sentinel,
         sentinelWindowRef,
+        fatalDiagnostic,
+        signal,
       );
+      signal.throwIfAborted();
+      fatalDiagnostic.setPhase("real_app_smoke");
       realAppSmoke = await runRealAppSmoke(connection.client);
+      signal.throwIfAborted();
 
       const oldSnapshot = optionalSnapshot(elementActed);
       const oldElementRef = optionalElementRef(elementActed, "Single click");
       await closeConnection(connection);
       connection = undefined;
+      fatalDiagnostic.setPhase("reconnect");
       try {
-        connection = await recorder.measure("mcp_reconnect", () =>
-          connectClient("ucu-development-acceptance-2"));
+        connection = withFatalToolTracking(
+          await recorder.measure("mcp_reconnect", () => connectClient("ucu-development-acceptance-2")),
+          fatalDiagnostic,
+        );
       } catch {
         // The failed reconnect timing and false scenario are valid failed evidence.
       }
+      signal.throwIfAborted();
       if (connection !== undefined && oldSnapshot !== undefined && oldElementRef !== undefined) {
         try {
           const staleAfterReconnect = await callTool(connection.client, "computer_act", {
@@ -967,12 +1029,16 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
               structured(oldElement).code === "stale_element_ref",
           );
         } catch {
-          // A reconnect correctness failure remains false in schema-v2 evidence.
+          // A reconnect correctness failure remains false in schema-v3 evidence.
         }
       }
-    } catch (error) {
-      gateFailure = error;
-    } finally {
+      if (performanceEvidence === undefined) throw new Error("acceptance_profiles_missing");
+      if (process.arch !== "arm64" && process.arch !== "x64") {
+        throw new Error("acceptance_architecture_unsupported");
+      }
+      return { lock, performanceEvidence };
+      },
+      cleanup: async () => {
       const cleanup = async (operation: () => Promise<void>): Promise<void> => {
         try {
           await operation();
@@ -980,28 +1046,55 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
           cleanupFailure ??= error;
         }
       };
-      await cleanup(() => closeConnection(connection));
-      await cleanup(() => cleanupFocusSentinel(sentinel));
-      await cleanup(() => cleanupBrowser(browser));
-      await cleanup(() => stopOwnedProcess(fixture?.child));
-    }
+      await cleanup(async () => {
+        await closeConnection(connection);
+        connection = undefined;
+      });
+      await cleanup(async () => {
+        await cleanupFocusSentinel(sentinel);
+        sentinel = undefined;
+      });
+      await cleanup(async () => {
+        await cleanupBrowser(browser);
+        browser = undefined;
+      });
+      await cleanup(async () => {
+        await stopOwnedProcess(fixture?.child);
+        fixture = undefined;
+      });
+      return {
+        ownedProcesses: {
+          fixture: fixture !== undefined,
+          browser: browser !== undefined,
+          sentinel: sentinel !== undefined,
+          mcp: connection !== undefined,
+        },
+        ...(cleanupFailure === undefined ? {} : { failure: cleanupFailure }),
+      };
+      },
+    });
 
-    if (cleanupFailure !== undefined) throw cleanupFailure;
-    if (gateFailure !== undefined || performanceEvidence === undefined) {
-      throw gateFailure ?? new Error("acceptance_profiles_missing");
+    fatalDiagnostic.setPhase("evidence");
+    let evidence;
+    try {
+      evidence = recorder.evidence({
+        product_version: PRODUCT_VERSION,
+        protocol_version: PROTOCOL_VERSION,
+        engine_version: lifecycle.lock.version,
+        macos_version: await macosVersion(),
+        architecture: process.arch === "x64" ? "x86_64" : "arm64",
+      }, true, lifecycle.performanceEvidence, realAppSmoke, adaptiveCorrectness);
+      await validateEvidence(evidence);
+      await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { flag: "wx" });
+    } catch (error) {
+      await fatalDiagnostic.write(diagnosticPath, error, {
+        fixture: false,
+        browser: false,
+        sentinel: false,
+        mcp: false,
+      }, true);
+      throw error;
     }
-    if (process.arch !== "arm64" && process.arch !== "x64") {
-      throw new Error("acceptance_architecture_unsupported");
-    }
-    const evidence = recorder.evidence({
-      product_version: PRODUCT_VERSION,
-      protocol_version: PROTOCOL_VERSION,
-      engine_version: lock.version,
-      macos_version: await macosVersion(),
-      architecture: process.arch === "x64" ? "x86_64" : "arm64",
-    }, true, performanceEvidence, realAppSmoke, adaptiveCorrectness);
-    (await evidenceParser()).parse(evidence);
-    await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { flag: "wx" });
     if (evidence.status === "failed") throw new Error("acceptance_gate_failed");
   }, 600_000);
 });

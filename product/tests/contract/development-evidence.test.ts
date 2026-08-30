@@ -1,29 +1,92 @@
 import { readFile } from "node:fs/promises";
 
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+
+import { validateDevelopmentEvidenceSemantics } from "../e2e/development/acceptance-recorder.js";
 
 const schemaUrl = new URL("../e2e/development/evidence.schema.json", import.meta.url);
 
 type JsonRecord = Record<string, unknown>;
 
-async function evidenceParser(): Promise<z.ZodType> {
+type EvidenceParser = Readonly<{
+  safeParse: (value: unknown) =>
+    | Readonly<{ success: true; data: unknown }>
+    | Readonly<{ success: false; error: unknown }>;
+}>;
+
+async function evidenceParser(): Promise<EvidenceParser> {
   const schema = JSON.parse(await readFile(schemaUrl, "utf8")) as JsonRecord;
-  const { oneOf, ...strictBase } = schema;
-  if (!Array.isArray(oneOf)) throw new Error("development evidence status contract is missing");
-  return z.pipe(
-    z.fromJSONSchema(strictBase as never),
-    z.fromJSONSchema(schema as never),
-  );
+  const validate = new Ajv2020({ allErrors: true, strict: false, validateFormats: false }).compile(schema);
+  return {
+    safeParse(value: unknown) {
+      return validate(value)
+        ? { success: true, data: value }
+        : { success: false, error: validate.errors };
+    },
+  };
+}
+
+async function accepts(value: JsonRecord): Promise<boolean> {
+  const parsed = (await evidenceParser()).safeParse(value);
+  if (!parsed.success) return false;
+  try {
+    validateDevelopmentEvidenceSemantics(parsed.data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function performanceStages(action: boolean): JsonRecord {
+  const summary = (p50: number, p95: number, max: number): JsonRecord => ({
+    sample_count: 30,
+    p50_ms: p50,
+    p95_ms: p95,
+    max_ms: max,
+  });
+  return {
+    queue_wait: summary(1, 2, 3),
+    ...(action ? { engine_execute: summary(20, 25, 30) } : {}),
+    post_action_observe: summary(50, 60, 70),
+    projection: summary(2, 3, 4),
+    tool_total: summary(55, 65, 75),
+    transport_overhead: summary(5, 6, 7),
+  };
+}
+
+function performanceProfile(
+  p50: number,
+  p95: number,
+  max: number,
+  sloP50: number,
+  sloP95: number,
+  action: boolean,
+): JsonRecord {
+  return {
+    sample_count: 30,
+    correct_count: 30,
+    failed_count: 0,
+    success_rate: 1,
+    p50_ms: p50,
+    p95_ms: p95,
+    max_ms: max,
+    slo: { p50_ms: sloP50, p95_ms: sloP95 },
+    latency_status: "passed",
+    correctness_status: "passed",
+    failure_counts: {},
+    stages: performanceStages(action),
+    status: "passed",
+  };
 }
 
 function completeEvidence(): JsonRecord {
   return {
-    schema_version: 2,
+    schema_version: 3,
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
     metadata: {
-      product_version: "0.2.2",
+      product_version: "0.2.3",
       protocol_version: "1.2.0",
       engine_version: "0.22.2",
       macos_version: "15.6.1",
@@ -50,38 +113,10 @@ function completeEvidence(): JsonRecord {
       { name: "mcp_reconnect", duration_ms: 100, target_ms: 2_000, hard_limit_ms: 10_000, status: "target_met" },
     ],
     performance: {
-      window_visual_observe: {
-        sample_count: 30,
-        p50_ms: 500,
-        p95_ms: 1_200,
-        max_ms: 1_300,
-        slo: { p50_ms: 700, p95_ms: 1_500 },
-        status: "passed",
-      },
-      window_semantic_observe: {
-        sample_count: 30,
-        p50_ms: 300,
-        p95_ms: 800,
-        max_ms: 900,
-        slo: { p50_ms: 400, p95_ms: 1_000 },
-        status: "passed",
-      },
-      semantic_action_next_state: {
-        sample_count: 30,
-        p50_ms: 800,
-        p95_ms: 1_800,
-        max_ms: 1_900,
-        slo: { p50_ms: 1_000, p95_ms: 2_000 },
-        status: "passed",
-      },
-      pixel_action_next_state: {
-        sample_count: 30,
-        p50_ms: 1_200,
-        p95_ms: 2_800,
-        max_ms: 2_900,
-        slo: { p50_ms: 1_500, p95_ms: 3_000 },
-        status: "passed",
-      },
+      window_visual_observe: performanceProfile(500, 1_200, 1_300, 700, 1_500, false),
+      window_semantic_observe: performanceProfile(300, 800, 900, 400, 1_000, false),
+      semantic_action_next_state: performanceProfile(800, 1_800, 1_900, 1_000, 2_000, true),
+      pixel_action_next_state: performanceProfile(1_200, 2_800, 2_900, 1_500, 3_000, true),
     },
     adaptive_correctness: {
       no_fixed_action_delay: true,
@@ -110,8 +145,9 @@ describe("macOS development acceptance evidence", () => {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       additionalProperties: false,
+      properties: { schema_version: { const: 3 } },
     });
-    expect(parser.safeParse(completeEvidence()).success).toBe(true);
+    expect(await accepts(completeEvidence())).toBe(true);
 
     const degraded = completeEvidence();
     degraded.status = "degraded";
@@ -179,6 +215,86 @@ describe("macOS development acceptance evidence", () => {
     expect(parser.safeParse(missingSmoke).success).toBe(false);
   });
 
+  it("enforces schema-v3 correctness arithmetic, failure counts, and status relationships", async () => {
+    const mutations: Array<[string, (profile: JsonRecord) => void]> = [
+      ["incorrect sum", (profile) => { profile.correct_count = 29; }],
+      ["incorrect success rate", (profile) => {
+        profile.correct_count = 29;
+        profile.failed_count = 1;
+        profile.success_rate = 0.5;
+      }],
+      ["passed correctness at 29/30", (profile) => {
+        profile.correct_count = 29;
+        profile.failed_count = 1;
+        profile.success_rate = 29 / 30;
+        profile.failure_counts = { oracle_mismatch: 1 };
+      }],
+      ["failure count mismatch", (profile) => {
+        profile.correct_count = 29;
+        profile.failed_count = 1;
+        profile.success_rate = 29 / 30;
+        profile.correctness_status = "failed";
+        profile.status = "failed";
+      }],
+      ["latency status mismatch", (profile) => { profile.latency_status = "failed"; }],
+      ["overall status mismatch", (profile) => { profile.status = "failed"; }],
+    ];
+
+    for (const [label, mutate] of mutations) {
+      const candidate = completeEvidence();
+      mutate((candidate.performance as JsonRecord).window_visual_observe as JsonRecord);
+      expect(await accepts(candidate), label).toBe(false);
+    }
+  });
+
+  it("rejects unknown failures, incomplete required stages, and non-v3 product metadata", async () => {
+    const parser = await evidenceParser();
+
+    const unknownFailure = completeEvidence();
+    (((unknownFailure.performance as JsonRecord).window_visual_observe as JsonRecord)
+      .failure_counts as JsonRecord).private_failure = 1;
+    expect(parser.safeParse(unknownFailure).success).toBe(false);
+
+    const missingStage = completeEvidence();
+    delete ((((missingStage.performance as JsonRecord).semantic_action_next_state as JsonRecord)
+      .stages as JsonRecord).engine_execute);
+    expect(parser.safeParse(missingStage).success).toBe(false);
+
+    const partialStage = completeEvidence();
+    (((((partialStage.performance as JsonRecord).window_visual_observe as JsonRecord)
+      .stages as JsonRecord).tool_total as JsonRecord).sample_count) = 29;
+    expect(await accepts(partialStage)).toBe(false);
+
+    const oldProduct = completeEvidence();
+    (oldProduct.metadata as JsonRecord).product_version = "0.2.2";
+    expect(parser.safeParse(oldProduct).success).toBe(false);
+
+    const impossibleRate = completeEvidence();
+    ((impossibleRate.performance as JsonRecord).window_visual_observe as JsonRecord).success_rate = 1.1;
+    expect(parser.safeParse(impossibleRate).success).toBe(false);
+  });
+
+  it("accepts partial stage aggregates as complete failed evidence for telemetry_missing", async () => {
+    const candidate = completeEvidence();
+    candidate.status = "failed";
+    const profile = (candidate.performance as JsonRecord).window_visual_observe as JsonRecord;
+    profile.correct_count = 29;
+    profile.failed_count = 1;
+    profile.success_rate = 29 / 30;
+    profile.correctness_status = "failed";
+    profile.failure_counts = { telemetry_missing: 1 };
+    profile.status = "failed";
+    ((((profile.stages as JsonRecord).tool_total as JsonRecord).sample_count)) = 29;
+
+    expect(await accepts(candidate)).toBe(true);
+  });
+
+  it("rejects a hand-written top-level failed status when every gate is green", async () => {
+    const candidate = completeEvidence();
+    candidate.status = "failed";
+    expect(await accepts(candidate)).toBe(false);
+  });
+
   it("rejects an impossible passed aggregate and raw sample arrays", async () => {
     const parser = await evidenceParser();
     const incorrectRank = completeEvidence();
@@ -194,10 +310,16 @@ describe("macOS development acceptance evidence", () => {
     const parser = await evidenceParser();
 
     const failedProfile = completeEvidence();
-    ((failedProfile.performance as JsonRecord).window_semantic_observe as JsonRecord).status = "failed";
+    const profile = (failedProfile.performance as JsonRecord).window_semantic_observe as JsonRecord;
+    profile.correct_count = 29;
+    profile.failed_count = 1;
+    profile.success_rate = 29 / 30;
+    profile.correctness_status = "failed";
+    profile.failure_counts = { oracle_mismatch: 1 };
+    profile.status = "failed";
     expect(parser.safeParse(failedProfile).success).toBe(false);
     failedProfile.status = "failed";
-    expect(parser.safeParse(failedProfile).success).toBe(true);
+    expect(await accepts(failedProfile)).toBe(true);
 
     const falseSmoke = completeEvidence();
     (falseSmoke.real_app_smoke as JsonRecord).textedit_unique_value = false;
@@ -273,10 +395,12 @@ describe("macOS development acceptance evidence", () => {
     }
   });
 
-  it("requires semantic versions, a supported architecture, successful cleanup and UTC time", async () => {
+  it("requires the frozen protocol and engine versions, a supported architecture, successful cleanup and UTC time", async () => {
     const parser = await evidenceParser();
     const mutations: Array<(value: JsonRecord) => void> = [
-      (value) => { (value.metadata as JsonRecord).product_version = "v0.2.2"; },
+      (value) => { (value.metadata as JsonRecord).product_version = "v0.2.3"; },
+      (value) => { (value.metadata as JsonRecord).protocol_version = "9.9.9"; },
+      (value) => { (value.metadata as JsonRecord).engine_version = "9.9.9"; },
       (value) => { (value.metadata as JsonRecord).architecture = "x64"; },
       (value) => { value.cleanup_passed = false; },
       (value) => { value.timestamp = "2026-08-29 12:34:56"; },

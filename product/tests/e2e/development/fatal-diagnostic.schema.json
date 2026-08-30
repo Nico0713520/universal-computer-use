@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-computer-use.invalid/schemas/macos-development-fatal-diagnostic-v1.json",
+  "title": "Redacted macOS Development Fatal Diagnostic",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evidence_type", "status", "phase", "scenario", "sample_kind", "sample_index", "error_code", "elapsed_ms", "owned_processes", "last_tool", "cleanup_passed", "timestamp"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence_type": { "const": "computer-use-macos-development-fatal-diagnostic" },
+    "status": { "const": "failed" },
+    "phase": { "enum": ["setup", "correctness", "performance", "real_app_smoke", "reconnect", "evidence"] },
+    "scenario": { "enum": ["window_visual_observe", "window_semantic_observe", "semantic_action_next_state", "pixel_action_next_state", null] },
+    "sample_kind": { "enum": ["warmup", "measured", null] },
+    "sample_index": { "type": ["integer", "null"], "minimum": 0, "maximum": 29 },
+    "error_code": { "enum": ["interactive_session_required", "fixture_start_failed", "fixture_unavailable", "fixture_reset_ack_timeout", "browser_launch_failed", "focus_sentinel_unavailable", "mcp_connection_failed", "target_lost", "acceptance_profiles_missing", "acceptance_architecture_unsupported", "acceptance_evidence_invalid", "acceptance_deadline_exceeded", "cleanup_failed", "unexpected_failure"] },
+    "elapsed_ms": { "type": "integer", "minimum": 0, "maximum": 3600000 },
+    "owned_processes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixture", "browser", "sentinel", "mcp"],
+      "properties": {
+        "fixture": { "type": "boolean" },
+        "browser": { "type": "boolean" },
+        "sentinel": { "type": "boolean" },
+        "mcp": { "type": "boolean" }
+      }
+    },
+    "last_tool": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "error_code"],
+          "properties": {
+            "name": { "enum": ["computer_observe", "computer_act"] },
+            "error_code": { "enum": ["runtime_missing", "runtime_unavailable", "engine_version_mismatch", "engine_not_development_eligible", "engine_not_release_eligible", "permission_required", "unsupported_platform", "interactive_session_required", "stale_snapshot", "next_observation_target_conflict", "coordinate_out_of_bounds", "action_timeout", "action_refused", "action_failed", "capture_failed", "unsupported_action", "stale_app_ref", "app_not_found", "window_not_found", "window_not_ready", "window_target_ambiguous", "window_owner_changed", "target_lost", "stale_element_ref", "element_target_conflict", "element_unavailable", "pixel_frame_unproven", "background_unavailable", "foreground_required", "verification_unsatisfied", "verification_unknown", "engine_unhealthy", "engine_contract_changed", null] }
+          }
+        }
+      ]
+    },
+    "cleanup_passed": { "type": "boolean" },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$", "maxLength": 40 }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["phase", "scenario", "sample_kind", "sample_index"],
+          "properties": {
+            "phase": { "const": "performance" },
+            "scenario": { "enum": ["window_visual_observe", "window_semantic_observe", "semantic_action_next_state", "pixel_action_next_state"] },
+            "sample_kind": { "const": "warmup" },
+            "sample_index": { "type": "integer", "minimum": 0, "maximum": 4 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["phase", "scenario", "sample_kind", "sample_index"],
+          "properties": {
+            "phase": { "const": "performance" },
+            "scenario": { "enum": ["window_visual_observe", "window_semantic_observe", "semantic_action_next_state", "pixel_action_next_state"] },
+            "sample_kind": { "const": "measured" },
+            "sample_index": { "type": "integer", "minimum": 0, "maximum": 29 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["phase", "scenario", "sample_kind", "sample_index"],
+          "properties": {
+            "phase": { "enum": ["setup", "correctness", "real_app_smoke", "reconnect", "evidence"] },
+            "scenario": { "type": "null" },
+            "sample_kind": { "type": "null" },
+            "sample_index": { "type": "null" }
+          }
+        }
+      ]
+    },
+    {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["cleanup_passed", "owned_processes"],
+          "properties": {
+            "cleanup_passed": { "const": true },
+            "owned_processes": {
+              "type": "object",
+              "required": ["fixture", "browser", "sentinel", "mcp"],
+              "properties": {
+                "fixture": { "const": false },
+                "browser": { "const": false },
+                "sentinel": { "const": false },
+                "mcp": { "const": false }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["cleanup_passed", "error_code"],
+          "properties": {
+            "cleanup_passed": { "const": false },
+            "error_code": { "const": "cleanup_failed" }
+          }
+        }
+      ]
+    }
+  ]
+}

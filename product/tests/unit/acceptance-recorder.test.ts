@@ -6,7 +6,7 @@ import {
   type AcceptanceScenarioName,
   type AcceptanceTimingName,
 } from "../e2e/development/acceptance-recorder.js";
-import type { PerformanceEvidence } from "../e2e/development/performance-recorder.js";
+import type { CorrectnessAwarePerformanceEvidence } from "../e2e/development/performance-recorder.js";
 
 const TIMING_NAMES: readonly AcceptanceTimingName[] = [
   "mcp_start",
@@ -31,44 +31,85 @@ const SCENARIO_NAMES: readonly AcceptanceScenarioName[] = [
 ];
 
 const METADATA: AcceptanceMetadata = {
-  product_version: "0.2.2",
+  product_version: "0.2.3",
   protocol_version: "1.2.0",
   engine_version: "0.22.2",
   macos_version: "15.6.1",
   architecture: "arm64",
 };
 
-const PASSING_PERFORMANCE: PerformanceEvidence = {
+const OBSERVE_STAGES = {
+  queue_wait: { sample_count: 30, p50_ms: 1, p95_ms: 2, max_ms: 3 },
+  post_action_observe: { sample_count: 30, p50_ms: 50, p95_ms: 60, max_ms: 70 },
+  projection: { sample_count: 30, p50_ms: 2, p95_ms: 3, max_ms: 4 },
+  tool_total: { sample_count: 30, p50_ms: 55, p95_ms: 65, max_ms: 75 },
+  transport_overhead: { sample_count: 30, p50_ms: 5, p95_ms: 6, max_ms: 7 },
+} as const;
+
+const ACTION_STAGES = {
+  ...OBSERVE_STAGES,
+  engine_execute: { sample_count: 30, p50_ms: 20, p95_ms: 25, max_ms: 30 },
+} as const;
+
+const PASSING_PERFORMANCE: CorrectnessAwarePerformanceEvidence = {
   window_visual_observe: {
     sample_count: 30,
+    correct_count: 30,
+    failed_count: 0,
+    success_rate: 1,
     p50_ms: 500,
     p95_ms: 1_200,
     max_ms: 1_300,
     slo: { p50_ms: 700, p95_ms: 1_500 },
+    latency_status: "passed",
+    correctness_status: "passed",
+    failure_counts: {},
+    stages: OBSERVE_STAGES,
     status: "passed",
   },
   window_semantic_observe: {
     sample_count: 30,
+    correct_count: 30,
+    failed_count: 0,
+    success_rate: 1,
     p50_ms: 300,
     p95_ms: 800,
     max_ms: 900,
     slo: { p50_ms: 400, p95_ms: 1_000 },
+    latency_status: "passed",
+    correctness_status: "passed",
+    failure_counts: {},
+    stages: OBSERVE_STAGES,
     status: "passed",
   },
   semantic_action_next_state: {
     sample_count: 30,
+    correct_count: 30,
+    failed_count: 0,
+    success_rate: 1,
     p50_ms: 800,
     p95_ms: 1_800,
     max_ms: 1_900,
     slo: { p50_ms: 1_000, p95_ms: 2_000 },
+    latency_status: "passed",
+    correctness_status: "passed",
+    failure_counts: {},
+    stages: ACTION_STAGES,
     status: "passed",
   },
   pixel_action_next_state: {
     sample_count: 30,
+    correct_count: 30,
+    failed_count: 0,
+    success_rate: 1,
     p50_ms: 1_200,
     p95_ms: 2_800,
     max_ms: 2_900,
     slo: { p50_ms: 1_500, p95_ms: 3_000 },
+    latency_status: "passed",
+    correctness_status: "passed",
+    failure_counts: {},
+    stages: ACTION_STAGES,
     status: "passed",
   },
 };
@@ -220,7 +261,7 @@ describe("AcceptanceRecorder", () => {
     expect(() => evidence(dirty, false)).toThrow("acceptance_cleanup_failed");
   });
 
-  it("emits only the fixed schema-v2 aggregate, smoke and legacy acceptance fields", async () => {
+  it("emits only the fixed schema-v3 aggregate, smoke and legacy acceptance fields", async () => {
     const result = evidence(await passingRecorder());
 
     expect(Object.keys(result).sort()).toEqual([
@@ -237,7 +278,7 @@ describe("AcceptanceRecorder", () => {
       "timings",
     ]);
     expect(result).toMatchObject({
-      schema_version: 2,
+      schema_version: 3,
       evidence_type: "computer-use-macos-development-acceptance",
       status: "passed",
       metadata: METADATA,
@@ -255,6 +296,11 @@ describe("AcceptanceRecorder", () => {
       ...PASSING_PERFORMANCE,
       window_semantic_observe: {
         ...PASSING_PERFORMANCE.window_semantic_observe,
+        correct_count: 29,
+        failed_count: 1,
+        success_rate: 29 / 30,
+        correctness_status: "failed" as const,
+        failure_counts: { oracle_mismatch: 1 },
         status: "failed" as const,
       },
     };
@@ -290,5 +336,93 @@ describe("AcceptanceRecorder", () => {
     const recorder = await passingRecorder();
 
     expect(() => recorder.evidence(METADATA, true)).toThrow("acceptance_evidence_incomplete");
+  });
+
+  it.each([
+    ["incorrect count sum", { correct_count: 29, failed_count: 0 }],
+    ["incorrect success rate", { correct_count: 29, failed_count: 1, success_rate: 0.5 }],
+    ["passed correctness at 29/30", {
+      correct_count: 29,
+      failed_count: 1,
+      success_rate: 29 / 30,
+      correctness_status: "passed",
+      failure_counts: { oracle_mismatch: 1 },
+    }],
+    ["failure count mismatch", {
+      correct_count: 29,
+      failed_count: 1,
+      success_rate: 29 / 30,
+      correctness_status: "failed",
+      failure_counts: {},
+      status: "failed",
+    }],
+    ["latency status mismatch", { latency_status: "failed" }],
+    ["overall status mismatch", { status: "failed" }],
+  ])("rejects %s instead of projecting an inconsistent profile", async (_label, mutation) => {
+    const recorder = await passingRecorder();
+    const invalid = {
+      ...PASSING_PERFORMANCE,
+      window_visual_observe: {
+        ...PASSING_PERFORMANCE.window_visual_observe,
+        ...mutation,
+      },
+    } as CorrectnessAwarePerformanceEvidence;
+
+    expect(() => evidence(recorder, true, invalid)).toThrow("acceptance_evidence_incomplete");
+  });
+
+  it("requires every applicable stage with all 30 measured values", async () => {
+    const recorder = await passingRecorder();
+    const missingStage = structuredClone(PASSING_PERFORMANCE) as CorrectnessAwarePerformanceEvidence;
+    delete (missingStage.semantic_action_next_state.stages as Record<string, unknown>).engine_execute;
+    expect(() => evidence(recorder, true, missingStage)).toThrow("acceptance_evidence_incomplete");
+
+    const partialStage = structuredClone(PASSING_PERFORMANCE) as CorrectnessAwarePerformanceEvidence;
+    (partialStage.window_visual_observe.stages.tool_total as { sample_count: number }).sample_count = 29;
+    expect(() => evidence(recorder, true, partialStage)).toThrow("acceptance_evidence_incomplete");
+  });
+
+  it("preserves a complete failed artifact when telemetry is missing for one measured call", async () => {
+    const failed = structuredClone(PASSING_PERFORMANCE) as CorrectnessAwarePerformanceEvidence;
+    const profile = failed.window_visual_observe as {
+      correct_count: number;
+      failed_count: number;
+      success_rate: number;
+      correctness_status: "passed" | "failed";
+      failure_counts: Record<string, number>;
+      stages: Record<string, { sample_count: number }>;
+      status: "passed" | "failed";
+    };
+    profile.correct_count = 29;
+    profile.failed_count = 1;
+    profile.success_rate = 29 / 30;
+    profile.correctness_status = "failed";
+    profile.failure_counts = { telemetry_missing: 1 };
+    profile.stages = structuredClone(OBSERVE_STAGES) as Record<string, { sample_count: number }>;
+    profile.stages.tool_total!.sample_count = 29;
+    profile.status = "failed";
+
+    const result = evidence(await passingRecorder(), true, failed);
+    expect(result.status).toBe("failed");
+    expect(result.performance.window_visual_observe).toMatchObject({
+      failure_counts: { telemetry_missing: 1 },
+      stages: { tool_total: { sample_count: 29 } },
+      status: "failed",
+    });
+  });
+
+  it("copies the schema-v3 profile without retaining raw samples or unknown fields", async () => {
+    const recorder = await passingRecorder();
+    const withPrivateFields = structuredClone(PASSING_PERFORMANCE) as unknown as Record<string, Record<string, unknown>>;
+    withPrivateFields.window_visual_observe.samples = [{ screenshot: "private" }];
+    withPrivateFields.window_visual_observe.path = "/private/path";
+
+    const result = evidence(
+      recorder,
+      true,
+      withPrivateFields as unknown as CorrectnessAwarePerformanceEvidence,
+    );
+    expect(result.performance.window_visual_observe).toEqual(PASSING_PERFORMANCE.window_visual_observe);
+    expect(JSON.stringify(result.performance)).not.toMatch(/samples|screenshot|private|path/);
   });
 });

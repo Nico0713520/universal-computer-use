@@ -58,13 +58,15 @@ export type CorrectnessAwarePerformanceProfile = PerformanceLatencyProfile & Rea
   stages: Readonly<Partial<Record<PerformanceStageName, PerformanceStageAggregate>>>;
 }>;
 
-export type PerformanceProfile = PerformanceLatencyProfile | CorrectnessAwarePerformanceProfile;
-
-export type PerformanceEvidence = Readonly<Record<PerformanceScenarioName, PerformanceProfile>>;
-
 export type CorrectnessAwarePerformanceEvidence = Readonly<
   Record<PerformanceScenarioName, CorrectnessAwarePerformanceProfile>
 >;
+
+// Schema-v3 has one performance boundary. Keep these compatibility names as
+// strict aliases so callers cannot silently fall back to the latency-only v2
+// shape and lose correctness or stage evidence during projection.
+export type PerformanceProfile = CorrectnessAwarePerformanceProfile;
+export type PerformanceEvidence = CorrectnessAwarePerformanceEvidence;
 
 export const PERFORMANCE_SCENARIO_NAMES: readonly PerformanceScenarioName[] = [
   "window_visual_observe",

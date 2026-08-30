@@ -26,6 +26,10 @@ const TIMING_FIELDS = [
 ] as const;
 
 const TIMING_INPUT_FIELDS = new Set<string>(TIMING_FIELDS.map(([source]) => source));
+const REQUIRED_STAGES: Readonly<Record<CollectedRecord["tool"], readonly AcceptanceTelemetryStageName[]>> = {
+  computer_observe: ["queue_wait", "post_action_observe", "projection", "tool_total"],
+  computer_act: ["queue_wait", "engine_execute", "post_action_observe", "projection", "tool_total"],
+};
 const MAX_JSONL_LINE_LENGTH = 64 * 1024;
 const READY_LINE = "computer-use-mcp: ready on stdio";
 
@@ -34,6 +38,7 @@ export class AcceptanceTelemetryCollector {
   readonly #listeners = new Set<() => void>();
   #pending = "";
   #poisoned = false;
+  #consumedCursor = 0;
 
   ingest(chunk: string): void {
     this.#pending += chunk;
@@ -50,6 +55,7 @@ export class AcceptanceTelemetryCollector {
   }
 
   cursor(): number {
+    if (this.#events.length !== this.#consumedCursor) this.#poisoned = true;
     return this.#events.length;
   }
 
@@ -61,6 +67,7 @@ export class AcceptanceTelemetryCollector {
       this.#poisoned ||
       !Number.isSafeInteger(cursor) ||
       cursor < 0 ||
+      cursor !== this.#consumedCursor ||
       cursor > this.#events.length
     ) {
       return undefined;
@@ -70,8 +77,13 @@ export class AcceptanceTelemetryCollector {
     if (
       candidates.length !== 1 ||
       candidate?.kind !== "timing" ||
-      candidate.tool !== expectedTool
-    ) return undefined;
+      candidate.tool !== expectedTool ||
+      REQUIRED_STAGES[expectedTool].some((stage) => candidate.stages[stage] === undefined)
+    ) {
+      if (candidates.length > 0) this.#poisoned = true;
+      return undefined;
+    }
+    this.#consumedCursor = this.#events.length;
     return { ...candidate.stages };
   }
 
@@ -117,6 +129,7 @@ export class AcceptanceTelemetryCollector {
     this.#pending = "";
     this.#events.length = 0;
     this.#poisoned = false;
+    this.#consumedCursor = 0;
     for (const listener of this.#listeners) listener();
     this.#listeners.clear();
   }

@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { z } from "zod";
 
 const PRODUCT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_BROWSER = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -14,9 +13,15 @@ const SOURCE_ACCEPTANCE_FILES = [
   "tests/e2e/development/macos-acceptance.spec.ts",
   "tests/e2e/development/macos-acceptance-support.ts",
   "tests/e2e/development/macos-acceptance-result-checks.ts",
+  "tests/e2e/development/acceptance-recorder.ts",
   "tests/e2e/development/macos-real-app-smoke.ts",
+  "tests/e2e/development/macos-acceptance-telemetry.ts",
+  "tests/e2e/development/performance-classification.ts",
+  "tests/e2e/development/performance-preparation.ts",
   "tests/e2e/development/performance-recorder.ts",
   "tests/e2e/development/evidence.schema.json",
+  "tests/e2e/development/fatal-diagnostic.ts",
+  "tests/e2e/development/fatal-diagnostic.schema.json",
   "tests/helpers/fixed-delay-scan.ts",
   "tests/fixtures/focus-sentinel/main.swift",
   "tests/fixtures/focus-sentinel/Info.plist",
@@ -33,6 +38,7 @@ const TEST_KEYS = [
   "CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE",
   "CUA_ACCEPTANCE_TEST_CHILD_OMIT_EVIDENCE",
   "CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC",
+  "CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC_RESULT",
 ];
 
 class AcceptanceFailure extends Error {
@@ -41,6 +47,12 @@ class AcceptanceFailure extends Error {
     this.code = code;
     this.diagnostic = diagnostic;
   }
+}
+
+async function compileSourceOnlySchema(schema) {
+  const { default: Ajv2020 } = await import("ajv/dist/2020.js");
+  return new Ajv2020({ allErrors: true, strict: false, validateFormats: false })
+    .compile(schema);
 }
 
 async function exists(path) {
@@ -93,22 +105,79 @@ function validDoctor(value, lockedVersion) {
     Number.isInteger(value.screenshot?.height) && value.screenshot.height > 0;
 }
 
-async function validEvidence(value) {
-  if (!(value?.schema_version === 2 &&
+async function validEvidence(value, lockedVersion) {
+  if (!(value?.schema_version === 3 &&
     value.evidence_type === "computer-use-macos-development-acceptance" &&
     (value.status === "passed" || value.status === "degraded" || value.status === "failed") &&
+    value.metadata?.product_version === "0.2.3" &&
+    value.metadata?.protocol_version === "1.2.0" &&
+    value.metadata?.engine_version === lockedVersion &&
     typeof value.cleanup_passed === "boolean")) return false;
   const schema = JSON.parse(await readFile(
     join(PRODUCT_DIR, "tests/e2e/development/evidence.schema.json"),
     "utf8",
   ));
-  const { oneOf, ...strictBase } = schema;
-  if (!Array.isArray(oneOf)) return false;
-  const parser = z.pipe(
-    z.fromJSONSchema(strictBase),
-    z.fromJSONSchema(schema),
-  );
-  return parser.safeParse(value).success;
+  const validate = await compileSourceOnlySchema(schema);
+  return validate(value) && validEvidenceSemantics(value);
+}
+
+function validEvidenceSemantics(value) {
+  const slo = {
+    window_visual_observe: [700, 1500, false],
+    window_semantic_observe: [400, 1000, false],
+    semantic_action_next_state: [1000, 2000, true],
+    pixel_action_next_state: [1500, 3000, true],
+  };
+  for (const [name, [p50Slo, p95Slo, action]] of Object.entries(slo)) {
+    const profile = value.performance?.[name];
+    const correct = profile?.correct_count;
+    const failed = profile?.failed_count;
+    const latencyStatus = profile?.p50_ms <= p50Slo && profile?.p95_ms <= p95Slo
+      ? "passed"
+      : "failed";
+    const correctnessStatus = correct === 30 ? "passed" : "failed";
+    const status = latencyStatus === "passed" && correctnessStatus === "passed"
+      ? "passed"
+      : "failed";
+    if (!Number.isInteger(correct) || !Number.isInteger(failed) || correct + failed !== 30 ||
+      profile.success_rate !== correct / 30 || profile.latency_status !== latencyStatus ||
+      profile.correctness_status !== correctnessStatus || profile.status !== status ||
+      Object.values(profile.failure_counts ?? {}).reduce((sum, count) => sum + count, 0) !== failed ||
+      profile.p50_ms > profile.p95_ms || profile.p95_ms > profile.max_ms) return false;
+    const requiredStages = [
+      "queue_wait", ...(action ? ["engine_execute"] : []), "post_action_observe",
+      "projection", "tool_total", "transport_overhead",
+    ];
+    for (const stage of Object.values(profile.stages ?? {})) {
+      if (stage.p50_ms > stage.p95_ms || stage.p95_ms > stage.max_ms) return false;
+    }
+    if (status === "passed" && requiredStages.some(
+      (stageName) => profile.stages?.[stageName]?.sample_count !== 30,
+    )) return false;
+  }
+  const allScenariosPassed = Object.values(value.scenarios).every((passed) => passed === true);
+  const performancePassed = Object.values(value.performance).every((profile) => profile.status === "passed");
+  const adaptivePassed = Object.values(value.adaptive_correctness).every((passed) => passed === true);
+  const smoke = value.real_app_smoke;
+  const smokePassed = smoke.calculator_703 === true && smoke.textedit_unique_value === true &&
+    smoke.textedit_single_write === true && smoke.error_code === undefined &&
+    smoke.cleanup_failed === undefined;
+  const expectedStatus = !allScenariosPassed || value.timings.some((timing) => timing.status === "failed") ||
+    !performancePassed || !adaptivePassed || !smokePassed
+    ? "failed"
+    : value.timings.some((timing) => timing.status === "degraded") ? "degraded" : "passed";
+  return value.status === expectedStatus;
+}
+
+async function validDiagnostic(value) {
+  if (value?.schema_version !== 1 ||
+    value.evidence_type !== "computer-use-macos-development-fatal-diagnostic" ||
+    value.status !== "failed") return false;
+  const schema = JSON.parse(await readFile(
+    join(PRODUCT_DIR, "tests/e2e/development/fatal-diagnostic.schema.json"),
+    "utf8",
+  ));
+  return (await compileSourceOnlySchema(schema))(value);
 }
 
 async function selectEvidencePath(configured) {
@@ -124,10 +193,15 @@ async function selectEvidencePath(configured) {
     } catch {
       throw new AcceptanceFailure("acceptance_preflight_failed:evidence_parent_missing");
     }
-    return { path: configured, temporaryRoot: undefined };
+    const diagnosticPath = `${configured}.diagnostic.json`;
+    if (await exists(diagnosticPath)) {
+      throw new AcceptanceFailure("acceptance_preflight_failed:diagnostic_path_exists");
+    }
+    return { path: configured, diagnosticPath, temporaryRoot: undefined };
   }
   const temporaryRoot = await mkdtemp(join(tmpdir(), "ucu-acceptance-"));
-  return { path: join(temporaryRoot, "macos-development.json"), temporaryRoot };
+  const path = join(temporaryRoot, "macos-development.json");
+  return { path, diagnosticPath: `${path}.diagnostic.json`, temporaryRoot };
 }
 
 async function main() {
@@ -188,11 +262,11 @@ async function main() {
     } else {
       const build = await runProcess("npm", ["run", "build"]);
       if (build.code !== 0) {
-        throw new AcceptanceFailure("acceptance_preflight_failed:build_failed", build.stderr || build.stdout);
+        throw new AcceptanceFailure("acceptance_preflight_failed:build_failed");
       }
       const checked = await runProcess(process.execPath, ["dist/cli/main.js", "doctor", "--json"]);
       if (checked.code !== 0) {
-        throw new AcceptanceFailure("acceptance_preflight_failed:doctor_failed", checked.stderr);
+        throw new AcceptanceFailure("acceptance_preflight_failed:doctor_failed");
       }
       try {
         doctor = JSON.parse(checked.stdout);
@@ -217,7 +291,6 @@ async function main() {
     }
 
     let childFailed = false;
-    let childDiagnostic = "";
     if (testMode) {
       let simulated;
       try {
@@ -228,12 +301,20 @@ async function main() {
       if (process.env.CUA_ACCEPTANCE_TEST_CHILD_OMIT_EVIDENCE !== "1") {
         await writeFile(selected.path, `${JSON.stringify(simulated, null, 2)}\n`, { flag: "wx" });
       }
+      if (process.env.CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC_RESULT !== undefined) {
+        let diagnostic;
+        try {
+          diagnostic = JSON.parse(process.env.CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC_RESULT);
+        } catch {
+          diagnostic = { invalid: true };
+        }
+        await writeFile(selected.diagnosticPath, `${JSON.stringify(diagnostic, null, 2)}\n`, { flag: "wx" });
+      }
       const simulatedExitCode = process.env.CUA_ACCEPTANCE_TEST_CHILD_EXIT_CODE ?? "0";
       if (simulatedExitCode !== "0" && simulatedExitCode !== "1") {
         throw new AcceptanceFailure("acceptance_failed:acceptance_lane_failed");
       }
       childFailed = simulatedExitCode === "1";
-      childDiagnostic = process.env.CUA_ACCEPTANCE_TEST_CHILD_DIAGNOSTIC ?? "";
     } else {
       const child = await runProcess(
         process.execPath,
@@ -247,27 +328,57 @@ async function main() {
             ...process.env,
             CUA_DEVELOPMENT_ACCEPTANCE: "1",
             CUA_DEVELOPMENT_EVIDENCE_PATH: selected.path,
+            CUA_DEVELOPMENT_DIAGNOSTIC_PATH: selected.diagnosticPath,
             CUA_E2E_BROWSER: browser,
           },
         },
       );
       childFailed = child.code !== 0;
-      childDiagnostic = [child.stdout, child.stderr].filter(Boolean).join("\n");
+    }
+
+    const evidencePresent = await exists(selected.path);
+    const diagnosticPresent = await exists(selected.diagnosticPath);
+    if (evidencePresent && diagnosticPresent) {
+      completed = true;
+      throw new AcceptanceFailure(
+        "acceptance_failed:artifact_conflict",
+        JSON.stringify({
+          status: "failed",
+          evidence_path: selected.path,
+          diagnostic_path: selected.diagnosticPath,
+        }),
+      );
     }
 
     let evidence;
     try {
       evidence = JSON.parse(await readFile(selected.path, "utf8"));
     } catch {
-      throw new AcceptanceFailure(
-        "acceptance_failed:evidence_missing_or_invalid",
-        childDiagnostic,
-      );
+      if (diagnosticPresent) {
+        let diagnostic;
+        try {
+          diagnostic = JSON.parse(await readFile(selected.diagnosticPath, "utf8"));
+        } catch {
+          throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
+        }
+        if (await validDiagnostic(diagnostic)) {
+          completed = true;
+          throw new AcceptanceFailure(
+            "acceptance_failed:fatal_diagnostic",
+            JSON.stringify({
+              status: "failed",
+              diagnostic_path: selected.diagnosticPath,
+              cleanup_passed: diagnostic.cleanup_passed,
+            }),
+          );
+        }
+      }
+      throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
     }
     if (evidence.cleanup_passed !== true) {
       throw new AcceptanceFailure("acceptance_failed:cleanup_failed");
     }
-    if (!(await validEvidence(evidence))) {
+    if (!(await validEvidence(evidence, lock.version))) {
       throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
     }
 
@@ -283,10 +394,7 @@ async function main() {
       );
     }
     if (childFailed) {
-      throw new AcceptanceFailure(
-        "acceptance_failed:acceptance_lane_failed",
-        childDiagnostic,
-      );
+      throw new AcceptanceFailure("acceptance_failed:acceptance_lane_failed");
     }
 
     completed = true;
