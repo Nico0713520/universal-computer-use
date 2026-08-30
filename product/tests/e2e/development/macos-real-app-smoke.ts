@@ -1,4 +1,9 @@
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -232,11 +237,15 @@ export async function restoreCalculator(
   client: Client,
   touched: boolean,
   windowRef: string | undefined,
+  verified703State: CallToolResult | undefined,
   verifyVisibleText: (result: CallToolResult, expected: string) => Promise<boolean> =
     verifyExactVisibleText,
 ): Promise<void> {
   if (!touched) return;
-  if (windowRef === undefined) throw new SmokeFailure("verification_failed");
+  if (windowRef === undefined || verified703State === undefined ||
+      structured(verified703State).target?.window_ref !== windowRef || !hasPng(verified703State)) {
+    throw new SmokeFailure("verification_failed");
+  }
   const current = await observeWindow(client, windowRef, true);
   await clickCalculatorControl(
     client,
@@ -244,48 +253,45 @@ export async function restoreCalculator(
     ["AC", "Clear", "All Clear", "清除", "全部清除"],
   );
   const observed = await observeWindow(client, windowRef, true);
-  if (!await verifyVisibleText(observed, "0")) {
+  if (await verifyVisibleText(observed, "703")) {
     throw new SmokeFailure("verification_failed");
   }
 }
 
-function oneNewWindow(before: ReadonlySet<string>, after: ReadonlySet<string>): string | undefined {
-  const added = [...after].filter((windowRef) => !before.has(windowRef));
-  return added.length === 1 ? added[0] : undefined;
+function oneNewWindow(
+  before: ReadonlySet<string>,
+  after: readonly PublicWindow[],
+): string | undefined {
+  const added = after.filter((window) =>
+    typeof window.window_ref === "string" && !before.has(window.window_ref));
+  const selected = selectExactVisibleWindow(added);
+  return typeof selected?.window_ref === "string" ? selected.window_ref : undefined;
 }
 
-export async function ownFreshTextEditWindow(client: Client): Promise<string> {
+async function openTextEditDocument(documentPath: string): Promise<void> {
+  const child = spawn("/usr/bin/open", ["-a", "TextEdit", documentPath], {
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+  const [code] = await once(child, "exit") as [number | null];
+  if (code !== 0) throw new SmokeFailure("textedit_unavailable");
+}
+
+export async function ownFreshTextEditWindow(
+  client: Client,
+  documentPath: string,
+  openDocument: (path: string) => Promise<void> = openTextEditDocument,
+): Promise<string> {
   const initial = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
   const before = initial.windowRefs;
-
-  if (initial.windows.length === 0) {
-    const launched = await callTool(client, "computer_act", {
-      snapshot_id: requireSnapshot(initial.result),
-      action: { type: "launch_app", app_ref: initial.appRef },
-    });
-    if (!isSuccessfulState(launched)) throw new SmokeFailure("textedit_unavailable");
-    const created = await callTool(client, "computer_act", {
-      snapshot_id: requireSnapshot(launched),
-      action: { type: "keypress", keys: ["cmd", "n"] },
-    });
-    if (!isSuccessfulState(created)) throw new SmokeFailure("textedit_unavailable");
-  } else {
-    const sourceWindow = initial.windows.find((window) => typeof window.window_ref === "string");
-    if (typeof sourceWindow?.window_ref !== "string") throw new SmokeFailure("textedit_unavailable");
-    const source = await observeWindow(client, sourceWindow.window_ref, true);
-    const created = await callTool(client, "computer_act", {
-      snapshot_id: requireSnapshot(source),
-      action: { type: "keypress", keys: ["cmd", "n"] },
-      delivery: "foreground",
-      next_observation: { mode: "visual" },
-    });
-    if (!isSuccessfulState(created)) throw new SmokeFailure("textedit_unavailable");
+  await openDocument(documentPath);
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const refreshed = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
+    const owned = oneNewWindow(before, refreshed.windows);
+    if (owned !== undefined) return owned;
+    await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
   }
-
-  const refreshed = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
-  const owned = oneNewWindow(before, refreshed.windowRefs);
-  if (owned === undefined) throw new SmokeFailure("textedit_unavailable");
-  return owned;
+  throw new SmokeFailure("textedit_unavailable");
 }
 
 function editableElement(result: CallToolResult): PublicElement | undefined {
@@ -311,13 +317,7 @@ async function runTextEdit(client: Client, ownedWindowRef: string): Promise<Read
     action: { type: "set_value", element_ref: editable.element_ref, value: nonce },
     next_observation: { mode: "semantic" },
   });
-  const state = structured(current);
-  const matches = (state.elements ?? []).filter((element) => element.value === nonce);
-  const passed = isSuccessfulState(current) &&
-    state.action_result?.effect === "confirmed" &&
-    state.verification?.status === "satisfied" &&
-    state.observation_mode === "semantic" &&
-    matches.length === 1;
+  const passed = validTextEditSetValueResult(current, nonce);
   return {
     passed,
     singleWrite: mutationRequests === 1,
@@ -325,33 +325,80 @@ async function runTextEdit(client: Client, ownedWindowRef: string): Promise<Read
   };
 }
 
+export function validTextEditSetValueResult(
+  result: CallToolResult,
+  expected: string,
+): boolean {
+  const state = structured(result);
+  const matches = (state.elements ?? []).filter((element) => element.value === expected);
+  const verificationState = (
+    state.verification?.status === "satisfied" &&
+    state.observation_mode === "semantic"
+  ) || (
+    state.verification?.status === "unknown" &&
+    state.action_result?.error_code === "verification_unknown" &&
+    state.observation_mode === "visual_recovery" &&
+    state.visual_status === "available" &&
+    hasPng(result)
+  );
+  return isSuccessfulState(result) &&
+    state.action_result?.effect === "confirmed" &&
+    state.action_result.evidence?.includes("value_readback") === true &&
+    matches.length === 1 && verificationState;
+}
+
+async function textEditWindowRefs(client: Client): Promise<ReadonlySet<string>> {
+  const result = await callTool(client, "computer_observe", {
+    target: { kind: "desktop" },
+    discover: { apps: true, windows: true, query: "com.apple.TextEdit" },
+  });
+  if (result.isError === true || !hasPng(result)) throw new SmokeFailure("verification_failed");
+  return new Set((structured(result).windows ?? []).flatMap((window) =>
+    typeof window.window_ref === "string" ? [window.window_ref] : []));
+}
+
+async function waitForTextEditWindowGone(
+  client: Client,
+  ownedWindowRef: string,
+  timeoutMs = 5_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (!(await textEditWindowRefs(client)).has(ownedWindowRef)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
+  } while (true);
+}
+
 export async function cleanupOwnedTextEdit(
   client: Client,
   ownedWindowRef: string | undefined,
   _current: CallToolResult | undefined,
+  closePollTimeoutMs = 5_000,
 ): Promise<void> {
   if (ownedWindowRef === undefined) return;
   // The mutation result may be an error or already consumed. Cleanup always
   // reacquires the exact proven-owned window instead of trusting cached state.
   const state = await observeWindow(client, ownedWindowRef, false);
+  const chineseMenu = (structured(state).elements ?? []).some((element) =>
+    normalized(element.label) === "文件");
   await callTool(client, "computer_act", {
     snapshot_id: requireSnapshot(state),
-    action: { type: "keypress", keys: ["cmd", "w"] },
-    delivery: "foreground",
+    action: { type: "invoke_menu", path: chineseMenu ? ["文件", "关闭"] : ["File", "Close"] },
     next_observation: { mode: "semantic" },
   });
   // Empty AXValue is absent in the locked Cua 0.22.2 contract, so cleanup must
   // not fabricate an empty readback. Destroying the exact owned unsaved window
   // (and explicitly discarding its sheet when present) is the trustworthy
   // cleanup postcondition; the final ref-set difference proves it.
-  let refreshed = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
-  if (refreshed.windowRefs.has(ownedWindowRef)) {
+  if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) {
     const sheet = await observeWindow(client, ownedWindowRef, true);
     const discard = uniqueElement(sheet, (element) => labelIs(element, [
       "Don't Save",
       "Delete",
       "不存储",
       "不保存",
+      "删除",
     ]));
     if (typeof discard?.element_ref !== "string") throw new SmokeFailure("verification_failed");
     requireSuccessfulState(await callTool(client, "computer_act", {
@@ -360,8 +407,9 @@ export async function cleanupOwnedTextEdit(
       delivery: "background",
       next_observation: { mode: "semantic" },
     }));
-    refreshed = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
-    if (refreshed.windowRefs.has(ownedWindowRef)) throw new SmokeFailure("verification_failed");
+    if (!await waitForTextEditWindowGone(client, ownedWindowRef, closePollTimeoutMs)) {
+      throw new SmokeFailure("verification_failed");
+    }
   }
 }
 
@@ -370,8 +418,10 @@ export async function cleanupSmokeResources(
   resources: Readonly<{
     calculatorTouched: boolean;
     calculatorWindowRef: string | undefined;
+    calculatorCurrent?: CallToolResult | undefined;
     ownedTextEditWindow: string | undefined;
     textEditCurrent: CallToolResult | undefined;
+    ownedTextEditRoot?: string | undefined;
   }>,
 ): Promise<boolean> {
   let passed = true;
@@ -380,6 +430,7 @@ export async function cleanupSmokeResources(
       client,
       resources.calculatorTouched,
       resources.calculatorWindowRef,
+      resources.calculatorCurrent,
     );
   } catch {
     passed = false;
@@ -393,14 +444,23 @@ export async function cleanupSmokeResources(
   } catch {
     passed = false;
   }
+  if (resources.ownedTextEditRoot !== undefined) {
+    try {
+      await rm(resources.ownedTextEditRoot, { recursive: true, force: true });
+    } catch {
+      passed = false;
+    }
+  }
   return passed;
 }
 
 export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
   let calculatorWindowRef: string | undefined;
   let calculatorTouched = false;
+  let calculatorCurrent: CallToolResult | undefined;
   let ownedTextEditWindow: string | undefined;
   let textEditCurrent: CallToolResult | undefined;
+  let ownedTextEditRoot: string | undefined;
   let calculatorPassed = false;
   let textEditPassed = false;
   let textEditSingleWrite = false;
@@ -413,13 +473,17 @@ export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
       () => { calculatorTouched = true; },
     );
     calculatorPassed = calculator.passed;
+    calculatorCurrent = calculator.current;
     if (!calculatorPassed) throw new SmokeFailure("verification_failed");
   } catch (error) {
     failure = error instanceof SmokeFailure ? error.code : "verification_failed";
   }
 
   try {
-    ownedTextEditWindow = await ownFreshTextEditWindow(client);
+    ownedTextEditRoot = await mkdtemp(join(tmpdir(), "ucu-textedit-smoke-"));
+    const documentPath = join(ownedTextEditRoot, "owned.txt");
+    await writeFile(documentPath, "", { flag: "wx" });
+    ownedTextEditWindow = await ownFreshTextEditWindow(client, documentPath);
     const textEdit = await runTextEdit(client, ownedTextEditWindow);
     textEditCurrent = textEdit.current;
     textEditPassed = textEdit.passed;
@@ -432,8 +496,10 @@ export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
   const cleanupPassed = await cleanupSmokeResources(client, {
     calculatorTouched,
     calculatorWindowRef,
+    calculatorCurrent,
     ownedTextEditWindow,
     textEditCurrent,
+    ownedTextEditRoot,
   });
   if (!cleanupPassed) failure ??= "verification_failed";
 

@@ -1,6 +1,6 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   cleanupSmokeResources,
@@ -10,6 +10,7 @@ import {
   selectExactVisibleWindow,
   ensureCalculatorWindow,
   runRealAppSmoke,
+  validTextEditSetValueResult,
 } from "../e2e/development/macos-real-app-smoke.js";
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64");
@@ -127,44 +128,56 @@ function scriptedClient(
 }
 
 describe("TextEdit owned-window smoke", () => {
-  it("launches from the desktop when no window exists and owns only the one new ref", async () => {
+  it("accepts confirmed TextEdit readback when Cua honestly reports verification_unknown", () => {
+    const response = result({
+      snapshot_id: "fresh",
+      next_state: "available",
+      action_result: {
+        status: "executed",
+        effect: "confirmed",
+        delivery: "background",
+        evidence: ["value_readback"],
+        error_code: "verification_unknown",
+      },
+      verification: { status: "unknown", reason: "element_missing" },
+      observation_mode: "visual_recovery",
+      visual_status: "available",
+      elements: [{ value: "controlled-nonce" }],
+    }, true);
+
+    expect(validTextEditSetValueResult(response, "controlled-nonce")).toBe(true);
+  });
+
+  it("opens an owned temporary document when no window exists", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const openDocument = vi.fn(async () => undefined);
     const client = scriptedClient([
       desktop("desktop-1", []),
-      acted("launch-next"),
-      acted("created-after-launch"),
       desktop("desktop-2", ["owned"]),
     ], calls);
 
-    await expect(ownFreshTextEditWindow(client)).resolves.toBe("owned");
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
+      .resolves.toBe("owned");
     expect(calls.map((call) => call.name)).toEqual([
       "computer_observe",
-      "computer_act",
-      "computer_act",
       "computer_observe",
     ]);
-    expect(calls[1]?.arguments).toMatchObject({ action: { type: "launch_app" } });
-    expect(calls[2]?.arguments).toMatchObject({
-      snapshot_id: "launch-next",
-      action: { type: "keypress", keys: ["cmd", "n"] },
-    });
+    expect(openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
     expect(JSON.stringify(calls)).not.toContain("set_value");
   });
 
-  it("creates from an existing window and proves exactly one new ref before any mutation", async () => {
+  it("opens an owned document beside existing windows and proves exactly one new ref", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const openDocument = vi.fn(async () => undefined);
     const client = scriptedClient([
       desktop("desktop-1", ["preexisting"]),
-      windowState("source", "preexisting"),
-      acted("created", "preexisting"),
       desktop("desktop-2", ["preexisting", "owned"]),
     ], calls);
 
-    await expect(ownFreshTextEditWindow(client)).resolves.toBe("owned");
-    expect(calls[2]?.arguments).toMatchObject({
-      action: { type: "keypress", keys: ["cmd", "n"] },
-      delivery: "foreground",
-    });
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
+      .resolves.toBe("owned");
+    expect(openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
+    expect(calls).toHaveLength(2);
     expect(JSON.stringify(calls)).not.toContain("set_value");
   });
 
@@ -182,14 +195,45 @@ describe("TextEdit owned-window smoke", () => {
       windowState("before-clear", "owned", true),
     )).resolves.toBeUndefined();
     expect(calls[1]?.arguments).toMatchObject({
-      action: { type: "keypress", keys: ["cmd", "w"] },
-      delivery: "foreground",
+      action: { type: "invoke_menu", path: ["File", "Close"] },
     });
     expect(calls[2]?.arguments).toMatchObject({
       discover: { query: "com.apple.TextEdit" },
     });
     expect(calls[1]?.arguments?.snapshot_id).toBe("fresh-before-clear");
     expect(JSON.stringify(calls)).not.toContain("set_value");
+  });
+
+  it("treats an absent TextEdit app after close as successful cleanup", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      windowState("fresh-before-close", "owned", true),
+      acted("after-close"),
+      result({ snapshot_id: "desktop-after", apps: [], windows: [] }, true),
+    ], calls);
+
+    await expect(cleanupOwnedTextEdit(
+      client,
+      "owned",
+      windowState("before-close", "owned", true),
+    )).resolves.toBeUndefined();
+  });
+
+  it("polls the owned ref until an asynchronous close transition finishes", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      windowState("fresh-before-close", "owned", true),
+      acted("after-close"),
+      desktop("desktop-closing", ["owned"]),
+      desktop("desktop-after", []),
+    ], calls);
+
+    await expect(cleanupOwnedTextEdit(
+      client,
+      "owned",
+      windowState("before-close", "owned", true),
+    )).resolves.toBeUndefined();
+    expect(calls.filter((call) => call.arguments?.discover !== undefined)).toHaveLength(2);
   });
 
   it("fails cleanup when the owned ref survives close", async () => {
@@ -205,6 +249,7 @@ describe("TextEdit owned-window smoke", () => {
       client,
       "owned",
       windowState("before-clear", "owned", true),
+      0,
     )).rejects.toThrow("verification_failed");
   });
 });
@@ -279,7 +324,11 @@ describe("Calculator cleanup", () => {
       client,
       true,
       "calculator-owned",
-      async () => true,
+      calculatorState("verified-703", "calculator-owned"),
+      async (_result, expected) => {
+        expect(expected).toBe("703");
+        return false;
+      },
     )).resolves.toBeUndefined();
     expect(calls).toHaveLength(3);
     expect(calls[0]).toMatchObject({
@@ -303,6 +352,23 @@ describe("Calculator cleanup", () => {
     });
   });
 
+  it("fails restoration when the calibrated 703 remains visible after AC", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([
+      calculatorState("fresh-cleanup", "calculator-owned"),
+      calculatorActed("after-clear", "calculator-owned"),
+      calculatorState("still-703", "calculator-owned"),
+    ], calls);
+
+    await expect(restoreCalculator(
+      client,
+      true,
+      "calculator-owned",
+      calculatorState("verified-703", "calculator-owned"),
+      async () => true,
+    )).rejects.toThrow("verification_failed");
+  });
+
   it("still cleans the owned TextEdit window when Calculator restoration fails", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const calculatorObserveFailure: CallToolResult = {
@@ -321,13 +387,14 @@ describe("Calculator cleanup", () => {
     await expect(cleanupSmokeResources(client, {
       calculatorTouched: true,
       calculatorWindowRef: "calculator-owned",
+      calculatorCurrent: calculatorState("verified-703", "calculator-owned"),
       ownedTextEditWindow: "text-owned",
       textEditCurrent: textCurrent,
     })).resolves.toBe(false);
     expect(calls.some((call) => call.arguments?.action !== undefined &&
       (call.arguments.action as { type?: unknown }).type === "set_value")).toBe(false);
     expect(calls.some((call) => call.arguments?.action !== undefined &&
-      (call.arguments.action as { type?: unknown }).type === "keypress")).toBe(true);
+      (call.arguments.action as { type?: unknown }).type === "invoke_menu")).toBe(true);
   });
 
   it("dismisses a save sheet only on the exact owned TextEdit ref", async () => {
@@ -345,6 +412,7 @@ describe("Calculator cleanup", () => {
       client,
       "text-owned",
       result({ isError: true, target: { kind: "window", window_ref: "text-owned" } }),
+      0,
     )).resolves.toBeUndefined();
     expect(calls[0]?.arguments).toMatchObject({
       target: { kind: "window", window_ref: "text-owned" },

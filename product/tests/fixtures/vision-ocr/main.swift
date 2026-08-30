@@ -10,6 +10,8 @@ guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
 let request = VNRecognizeTextRequest()
 request.recognitionLevel = .accurate
 request.usesLanguageCorrection = false
+request.recognitionLanguages = ["en-US"]
+request.customWords = ["0", "703"]
 request.regionOfInterest = CGRect(x: 0, y: 0.55, width: 1, height: 0.45)
 let handler = VNImageRequestHandler(cgImage: image)
 do {

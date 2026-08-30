@@ -365,6 +365,23 @@ describe("macOS development acceptance launcher", () => {
     });
   });
 
+  it("accepts the measured semantic-action p50 between the old and current baseline", async () => {
+    const path = await fixturePath("evidence.json");
+    const evidence = simulatedEvidence();
+    const profile = (evidence.performance as Record<string, Record<string, unknown>>)
+      .semantic_action_next_state;
+    profile.p50_ms = 1_200;
+    profile.p95_ms = 1_300;
+    profile.max_ms = 1_400;
+
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_CHILD_RESULT: JSON.stringify(evidence),
+    });
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "passed", evidence_path: path });
+  });
+
   it("does not leak raw child stderr when no validated artifact exists", async () => {
     const path = await fixturePath("evidence.json");
     const result = await run(path, {

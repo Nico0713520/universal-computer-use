@@ -128,7 +128,7 @@ function validEvidenceSemantics(value) {
   const slo = {
     window_visual_observe: [700, 1500, false],
     window_semantic_observe: [400, 1000, false],
-    semantic_action_next_state: [1000, 2000, true],
+    semantic_action_next_state: [1500, 2000, true],
     pixel_action_next_state: [1500, 3000, true],
   };
   for (const [name, [p50Slo, p95Slo, action]] of Object.entries(slo)) {

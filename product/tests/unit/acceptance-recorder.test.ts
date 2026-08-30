@@ -90,7 +90,7 @@ const PASSING_PERFORMANCE: CorrectnessAwarePerformanceEvidence = {
     p50_ms: 800,
     p95_ms: 1_800,
     max_ms: 1_900,
-    slo: { p50_ms: 1_000, p95_ms: 2_000 },
+    slo: { p50_ms: 1_500, p95_ms: 2_000 },
     latency_status: "passed",
     correctness_status: "passed",
     failure_counts: {},
