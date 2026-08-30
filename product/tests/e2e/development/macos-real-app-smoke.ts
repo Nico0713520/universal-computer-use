@@ -33,7 +33,7 @@ class SmokeFailure extends Error {
   }
 }
 
-type Discovery = Readonly<{
+export type Discovery = Readonly<{
   result: CallToolResult;
   app: PublicApp;
   appRef: string;
@@ -158,7 +158,7 @@ async function calculatorKeypress(
   return result;
 }
 
-async function ensureCalculatorWindow(
+export async function ensureCalculatorWindow(
   client: Client,
   discovered: Discovery,
 ): Promise<Readonly<{ windowRef: string; current: CallToolResult }>> {
@@ -416,7 +416,11 @@ export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
     );
     calculatorPassed = calculator.passed;
     if (!calculatorPassed) throw new SmokeFailure("verification_failed");
+  } catch (error) {
+    failure = error instanceof SmokeFailure ? error.code : "verification_failed";
+  }
 
+  try {
     ownedTextEditWindow = await ownFreshTextEditWindow(client);
     const textEdit = await runTextEdit(client, ownedTextEditWindow);
     textEditCurrent = textEdit.current;
@@ -424,7 +428,7 @@ export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
     textEditSingleWrite = textEdit.singleWrite;
     if (!textEditPassed || !textEditSingleWrite) throw new SmokeFailure("verification_failed");
   } catch (error) {
-    failure = error instanceof SmokeFailure ? error.code : "verification_failed";
+    failure ??= error instanceof SmokeFailure ? error.code : "verification_failed";
   }
 
   const cleanupPassed = await cleanupSmokeResources(client, {

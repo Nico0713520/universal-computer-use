@@ -4,6 +4,8 @@ import type {
   FocusSentinelState,
   HarnessState,
 } from "../e2e/development/macos-acceptance-support.js";
+import { AcceptanceTelemetryCollector } from
+  "../e2e/development/macos-acceptance-telemetry.js";
 import {
   establishPerformanceTelemetryBoundary,
   preparePerformanceScenario,
@@ -75,5 +77,37 @@ describe("establishPerformanceTelemetryBoundary", () => {
     establishPerformanceTelemetryBoundary(telemetry);
 
     expect(telemetry.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops correctness telemetry but accepts the first complete measured record", async () => {
+    const telemetry = new AcceptanceTelemetryCollector();
+    telemetry.ingest(`${JSON.stringify({
+      tool_name: "computer_observe",
+      timings: {
+        queue_wait_ms: 0,
+        post_action_observe_ms: 2,
+        projection_ms: 1,
+        tool_total_ms: 4,
+      },
+    })}\n`);
+
+    establishPerformanceTelemetryBoundary(telemetry);
+    const cursor = telemetry.cursor();
+    telemetry.ingest(`${JSON.stringify({
+      tool_name: "computer_observe",
+      timings: {
+        queue_wait_ms: 0,
+        post_action_observe_ms: 3,
+        projection_ms: 1,
+        tool_total_ms: 5,
+      },
+    })}\n`);
+
+    await expect(telemetry.waitForOne(cursor, "computer_observe", 10)).resolves.toEqual({
+      queue_wait: 0,
+      post_action_observe: 3,
+      projection: 1,
+      tool_total: 5,
+    });
   });
 });

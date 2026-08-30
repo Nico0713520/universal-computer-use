@@ -8,6 +8,8 @@ import {
   ownFreshTextEditWindow,
   restoreCalculator,
   selectExactVisibleWindow,
+  ensureCalculatorWindow,
+  runRealAppSmoke,
 } from "../e2e/development/macos-real-app-smoke.js";
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64");
@@ -218,6 +220,47 @@ describe("Calculator cleanup", () => {
     ])).toBeUndefined();
   });
 
+  it("observes the exact visible ref without launching when Cua returns hidden windows", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([calculatorState("window-state", "visible")], calls);
+    const windows = [
+      { window_ref: "hidden-1", app_ref: "app_calculator", is_on_screen: false },
+      { window_ref: "visible", app_ref: "app_calculator", is_on_screen: true },
+      { window_ref: "hidden-2", app_ref: "app_calculator", is_on_screen: false },
+    ];
+
+    await expect(ensureCalculatorWindow(client, {
+      result: result({ snapshot_id: "desktop" }, true),
+      app: { app_ref: "app_calculator" },
+      appRef: "app_calculator",
+      windows,
+      windowRefs: new Set(windows.map((window) => window.window_ref)),
+    })).resolves.toMatchObject({ windowRef: "visible" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.arguments).toMatchObject({
+      target: { kind: "window", window_ref: "visible" },
+    });
+    expect(JSON.stringify(calls)).not.toContain("launch_app");
+  });
+
+  it("rejects two visible refs before any Calculator mutation", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const client = scriptedClient([], calls);
+    const windows = [
+      { window_ref: "visible-1", app_ref: "app_calculator", is_on_screen: true },
+      { window_ref: "visible-2", app_ref: "app_calculator", is_on_screen: true },
+    ];
+
+    await expect(ensureCalculatorWindow(client, {
+      result: result({ snapshot_id: "desktop" }, true),
+      app: { app_ref: "app_calculator" },
+      appRef: "app_calculator",
+      windows,
+      windowRefs: new Set(windows.map((window) => window.window_ref)),
+    })).rejects.toThrow("calculator_unavailable");
+    expect(calls).toEqual([]);
+  });
+
   it("re-observes the exact operated window before AC after an intermediate action failure", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([
@@ -292,5 +335,24 @@ describe("Calculator cleanup", () => {
       action: { type: "click", element_ref: "discard_sheet" },
     });
     expect(JSON.stringify(calls)).not.toContain("preexisting\",\"action");
+  });
+});
+
+describe("real app smoke isolation", () => {
+  it("still attempts TextEdit discovery after Calculator is unavailable", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const unavailable = result({ snapshot_id: "desktop", apps: [], windows: [] }, true);
+    const client = scriptedClient([unavailable, unavailable], calls);
+
+    await expect(runRealAppSmoke(client)).resolves.toMatchObject({
+      calculator_703: false,
+      textedit_unique_value: false,
+      textedit_single_write: false,
+      error_code: "calculator_unavailable",
+    });
+    expect(calls.map((call) => call.arguments?.discover)).toEqual([
+      { apps: true, windows: true, query: "com.apple.calculator" },
+      { apps: true, windows: true, query: "com.apple.TextEdit" },
+    ]);
   });
 });

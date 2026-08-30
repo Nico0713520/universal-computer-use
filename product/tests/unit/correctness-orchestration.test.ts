@@ -4,20 +4,43 @@ import { runIndependentCorrectnessChecks } from
   "../e2e/development/correctness-orchestration.js";
 
 describe("runIndependentCorrectnessChecks", () => {
-  it("does not erase healthy proofs when one independent proof throws", async () => {
-    const checks = {
-      semanticSequence: vi.fn(async () => true),
-      uniqueText: vi.fn(async () => { throw new Error("native_text_failed"); }),
-      overlayOnce: vi.fn(async () => true),
-      focusPreserved: vi.fn(async () => true),
-    };
+  it.each([
+    "semanticSequence",
+    "uniqueText",
+    "overlayOnce",
+    "focusPreserved",
+  ] as const)("does not erase healthy proofs when %s throws", async (failedName) => {
+    const makeCheck = (name: string) => vi.fn(async () => {
+      if (name === failedName) throw new Error(`${name}_failed`);
+      return true;
+    });
+    const semanticSequence = makeCheck("semanticSequence");
+    const uniqueText = makeCheck("uniqueText");
+    const overlayOnce = makeCheck("overlayOnce");
+    const focusPreserved = makeCheck("focusPreserved");
+    const checks = { semanticSequence, uniqueText, overlayOnce, focusPreserved };
 
-    await expect(runIndependentCorrectnessChecks(checks)).resolves.toEqual({
-      semanticSequence: true,
-      uniqueText: false,
+    const result = await runIndependentCorrectnessChecks(checks);
+    expect(result[failedName]).toBe(false);
+    expect(Object.entries(result).filter(([name]) => name !== failedName)
+      .every(([, value]) => value)).toBe(true);
+    expect([semanticSequence, uniqueText, overlayOnce, focusPreserved]
+      .every((check) => check.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("records false without skipping later independent proofs", async () => {
+    const later = vi.fn(async () => true);
+    await expect(runIndependentCorrectnessChecks({
+      semanticSequence: async () => false,
+      uniqueText: later,
+      overlayOnce: later,
+      focusPreserved: later,
+    })).resolves.toEqual({
+      semanticSequence: false,
+      uniqueText: true,
       overlayOnce: true,
       focusPreserved: true,
     });
-    expect(Object.values(checks).every((check) => check.mock.calls.length === 1)).toBe(true);
+    expect(later).toHaveBeenCalledTimes(3);
   });
 });
