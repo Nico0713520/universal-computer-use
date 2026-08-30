@@ -379,24 +379,15 @@ export async function cleanupOwnedTextEdit(
   if (ownedWindowRef === undefined) return;
   // The mutation result may be an error or already consumed. Cleanup always
   // reacquires the exact proven-owned window instead of trusting cached state.
-  const focusState = await observeWindow(client, ownedWindowRef, false);
-  const editable = editableElement(focusState);
-  if (typeof editable?.element_ref !== "string") throw new SmokeFailure("verification_failed");
-  requireSuccessfulState(await callTool(client, "computer_act", {
-    snapshot_id: requireSnapshot(focusState),
-    action: { type: "click", element_ref: editable.element_ref },
-    delivery: "foreground",
-    next_observation: { mode: "semantic" },
-  }));
-  // Menu commands are application-scoped on macOS. Re-observe only after the
-  // exact owned editor has been foregrounded so File > Close cannot hit a
-  // different TextEdit window left open by the user or an earlier failed run.
-  const menuState = await observeWindow(client, ownedWindowRef, false);
-  const chineseMenu = (structured(menuState).elements ?? []).some((element) =>
-    normalized(element.label) === "文件");
+  const state = await observeWindow(client, ownedWindowRef, false);
+  // A foreground keypress is routed through the exact window snapshot. This
+  // avoids app-global menu ambiguity when the user already has other TextEdit
+  // documents open, while the ref-disappearance oracle remains authoritative
+  // even if destroying the target makes the action result unverifiable.
   await callTool(client, "computer_act", {
-    snapshot_id: requireSnapshot(menuState),
-    action: { type: "invoke_menu", path: chineseMenu ? ["文件", "关闭"] : ["File", "Close"] },
+    snapshot_id: requireSnapshot(state),
+    action: { type: "keypress", keys: ["cmd", "w"] },
+    delivery: "foreground",
     next_observation: { mode: "semantic" },
   });
   // Empty AXValue is absent in the locked Cua 0.22.2 contract, so cleanup must
