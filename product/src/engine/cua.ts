@@ -96,7 +96,21 @@ export class CuaEngine implements EnginePort {
       );
     }
 
-    return CuaEngine.fromSdk(sdk, lock);
+    try {
+      return await CuaEngine.fromSdk(sdk, lock);
+    } catch (error) {
+      if (error instanceof ComputerUseError) throw error;
+      const detail = error instanceof Error
+        ? `${error.name} ${error.message}`
+        : String(error);
+      if (!/DriverError\.Transport|\bTransport\b/u.test(detail)) throw error;
+      throw new ComputerUseError(
+        "runtime_unavailable",
+        "Cua Driver daemon is unavailable",
+        "doctor",
+        true,
+      );
+    }
   }
 
   static async fromSdk(sdk: CuaSdkLike, lock: EngineLock): Promise<CuaEngine> {

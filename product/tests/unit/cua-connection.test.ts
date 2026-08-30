@@ -47,6 +47,19 @@ describe("Cua daemon connection", () => {
     });
   });
 
+  it("maps an asynchronous transport failure during metadata to runtime_unavailable", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
+    vi.spyOn(sdk, "metadata").mockRejectedValueOnce(new Error("DriverError.Transport"));
+    vi.spyOn(CuaDriver, "connect").mockReturnValueOnce(sdk as never);
+
+    await expect(CuaEngine.connect(lock)).rejects.toMatchObject({
+      code: "runtime_unavailable",
+      recovery: "doctor",
+      retryable: true,
+    });
+  });
+
   it("rejects a daemon version that differs from the lock", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({ driverVersion: "0.22.0", tools: [...lock.required_tools] });
