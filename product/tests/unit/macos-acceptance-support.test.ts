@@ -3,23 +3,25 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 
 import {
+  attachAcceptanceTelemetry,
   buildOwnedApplicationActivationScript,
-  drainTransportStderr,
   parseFocusSentinelStateLine,
   requireInteractiveSession,
   waitForOwnedPidExit,
 } from "../e2e/development/macos-acceptance-support.js";
 
 describe("macOS acceptance MCP transport", () => {
-  it("continuously drains piped stderr instead of allowing backpressure to stall the lane", async () => {
+  it("continuously drains piped stderr into the redacted collector", async () => {
     const stderr = new PassThrough();
-    drainTransportStderr({ stderr });
+    const telemetry = attachAcceptanceTelemetry({ stderr });
 
-    stderr.write(Buffer.alloc(2 * 1024 * 1024, 1));
+    stderr.write(Buffer.alloc(2 * 1024 * 1024, 32));
+    stderr.write("\n");
     await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
 
     expect(stderr.readableFlowing).toBe(true);
     expect(stderr.readableLength).toBe(0);
+    expect(telemetry.consumeOne(0, "computer_observe")).toBeUndefined();
     stderr.end();
   });
 

@@ -10,6 +10,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import { AcceptanceTelemetryCollector } from "./macos-acceptance-telemetry.js";
+
 export const WINDOW_TITLE = "Computer Use Deterministic Desktop Harness";
 export const FOCUS_SENTINEL_BUNDLE_ID = "dev.universal-computer-use.acceptance-focus-sentinel";
 export const FOCUS_SENTINEL_WINDOW_TITLE = "UCU Acceptance Focus Sentinel";
@@ -98,6 +100,7 @@ export type Connection = Readonly<{
   client: Client;
   transport: StdioClientTransport;
   pid: number;
+  telemetry: AcceptanceTelemetryCollector;
 }>;
 export type FixtureProcess = Readonly<{ child: ChildProcess; url: string }>;
 export type BrowserProcess = Readonly<{
@@ -350,10 +353,14 @@ export async function cleanupBrowser(browser: BrowserProcess | undefined): Promi
   if (failure !== undefined) throw failure;
 }
 
-export function drainTransportStderr(
+export function attachAcceptanceTelemetry(
   transport: Readonly<{ stderr: Pick<Stream, "on"> | null }>,
-): void {
-  transport.stderr?.on("data", () => undefined);
+): AcceptanceTelemetryCollector {
+  const telemetry = new AcceptanceTelemetryCollector();
+  transport.stderr?.on("data", (chunk: unknown) => {
+    telemetry.ingest(typeof chunk === "string" ? chunk : String(chunk));
+  });
+  return telemetry;
 }
 
 function pidAlive(pid: number): boolean {
@@ -380,18 +387,22 @@ export async function connectClient(name: string): Promise<Connection> {
     cwd: process.cwd(),
     stderr: "pipe",
   });
-  drainTransportStderr(transport);
+  const telemetry = attachAcceptanceTelemetry(transport);
   const client = new Client({ name, version: "1.0.0" });
   try {
     await client.connect(transport);
     const pid = transport.pid;
     if (pid === null) throw new Error("acceptance_mcp_pid_unavailable");
-    return { client, transport, pid };
+    return { client, transport, pid, telemetry };
   } catch (error) {
     const pid = transport.pid;
     await client.close().catch(() => undefined);
     await transport.close().catch(() => undefined);
-    if (pid !== null) await waitForOwnedPidExit(pid);
+    try {
+      if (pid !== null) await waitForOwnedPidExit(pid);
+    } finally {
+      telemetry.clear();
+    }
     throw error;
   }
 }
@@ -414,6 +425,7 @@ export async function closeConnection(connection: Connection | undefined): Promi
   } catch (error) {
     failure ??= error;
   }
+  connection.telemetry.clear();
   if (failure !== undefined) throw failure;
 }
 
