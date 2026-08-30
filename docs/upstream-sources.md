@@ -30,6 +30,7 @@ The monorepo release is labeled Pre-release to control GitHub's Latest pointer; 
 | `libs/cua-driver/typescript/src/index.ts` | dependency | 使用正式 `CuaDriver.connect(undefined)` 连接外部 Runtime；不复制生成绑定。 |
 | `libs/cua-driver/rust/crates/cua-driver-contract/src/inputs.rs` | reference-only + contract fixture | 固定动作字段、枚举、边界和桌面 target 结构。 |
 | `libs/cua-driver/rust/crates/cua-driver-contract/src/outputs.rs` | reference-only + contract fixture | 固定截图元数据、动作结果和拒绝 envelope 的解释规则。 |
+| release `cua-driver-rs-v0.22.2` 的 `list_apps`、`list_windows`、`get_window_state`、`health_report` 输出契约 | reference-only + contract fixture | 以 `product/tests/fixtures/cua/0.22.2/` 中已净化的固定响应验证字段拼写；窗口 bounds 使用 `width`/`height`，AX frame 使用 `w`/`h`。 |
 | `libs/cua-driver/examples/agent-sdks/native-tools.ts` | adapt | 采用“动作后必观察、动作结果未知时不盲重试、超时后重新观察”的小型编排模式。 |
 | `libs/cua-driver/rust/Skills/cua-driver/SKILL.md` | reference-only | 校对平台限制、session 生命周期和 Agent 操作说明。 |
 | release `install.sh`、`install.ps1`、`_install-rust.sh` 与 tag source `_install-common.*` | dependency | 下载固定 release/tag、逐文件校验哈希后本地执行；0.22.2 的 release `_install-rust.sh` 修正了 tag source 中仍为 0.22.1 的 baked version。 |

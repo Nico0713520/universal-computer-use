@@ -1,0 +1,11 @@
+{
+  "apps": [
+    {
+      "pid": 42,
+      "name": "Calculator",
+      "bundle_id": "com.apple.calculator",
+      "active": true,
+      "running": true
+    }
+  ]
+}

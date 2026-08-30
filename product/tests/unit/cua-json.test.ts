@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import type { ToolResult } from "@trycua/cua-driver";
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +11,17 @@ import {
   parseWindowState,
 } from "../../src/engine/cua-json.js";
 import type { InternalAppTarget, InternalWindowTarget } from "../../src/target-registry.js";
+
+const fixtureUrls = {
+  apps: new URL("../fixtures/cua/0.22.2/list-apps.json", import.meta.url),
+  windows: new URL("../fixtures/cua/0.22.2/list-windows.json", import.meta.url),
+  windowState: new URL("../fixtures/cua/0.22.2/window-state.json", import.meta.url),
+  health: new URL("../fixtures/cua/0.22.2/health-report.json", import.meta.url),
+} as const;
+
+async function fixture(url: URL): Promise<unknown> {
+  return JSON.parse(await readFile(url, "utf8")) as unknown;
+}
 
 function result(value: unknown, images: ToolResult["images"] = []): ToolResult {
   return {
@@ -87,28 +100,13 @@ function windowState(): Record<string, unknown> {
 }
 
 describe("Cua 0.22.2 raw JSON parsers", () => {
-  it("keeps native app/window identifiers internal while parsing discovery", () => {
-    const apps = parseAppList(result({ apps: [{
-      pid: 42,
-      name: "Calculator",
-      bundle_id: "com.apple.calculator",
-      active: true,
-      running: true,
-      launch_path: "/System/Applications/Calculator.app",
-      kind: "desktop",
-      last_used: null,
-      windows: [],
-    }] }), "macos");
-    const windows = parseWindowList(result({ windows: [{
-      window_id: 7,
-      pid: 42,
-      app_name: "Calculator",
-      title: "Calculator",
-      bounds: { x: 100, y: 100, width: 460, height: 816 },
-      z_index: 9,
-      is_on_screen: true,
-      on_current_space: true,
-    }] }), apps, "macos");
+  it("keeps native app/window identifiers internal while parsing locked discovery fixtures", async () => {
+    const apps = parseAppList(result(await fixture(fixtureUrls.apps)), "macos");
+    const windows = parseWindowList(
+      result(await fixture(fixtureUrls.windows)),
+      apps,
+      "macos",
+    );
 
     expect(apps[0]).toMatchObject({
       nativeKey: "bundle:com.apple.calculator",
@@ -126,9 +124,9 @@ describe("Cua 0.22.2 raw JSON parsers", () => {
     });
   });
 
-  it("parses one proven PNG and snapshot-bound elements", () => {
+  it("parses one proven PNG and snapshot-bound elements from the locked fixture", async () => {
     const parsed = parseWindowState(
-      result(windowState(), [{ mimeType: "image/png", dataBase64: "cG5n" }]),
+      result(await fixture(fixtureUrls.windowState), [{ mimeType: "image/png", dataBase64: "cG5n" }]),
       target(),
       true,
     );
@@ -200,6 +198,22 @@ describe("Cua 0.22.2 raw JSON parsers", () => {
     expect(parseHealth(health("pass"), "0.22.2")).toBe(true);
     expect(parseHealth(health("fail"), "0.22.2")).toBe(false);
     expect(parseHealth(health("pass"), "0.22.3")).toBe(false);
+  });
+
+  it("accepts the locked health fixture only for Cua 0.22.2", async () => {
+    const health = result(await fixture(fixtureUrls.health));
+    expect(parseHealth(health, "0.22.2")).toBe(true);
+    expect(parseHealth(health, "0.22.3")).toBe(false);
+  });
+
+  it("fails closed when locked window bounds use the element-frame spelling", async () => {
+    const raw = await fixture(fixtureUrls.windows) as {
+      windows: Array<{ bounds: Record<string, unknown> }>;
+    };
+    raw.windows[0]!.bounds = { x: 100, y: 100, w: 460, h: 816 };
+    const apps = parseAppList(result(await fixture(fixtureUrls.apps)), "macos");
+    expect(() => parseWindowList(result(raw), apps, "macos"))
+      .toThrowError("Cua returned invalid window list data");
   });
 
   it("normalizes launch proof and exact window candidates", () => {

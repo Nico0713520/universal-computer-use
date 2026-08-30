@@ -1,0 +1,49 @@
+{
+  "window_id": 7,
+  "pid": 42,
+  "snapshot_id": "s1a2b3c4",
+  "element_count": 2,
+  "returned_element_count": 2,
+  "elements_complete": false,
+  "elements": [
+    {
+      "element_index": 0,
+      "element_token": "s1a2b3c4:0",
+      "role": "AXWindow",
+      "label": "Calculator",
+      "frame": {
+        "x": 100,
+        "y": 100,
+        "w": 460,
+        "h": 816
+      },
+      "depth": 0
+    },
+    {
+      "element_index": 1,
+      "element_token": "s1a2b3c4:1",
+      "role": "AXButton",
+      "label": "7",
+      "value": "7",
+      "frame": {
+        "x": 110,
+        "y": 610,
+        "w": 100,
+        "h": 80
+      },
+      "parent_index": 0,
+      "depth": 1,
+      "enabled": true
+    }
+  ],
+  "screenshot_width": 920,
+  "screenshot_height": 1632,
+  "screenshot_mime_type": "image/png",
+  "screenshot_frame_valid": true,
+  "window_bounds": {
+    "x": 100,
+    "y": 100,
+    "width": 460,
+    "height": 816
+  }
+}

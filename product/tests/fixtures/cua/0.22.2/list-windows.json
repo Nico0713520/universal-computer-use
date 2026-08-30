@@ -1,0 +1,19 @@
+{
+  "windows": [
+    {
+      "window_id": 7,
+      "pid": 42,
+      "app_name": "Calculator",
+      "title": "Calculator",
+      "bounds": {
+        "x": 100,
+        "y": 100,
+        "width": 460,
+        "height": 816
+      },
+      "z_index": 1,
+      "is_on_screen": true,
+      "on_current_space": true
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": "1",
+  "platform": "darwin",
+  "driver_version": "0.22.2",
+  "overall": "ok",
+  "checks": [
+    {
+      "name": "binary_version",
+      "status": "pass",
+      "message": "ok"
+    },
+    {
+      "name": "platform_supported",
+      "status": "pass",
+      "message": "ok"
+    },
+    {
+      "name": "session_active",
+      "status": "pass",
+      "message": "ok"
+    }
+  ]
+}

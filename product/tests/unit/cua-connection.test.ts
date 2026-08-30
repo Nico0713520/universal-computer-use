@@ -27,6 +27,12 @@ function result(value: unknown, images: ToolResult["images"] = []): ToolResult {
   };
 }
 
+async function lockedFixture(name: "list-apps" | "list-windows" | "window-state" | "health-report"): Promise<unknown> {
+  return JSON.parse(
+    await readFile(new URL(`../fixtures/cua/0.22.2/${name}.json`, import.meta.url), "utf8"),
+  ) as unknown;
+}
+
 describe("Cua daemon connection", () => {
   it("maps a daemon connection failure to runtime_unavailable", async () => {
     const lock = await loadEngineLock();
@@ -317,24 +323,8 @@ describe("Cua daemon connection", () => {
       driverVersion: lock.version,
       tools: [...lock.required_tools],
       toolResults: {
-        list_apps: result({ apps: [{
-          pid: 42,
-          name: "Calculator",
-          bundle_id: "com.apple.calculator",
-          active: true,
-          running: true,
-          launch_path: "/System/Applications/Calculator.app",
-        }] }),
-        list_windows: result({ windows: [{
-          window_id: 7,
-          pid: 42,
-          app_name: "Calculator",
-          title: "Calculator",
-          bounds: { x: 100, y: 100, width: 460, height: 816 },
-          z_index: 1,
-          is_on_screen: true,
-          on_current_space: true,
-        }] }),
+        list_apps: result(await lockedFixture("list-apps")),
+        list_windows: result(await lockedFixture("list-windows")),
       },
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
@@ -418,28 +408,10 @@ describe("Cua daemon connection", () => {
       driverVersion: lock.version,
       tools: [...lock.required_tools],
       toolResults: {
-        get_window_state: result({
-          window_id: 7,
-          pid: 42,
-          snapshot_id: "native-snapshot",
-          element_count: 1,
-          returned_element_count: 1,
-          elements_complete: true,
-          elements: [{
-            element_index: 0,
-            element_token: "native-snapshot:0",
-            role: "AXButton",
-            label: "7",
-            frame: { x: 10, y: 20, w: 100, h: 80 },
-            depth: 0,
-            enabled: true,
-          }],
-          screenshot_width: 920,
-          screenshot_height: 1632,
-          screenshot_mime_type: "image/png",
-          screenshot_frame_valid: true,
-          window_bounds: { x: 100, y: 100, width: 460, height: 816 },
-        }, [{ mimeType: "image/png", dataBase64: "cG5n" }]),
+        get_window_state: result(
+          await lockedFixture("window-state"),
+          [{ mimeType: "image/png", dataBase64: "cG5n" }],
+        ),
       },
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
@@ -472,7 +444,10 @@ describe("Cua daemon connection", () => {
 
     expect(observation).toMatchObject({
       visualStatus: "available",
-      elements: [{ token: "native-snapshot:0", label: "7" }],
+      upstreamSnapshotId: "s1a2b3c4",
+      elements: expect.arrayContaining([
+        expect.objectContaining({ token: "s1a2b3c4:1", label: "7" }),
+      ]),
     });
     expect(sdk.callToolCalls).toEqual([{
       name: "get_window_state",
