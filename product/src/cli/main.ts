@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { access } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import process from "node:process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { CuaEngine } from "../engine/cua.js";
 import { loadEngineLock, type EngineLock } from "../engine/lock.js";
@@ -14,6 +14,7 @@ import {
   runStdioServer,
 } from "../mcp/main.js";
 import { renderConfig, type ConfigClient } from "./config.js";
+import { isDirectEntryPoint } from "./entrypoint.js";
 import { runDoctor } from "./doctor.js";
 import { probeMacInteractiveSession } from "./interactive-session.js";
 import {
@@ -207,12 +208,7 @@ function errorCode(error: unknown): string {
   return "command_failed";
 }
 
-function isDirectEntryPoint(): boolean {
-  const entry = process.argv[1];
-  return entry !== undefined && pathToFileURL(resolve(entry)).href === import.meta.url;
-}
-
-if (isDirectEntryPoint()) {
+if (isDirectEntryPoint(process.argv[1], import.meta.url)) {
   void runCli(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;

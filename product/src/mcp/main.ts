@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 
 import { access } from "node:fs/promises";
-import { resolve } from "node:path";
 import process from "node:process";
 import type { Readable, Writable } from "node:stream";
-import { pathToFileURL } from "node:url";
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -19,6 +17,7 @@ import {
 import { ComputerUseError } from "../errors.js";
 import { createMetadataLogger, type MetadataLogger } from "../logging/logger.js";
 import { nodeProcessRunner } from "../cli/process-runner.js";
+import { isDirectEntryPoint } from "../cli/entrypoint.js";
 import { createComputerUseServer } from "./server.js";
 
 type StdioOptions = Readonly<{
@@ -126,12 +125,7 @@ export async function runDefaultServer(
   await dependencies.runServer(createProductionRuntime(engine));
 }
 
-function isDirectEntryPoint(): boolean {
-  const entry = process.argv[1];
-  return entry !== undefined && pathToFileURL(resolve(entry)).href === import.meta.url;
-}
-
-if (isDirectEntryPoint()) {
+if (isDirectEntryPoint(process.argv[1], import.meta.url)) {
   void runDefaultServer().catch((error: unknown) => {
     const code =
       error instanceof ComputerUseError ? error.code : "runtime_unavailable";
