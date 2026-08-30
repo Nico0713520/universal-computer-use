@@ -74,6 +74,29 @@ describe("preparePerformanceScenario", () => {
     expect(deps.preparePixelTarget.mock.invocationCallOrder[0])
       .toBeLessThan(deps.readFixtureState.mock.invocationCallOrder[0]!);
   });
+
+  it("rebuilds the unmeasured pixel precondition once after a transient setup failure", async () => {
+    const deps = dependencies();
+    deps.preparePixelTarget
+      .mockRejectedValueOnce(new Error("transient_frontmost_race"))
+      .mockResolvedValueOnce(undefined);
+
+    await expect(preparePerformanceScenario("pixel_action_next_state", deps))
+      .resolves.toEqual({ kind: "pixel", fixtureState: FIXTURE_STATE });
+
+    expect(deps.preparePixelTarget).toHaveBeenCalledTimes(2);
+    expect(deps.readFixtureState).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails after two pixel precondition attempts without invoking a measured action", async () => {
+    const deps = dependencies();
+    deps.preparePixelTarget.mockRejectedValue(new Error("frontmost_unavailable"));
+
+    await expect(preparePerformanceScenario("pixel_action_next_state", deps))
+      .rejects.toThrow("frontmost_unavailable");
+    expect(deps.preparePixelTarget).toHaveBeenCalledTimes(2);
+    expect(deps.readFixtureState).not.toHaveBeenCalled();
+  });
 });
 
 describe("establishPerformanceTelemetryBoundary", () => {

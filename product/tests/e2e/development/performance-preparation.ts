@@ -31,6 +31,14 @@ export async function preparePerformanceScenario(
   if (name === "semantic_action_next_state") {
     return { kind: "semantic", sentinelState: await dependencies.resetSentinelText() };
   }
-  await dependencies.preparePixelTarget();
-  return { kind: "pixel", fixtureState: await dependencies.readFixtureState() };
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await dependencies.preparePixelTarget();
+      return { kind: "pixel", fixtureState: await dependencies.readFixtureState() };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
