@@ -305,6 +305,7 @@ async function performanceIteration(
   layout: FixtureLayout,
   sentinel: FocusSentinel,
   sentinelWindowRef: string,
+  browserPid: number,
 ): Promise<IterationResult> {
   const preparationStartedAt = performance.now();
   let prepared: Awaited<ReturnType<typeof preparePerformanceScenario>>;
@@ -312,6 +313,12 @@ async function performanceIteration(
     prepared = await preparePerformanceScenario(name, {
       readFixtureState: () => fixtureJson<HarnessState>(fixture.url, "/state"),
       resetSentinelText: () => resetFocusSentinelText(sentinel),
+      preparePixelTarget: async () => {
+        await activateOwnedApplication({
+          bundleIdentifier: CHROME_BUNDLE_ID,
+          processIdentifier: browserPid,
+        });
+      },
     });
   } catch {
     return preparationFailureSample(preparationStartedAt);
@@ -522,6 +529,7 @@ async function runPerformanceProfiles(
   layout: FixtureLayout,
   sentinel: FocusSentinel,
   sentinelWindowRef: string,
+  browserPid: number,
   fatalDiagnostic: FatalDiagnosticTracker,
   signal: AbortSignal,
 ): Promise<ReturnType<PerformanceRecorder["performance"]>> {
@@ -543,6 +551,7 @@ async function runPerformanceProfiles(
         layout,
         sentinel,
         sentinelWindowRef,
+        browserPid,
       );
       signal.throwIfAborted();
       if (index < 5) recorder.recordWarmup(name, sample);
@@ -975,6 +984,7 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
         layout,
         sentinel,
         sentinelWindowRef,
+        browser.pid,
         fatalDiagnostic,
         signal,
       );

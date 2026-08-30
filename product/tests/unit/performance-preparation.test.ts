@@ -33,6 +33,7 @@ function dependencies() {
   return {
     readFixtureState: vi.fn(async () => FIXTURE_STATE),
     resetSentinelText: vi.fn(async () => SENTINEL_STATE),
+    preparePixelTarget: vi.fn(async () => undefined),
   };
 }
 
@@ -47,6 +48,7 @@ describe("preparePerformanceScenario", () => {
 
     expect(deps.readFixtureState).not.toHaveBeenCalled();
     expect(deps.resetSentinelText).not.toHaveBeenCalled();
+    expect(deps.preparePixelTarget).not.toHaveBeenCalled();
   });
 
   it("resets only the owned sentinel text for semantic actions", async () => {
@@ -57,16 +59,20 @@ describe("preparePerformanceScenario", () => {
 
     expect(deps.resetSentinelText).toHaveBeenCalledTimes(1);
     expect(deps.readFixtureState).not.toHaveBeenCalled();
+    expect(deps.preparePixelTarget).not.toHaveBeenCalled();
   });
 
-  it("reads but does not reset fixture state for pixel actions", async () => {
+  it("foregrounds the owned pixel target before reading its oracle state", async () => {
     const deps = dependencies();
 
     await expect(preparePerformanceScenario("pixel_action_next_state", deps))
       .resolves.toEqual({ kind: "pixel", fixtureState: FIXTURE_STATE });
 
+    expect(deps.preparePixelTarget).toHaveBeenCalledTimes(1);
     expect(deps.readFixtureState).toHaveBeenCalledTimes(1);
     expect(deps.resetSentinelText).not.toHaveBeenCalled();
+    expect(deps.preparePixelTarget.mock.invocationCallOrder[0])
+      .toBeLessThan(deps.readFixtureState.mock.invocationCallOrder[0]!);
   });
 });
 
