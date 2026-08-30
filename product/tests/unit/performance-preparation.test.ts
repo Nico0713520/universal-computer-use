@@ -4,7 +4,10 @@ import type {
   FocusSentinelState,
   HarnessState,
 } from "../e2e/development/macos-acceptance-support.js";
-import { preparePerformanceScenario } from "../e2e/development/performance-preparation.js";
+import {
+  establishPerformanceTelemetryBoundary,
+  preparePerformanceScenario,
+} from "../e2e/development/performance-preparation.js";
 
 const FIXTURE_STATE: HarnessState = {
   reset_generation: 4,
@@ -62,5 +65,15 @@ describe("preparePerformanceScenario", () => {
 
     expect(deps.readFixtureState).toHaveBeenCalledTimes(1);
     expect(deps.resetSentinelText).not.toHaveBeenCalled();
+  });
+});
+
+describe("establishPerformanceTelemetryBoundary", () => {
+  it("clears correctness telemetry immediately before measured profiles", () => {
+    const telemetry = { clear: vi.fn() };
+
+    establishPerformanceTelemetryBoundary(telemetry);
+
+    expect(telemetry.clear).toHaveBeenCalledTimes(1);
   });
 });

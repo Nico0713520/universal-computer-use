@@ -7,6 +7,7 @@ import {
   cleanupOwnedTextEdit,
   ownFreshTextEditWindow,
   restoreCalculator,
+  selectExactVisibleWindow,
 } from "../e2e/development/macos-real-app-smoke.js";
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64");
@@ -201,6 +202,22 @@ describe("TextEdit owned-window smoke", () => {
 });
 
 describe("Calculator cleanup", () => {
+  it("selects the one visible Calculator window among hidden Cua windows", () => {
+    expect(selectExactVisibleWindow([
+      { window_ref: "hidden-1", is_on_screen: false },
+      { window_ref: "visible", is_on_screen: true, minimized: false },
+      { window_ref: "hidden-2", is_on_screen: false },
+      { window_ref: "minimized", is_on_screen: true, minimized: true },
+    ])?.window_ref).toBe("visible");
+  });
+
+  it("refuses ambiguous visible Calculator windows", () => {
+    expect(selectExactVisibleWindow([
+      { window_ref: "visible-1", is_on_screen: true },
+      { window_ref: "visible-2", is_on_screen: true },
+    ])).toBeUndefined();
+  });
+
   it("re-observes the exact operated window before AC after an intermediate action failure", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([

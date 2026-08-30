@@ -14,6 +14,12 @@ export type PreparedPerformanceState =
   | Readonly<{ kind: "semantic"; sentinelState: FocusSentinelState }>
   | Readonly<{ kind: "pixel"; fixtureState: HarnessState }>;
 
+export function establishPerformanceTelemetryBoundary(
+  telemetry: Readonly<{ clear: () => void }>,
+): void {
+  telemetry.clear();
+}
+
 export async function preparePerformanceScenario(
   name: PerformanceScenarioName,
   dependencies: PerformancePreparationDependencies,

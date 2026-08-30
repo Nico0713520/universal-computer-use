@@ -27,8 +27,12 @@ import {
   type PerformanceScenarioName,
 } from "./performance-recorder.js";
 import { classifyToolCallFailure } from "./performance-classification.js";
-import { preparePerformanceScenario } from "./performance-preparation.js";
+import {
+  establishPerformanceTelemetryBoundary,
+  preparePerformanceScenario,
+} from "./performance-preparation.js";
 import { runRealAppSmoke } from "./macos-real-app-smoke.js";
+import { runIndependentCorrectnessChecks } from "./correctness-orchestration.js";
 import {
   buildForegroundPositiveControlRequest,
   buildSemanticSetValueRequest,
@@ -565,150 +569,153 @@ async function runFixtureCorrectness(
   overlayOnce: boolean;
   focusPreserved: boolean;
 }>> {
-  await resetFixture(fixture.url);
-  let current = await observeFixture(client, windowRef, true);
-  const alphaGrounding = requireSnapshot(current);
-  current = await callTool(
-    client,
-    "computer_act",
-    buildVerifiedSemanticClickRequest(
-      alphaGrounding,
-      requireElement(current, "Semantic Alpha").elementRef,
-      "background",
-    ),
-  );
-  const alphaState = structured(current);
-  const alphaSemantic = current.isError !== true &&
-    alphaState.consumed_snapshot_id === alphaGrounding &&
-    typeof alphaState.snapshot_id === "string" && alphaState.snapshot_id !== alphaGrounding &&
-    alphaState.action_result?.status === "executed" &&
-    alphaState.action_result.effect === "confirmed" &&
-    alphaState.action_result.delivery === "background" &&
-    alphaState.verification?.status === "satisfied" &&
-    alphaState.observation_mode === "semantic" && !hasPng(current);
-  const betaGrounding = requireSnapshot(current);
-  current = await callTool(
-    client,
-    "computer_act",
-    buildVerifiedSemanticClickRequest(
-      betaGrounding,
-      requireElement(current, "Semantic Beta").elementRef,
-      "background",
-    ),
-  );
-  const sequenceState = await waitForState(
-    fixture.url,
-    (state) => state.semantic_sequence.join(",") === "alpha,beta",
-  );
-  const betaState = structured(current);
-  const semanticSequence = alphaSemantic && current.isError !== true &&
-    betaState.consumed_snapshot_id === betaGrounding &&
-    typeof betaState.snapshot_id === "string" && betaState.snapshot_id !== betaGrounding &&
-    betaState.action_result?.status === "executed" &&
-    betaState.action_result.effect === "confirmed" &&
-    betaState.action_result.delivery === "background" &&
-    betaState.verification?.status === "satisfied" &&
-    betaState.observation_mode === "semantic" && !hasPng(current) &&
-    sequenceState.semantic_sequence.join(",") === "alpha,beta";
-
-  const nativeInitialState = await resetFocusSentinelText(sentinel);
-  current = await observeFixture(
-    client,
-    sentinelWindowRef,
-    true,
-    FOCUS_SENTINEL_TEXT_LABEL,
-  );
-  const textGrounding = requireSnapshot(current);
-  const nonce = `ucu-correctness-${Date.now()}`;
-  const nativeText = requireElement(current, FOCUS_SENTINEL_TEXT_LABEL);
-  current = await callTool(
-    client,
-    "computer_act",
-    buildSemanticSetValueRequest(
-      textGrounding,
-      nativeText.elementRef,
-      nonce,
-    ),
-  );
-  const textState = await waitForFocusSentinelText(sentinel, nonce);
-  const uniqueText = validEmptyTextGrounding(nativeInitialState, nativeText) &&
-    validSemanticSetValueResult(current, {
-    groundingSnapshot: textGrounding,
-    nonce,
-    oracleText: textState.text,
-    oracleWriteCount: textState.text_write_count,
-    });
-
-  await resetFixture(fixture.url);
-  current = await observeFixture(client, windowRef, true);
-  current = await callTool(
-    client,
-    "computer_act",
-    buildVerifiedSemanticClickRequest(
-      requireSnapshot(current),
-      requireElement(current, "Toggle pixel overlay").elementRef,
-      "background",
-    ),
-  );
-  const toggleState = structured(current);
-  const toggleSemantic = current.isError !== true &&
-    toggleState.action_result?.status === "executed" &&
-    toggleState.action_result.effect === "confirmed" &&
-    toggleState.action_result.delivery === "background" &&
-    toggleState.verification?.status === "satisfied" &&
-    toggleState.observation_mode === "semantic" && !hasPng(current);
-  await waitForState(fixture.url, (state) => state.overlay_enabled);
-  current = await observeFixture(client, windowRef, true);
-  const overlayGrounding = requireSnapshot(current);
-  const overlayPoint = fixedVisualPoint(layout, current, "overlay-target");
-  current = await callTool(client, "computer_act", {
-    snapshot_id: overlayGrounding,
-    action: { type: "click", ...overlayPoint },
-    delivery: "foreground",
-    next_observation: { mode: "semantic" },
+  return runIndependentCorrectnessChecks({
+    semanticSequence: async () => {
+      await resetFixture(fixture.url);
+      let current = await observeFixture(client, windowRef, true);
+      const alphaGrounding = requireSnapshot(current);
+      current = await callTool(
+        client,
+        "computer_act",
+        buildVerifiedSemanticClickRequest(
+          alphaGrounding,
+          requireElement(current, "Semantic Alpha").elementRef,
+          "background",
+        ),
+      );
+      const alphaState = structured(current);
+      const alphaSemantic = current.isError !== true &&
+        alphaState.consumed_snapshot_id === alphaGrounding &&
+        typeof alphaState.snapshot_id === "string" && alphaState.snapshot_id !== alphaGrounding &&
+        alphaState.action_result?.status === "executed" &&
+        alphaState.action_result.effect === "confirmed" &&
+        alphaState.action_result.delivery === "background" &&
+        alphaState.verification?.status === "satisfied" &&
+        alphaState.observation_mode === "semantic" && !hasPng(current);
+      const betaGrounding = requireSnapshot(current);
+      current = await callTool(
+        client,
+        "computer_act",
+        buildVerifiedSemanticClickRequest(
+          betaGrounding,
+          requireElement(current, "Semantic Beta").elementRef,
+          "background",
+        ),
+      );
+      const sequenceState = await waitForState(
+        fixture.url,
+        (state) => state.semantic_sequence.join(",") === "alpha,beta",
+      );
+      const betaState = structured(current);
+      return alphaSemantic && current.isError !== true &&
+        betaState.consumed_snapshot_id === betaGrounding &&
+        typeof betaState.snapshot_id === "string" && betaState.snapshot_id !== betaGrounding &&
+        betaState.action_result?.status === "executed" &&
+        betaState.action_result.effect === "confirmed" &&
+        betaState.action_result.delivery === "background" &&
+        betaState.verification?.status === "satisfied" &&
+        betaState.observation_mode === "semantic" && !hasPng(current) &&
+        sequenceState.semantic_sequence.join(",") === "alpha,beta";
+    },
+    uniqueText: async () => {
+      const nativeInitialState = await resetFocusSentinelText(sentinel);
+      let current = await observeFixture(
+        client,
+        sentinelWindowRef,
+        true,
+        FOCUS_SENTINEL_TEXT_LABEL,
+      );
+      const textGrounding = requireSnapshot(current);
+      const nonce = `ucu-correctness-${Date.now()}`;
+      const nativeText = requireElement(current, FOCUS_SENTINEL_TEXT_LABEL);
+      current = await callTool(
+        client,
+        "computer_act",
+        buildSemanticSetValueRequest(textGrounding, nativeText.elementRef, nonce),
+      );
+      const textState = await waitForFocusSentinelText(sentinel, nonce);
+      return validEmptyTextGrounding(nativeInitialState, nativeText) &&
+        validSemanticSetValueResult(current, {
+          groundingSnapshot: textGrounding,
+          nonce,
+          oracleText: textState.text,
+          oracleWriteCount: textState.text_write_count,
+        });
+    },
+    overlayOnce: async () => {
+      await resetFixture(fixture.url);
+      let current = await observeFixture(client, windowRef, true);
+      current = await callTool(
+        client,
+        "computer_act",
+        buildVerifiedSemanticClickRequest(
+          requireSnapshot(current),
+          requireElement(current, "Toggle pixel overlay").elementRef,
+          "background",
+        ),
+      );
+      const toggleState = structured(current);
+      const toggleSemantic = current.isError !== true &&
+        toggleState.action_result?.status === "executed" &&
+        toggleState.action_result.effect === "confirmed" &&
+        toggleState.action_result.delivery === "background" &&
+        toggleState.verification?.status === "satisfied" &&
+        toggleState.observation_mode === "semantic" && !hasPng(current);
+      await waitForState(fixture.url, (state) => state.overlay_enabled);
+      current = await observeFixture(client, windowRef, true);
+      const overlayGrounding = requireSnapshot(current);
+      const overlayPoint = fixedVisualPoint(layout, current, "overlay-target");
+      current = await callTool(client, "computer_act", {
+        snapshot_id: overlayGrounding,
+        action: { type: "click", ...overlayPoint },
+        delivery: "foreground",
+        next_observation: { mode: "semantic" },
+      });
+      const overlayState = await waitForState(fixture.url, (state) => state.overlay_clicks === 1);
+      const overlayResult = structured(current);
+      return toggleSemantic && current.isError !== true &&
+        overlayResult.consumed_snapshot_id === overlayGrounding &&
+        typeof overlayResult.snapshot_id === "string" &&
+        overlayResult.snapshot_id !== overlayGrounding &&
+        overlayResult.action_result?.status === "executed" &&
+        overlayResult.action_result.delivery === "foreground" &&
+        overlayResult.observation_mode === "visual_recovery" &&
+        hasPng(current) && overlayState.overlay_clicks === 1;
+    },
+    focusPreserved: async () => {
+      await resetFixture(fixture.url);
+      await activateFocusSentinel(sentinel);
+      const globalGrounding = await callTool(client, "computer_observe", {
+        target: { kind: "desktop" },
+      });
+      const globalSwitch = await callTool(
+        client,
+        "computer_act",
+        buildForegroundPositiveControlRequest(requireSnapshot(globalGrounding)),
+      );
+      if (globalSwitch.isError === true || structured(globalSwitch).action_result?.status !== "executed") {
+        throw new Error("focus_oracle_positive_control_failed");
+      }
+      await waitForFrontmost({ bundleIdentifier: CHROME_BUNDLE_ID, processIdentifier: browserPid });
+      await activateFocusSentinel(sentinel);
+      let current = await observeFixture(client, windowRef, true);
+      const backgroundGrounding = requireSnapshot(current);
+      current = await callTool(
+        client,
+        "computer_act",
+        buildVerifiedSemanticClickRequest(
+          backgroundGrounding,
+          requireElement(current, "Semantic Beta").elementRef,
+          "background",
+        ),
+      );
+      const identity = await frontmostIdentity();
+      return sentinelAlive(sentinel) &&
+        identity.bundleIdentifier === FOCUS_SENTINEL_BUNDLE_ID &&
+        identity.processIdentifier === sentinel.pid &&
+        validBackgroundSemanticResult(current, backgroundGrounding);
+    },
   });
-  const overlayState = await waitForState(fixture.url, (state) => state.overlay_clicks === 1);
-  const overlayResult = structured(current);
-  const overlayOnce = toggleSemantic && current.isError !== true &&
-    overlayResult.consumed_snapshot_id === overlayGrounding &&
-    typeof overlayResult.snapshot_id === "string" && overlayResult.snapshot_id !== overlayGrounding &&
-    overlayResult.action_result?.status === "executed" &&
-    overlayResult.action_result.delivery === "foreground" &&
-    overlayResult.observation_mode === "visual_recovery" &&
-    hasPng(current) && overlayState.overlay_clicks === 1;
-
-  await resetFixture(fixture.url);
-  await activateFocusSentinel(sentinel);
-  const globalGrounding = await callTool(client, "computer_observe", {
-    target: { kind: "desktop" },
-  });
-  const globalSwitch = await callTool(
-    client,
-    "computer_act",
-    buildForegroundPositiveControlRequest(requireSnapshot(globalGrounding)),
-  );
-  if (globalSwitch.isError === true || structured(globalSwitch).action_result?.status !== "executed") {
-    throw new Error("focus_oracle_positive_control_failed");
-  }
-  await waitForFrontmost({ bundleIdentifier: CHROME_BUNDLE_ID, processIdentifier: browserPid });
-  await activateFocusSentinel(sentinel);
-  current = await observeFixture(client, windowRef, true);
-  const backgroundGrounding = requireSnapshot(current);
-  current = await callTool(
-    client,
-    "computer_act",
-    buildVerifiedSemanticClickRequest(
-      backgroundGrounding,
-      requireElement(current, "Semantic Beta").elementRef,
-      "background",
-    ),
-  );
-  const identity = await frontmostIdentity();
-  const focusPreserved = sentinelAlive(sentinel) &&
-    identity.bundleIdentifier === FOCUS_SENTINEL_BUNDLE_ID &&
-    identity.processIdentifier === sentinel.pid &&
-    validBackgroundSemanticResult(current, backgroundGrounding);
-  return { semanticSequence, uniqueText, overlayOnce, focusPreserved };
 }
 
 async function validateEvidence(value: unknown): Promise<void> {
@@ -975,6 +982,10 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
         focus_preserved: correctness.focusPreserved,
       };
 
+      // Correctness calls deliberately do not consume performance telemetry.
+      // Start profiles at a clean correlation boundary; any record arriving
+      // after this boundary still poisons the first measured sample.
+      establishPerformanceTelemetryBoundary(connection.telemetry);
       performanceEvidence = await runPerformanceProfiles(
         connection,
         fixture,

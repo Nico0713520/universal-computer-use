@@ -65,6 +65,17 @@ function windowRefs(windows: readonly PublicWindow[]): ReadonlySet<string> {
   return new Set(refs);
 }
 
+export function selectExactVisibleWindow(
+  windows: readonly PublicWindow[],
+): PublicWindow | undefined {
+  if (windows.length === 1 && typeof windows[0]?.window_ref === "string") return windows[0];
+  const visible = windows.filter((window) =>
+    typeof window.window_ref === "string" &&
+    window.is_on_screen === true &&
+    window.minimized !== true);
+  return visible.length === 1 ? visible[0] : undefined;
+}
+
 async function discoverApp(
   client: Client,
   bundleQuery: string,
@@ -151,8 +162,9 @@ async function ensureCalculatorWindow(
   client: Client,
   discovered: Discovery,
 ): Promise<Readonly<{ windowRef: string; current: CallToolResult }>> {
-  if (discovered.windows.length === 1 && typeof discovered.windows[0]?.window_ref === "string") {
-    const windowRef = discovered.windows[0].window_ref;
+  const existing = selectExactVisibleWindow(discovered.windows);
+  if (typeof existing?.window_ref === "string") {
+    const windowRef = existing.window_ref;
     return { windowRef, current: await observeWindow(client, windowRef, true) };
   }
   if (discovered.windows.length > 1) throw new SmokeFailure("calculator_unavailable");
@@ -166,10 +178,11 @@ async function ensureCalculatorWindow(
     return { windowRef: target.window_ref, current: launched };
   }
   const refreshed = await discoverApp(client, "com.apple.calculator", "calculator_unavailable");
-  if (refreshed.windows.length !== 1 || typeof refreshed.windows[0]?.window_ref !== "string") {
+  const refreshedWindow = selectExactVisibleWindow(refreshed.windows);
+  if (typeof refreshedWindow?.window_ref !== "string") {
     throw new SmokeFailure("calculator_unavailable");
   }
-  const windowRef = refreshed.windows[0].window_ref;
+  const windowRef = refreshedWindow.window_ref;
   return { windowRef, current: await observeWindow(client, windowRef, true) };
 }
 

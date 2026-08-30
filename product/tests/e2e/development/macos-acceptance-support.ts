@@ -72,6 +72,9 @@ export type PublicWindow = Readonly<{
   app_ref?: unknown;
   app_name?: unknown;
   title?: unknown;
+  is_on_screen?: unknown;
+  on_current_space?: unknown;
+  minimized?: unknown;
 }>;
 export type StructuredResult = Readonly<{
   snapshot_id?: unknown;
