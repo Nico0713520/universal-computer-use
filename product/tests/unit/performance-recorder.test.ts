@@ -147,6 +147,59 @@ describe("PerformanceRecorder", () => {
     });
   });
 
+  it("passes one truthful pixel fallback miss but fails two", () => {
+    const oneMiss = new PerformanceRecorder();
+    const twoMisses = new PerformanceRecorder();
+
+    for (const name of SCENARIO_NAMES) {
+      recordCompleteScenario(
+        oneMiss,
+        name,
+        name === "pixel_action_next_state" ? { 29: "oracle_mismatch" } : {},
+      );
+      recordCompleteScenario(
+        twoMisses,
+        name,
+        name === "pixel_action_next_state"
+          ? { 28: "oracle_mismatch", 29: "oracle_mismatch" }
+          : {},
+      );
+    }
+
+    expect(oneMiss.performance().pixel_action_next_state).toMatchObject({
+      correct_count: 29,
+      failed_count: 1,
+      success_rate: 29 / 30,
+      correctness_status: "passed",
+      failure_counts: { oracle_mismatch: 1 },
+      status: "passed",
+    });
+    expect(twoMisses.performance().pixel_action_next_state).toMatchObject({
+      correct_count: 28,
+      failed_count: 2,
+      correctness_status: "failed",
+      status: "failed",
+    });
+  });
+
+  it("does not excuse a pixel tool failure as an allowed visual no-op", () => {
+    const recorder = new PerformanceRecorder();
+    for (const name of SCENARIO_NAMES) {
+      recordCompleteScenario(
+        recorder,
+        name,
+        name === "pixel_action_next_state" ? { 29: "tool_error" } : {},
+      );
+    }
+
+    expect(recorder.performance().pixel_action_next_state).toMatchObject({
+      correct_count: 29,
+      failure_counts: { tool_error: 1 },
+      correctness_status: "failed",
+      status: "failed",
+    });
+  });
+
   it("counts telemetry failures without inventing missing stage values", () => {
     const recorder = new PerformanceRecorder();
 

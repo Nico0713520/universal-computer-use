@@ -289,6 +289,27 @@ describe("macOS development acceptance evidence", () => {
     expect(await accepts(candidate)).toBe(true);
   });
 
+  it("accepts exactly one reported pixel fallback miss and rejects two", async () => {
+    const oneMiss = completeEvidence();
+    const pixel = (oneMiss.performance as JsonRecord).pixel_action_next_state as JsonRecord;
+    pixel.correct_count = 29;
+    pixel.failed_count = 1;
+    pixel.success_rate = 29 / 30;
+    pixel.correctness_status = "passed";
+    pixel.failure_counts = { oracle_mismatch: 1 };
+    pixel.status = "passed";
+    expect(await accepts(oneMiss)).toBe(true);
+
+    const twoMisses = structuredClone(oneMiss);
+    const failedPixel = (twoMisses.performance as JsonRecord).pixel_action_next_state as JsonRecord;
+    failedPixel.correct_count = 28;
+    failedPixel.failed_count = 2;
+    failedPixel.success_rate = 28 / 30;
+    failedPixel.correctness_status = "passed";
+    failedPixel.failure_counts = { oracle_mismatch: 2 };
+    expect(await accepts(twoMisses)).toBe(false);
+  });
+
   it("rejects a hand-written top-level failed status when every gate is green", async () => {
     const candidate = completeEvidence();
     candidate.status = "failed";

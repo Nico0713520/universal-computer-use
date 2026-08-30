@@ -382,6 +382,30 @@ describe("macOS development acceptance launcher", () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "passed", evidence_path: path });
   });
 
+  it("accepts one truthful pixel oracle miss while preserving the raw count", async () => {
+    const path = await fixturePath("evidence.json");
+    const evidence = simulatedEvidence();
+    const profile = (evidence.performance as Record<string, Record<string, unknown>>)
+      .pixel_action_next_state;
+    profile.correct_count = 29;
+    profile.failed_count = 1;
+    profile.success_rate = 29 / 30;
+    profile.failure_counts = { oracle_mismatch: 1 };
+
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_CHILD_RESULT: JSON.stringify(evidence),
+    });
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "passed", evidence_path: path });
+    expect((JSON.parse(await readFile(path, "utf8")).performance as Record<string, unknown>)
+      .pixel_action_next_state).toMatchObject({
+        correct_count: 29,
+        failed_count: 1,
+        failure_counts: { oracle_mismatch: 1 },
+      });
+  });
+
   it("does not leak raw child stderr when no validated artifact exists", async () => {
     const path = await fixturePath("evidence.json");
     const result = await run(path, {
