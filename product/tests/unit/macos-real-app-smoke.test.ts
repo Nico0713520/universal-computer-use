@@ -266,10 +266,16 @@ describe("Calculator cleanup", () => {
     const client = scriptedClient([
       calculatorState("fresh-cleanup", "calculator-owned"),
       calculatorActed("after-clear", "calculator-owned"),
+      calculatorState("verified-zero", "calculator-owned"),
     ], calls);
 
-    await expect(restoreCalculator(client, true, "calculator-owned")).resolves.toBeUndefined();
-    expect(calls).toHaveLength(2);
+    await expect(restoreCalculator(
+      client,
+      true,
+      "calculator-owned",
+      async () => true,
+    )).resolves.toBeUndefined();
+    expect(calls).toHaveLength(3);
     expect(calls[0]).toMatchObject({
       name: "computer_observe",
       arguments: {
@@ -281,6 +287,12 @@ describe("Calculator cleanup", () => {
       arguments: {
         snapshot_id: "fresh-cleanup",
         action: { type: "click", element_ref: "clear_fresh-cleanup" },
+      },
+    });
+    expect(calls[2]).toMatchObject({
+      name: "computer_observe",
+      arguments: {
+        target: { kind: "window", window_ref: "calculator-owned" },
       },
     });
   });

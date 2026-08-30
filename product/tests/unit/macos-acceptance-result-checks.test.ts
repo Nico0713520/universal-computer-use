@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -31,6 +32,14 @@ const ELEMENTS = [
 ];
 
 describe("macOS acceptance result checks", () => {
+  it("keeps the owned native text field truly empty instead of exposing a placeholder as AXValue", async () => {
+    const source = await readFile(new URL(
+      "../fixtures/focus-sentinel/main.swift",
+      import.meta.url,
+    ), "utf8");
+    expect(source).not.toContain("placeholderString");
+  });
+
   it("builds a schema-valid set_value request without a forbidden delivery override", () => {
     const request = buildSemanticSetValueRequest(
       "snap_grounding123",

@@ -12,6 +12,7 @@ import {
   type PublicElement,
   type PublicWindow,
 } from "./macos-acceptance-support.js";
+import { verifyExactVisibleText } from "./macos-visual-text-oracle.js";
 
 export type RealAppSmoke = Readonly<{
   calculator_703: boolean;
@@ -186,18 +187,6 @@ export async function ensureCalculatorWindow(
   return { windowRef, current: await observeWindow(client, windowRef, true) };
 }
 
-function showsExactly703(result: CallToolResult): boolean {
-  const values = (structured(result).elements ?? [])
-    .flatMap((element) => element.value === undefined ? [] : [normalized(element.value)])
-    .filter((value) => value === "703");
-  return values.length === 1;
-}
-
-function showsExactlyValue(result: CallToolResult, value: string): boolean {
-  return (structured(result).elements ?? [])
-    .filter((element) => normalized(element.value) === value).length === 1;
-}
-
 async function runCalculator(
   client: Client,
   onWindowRef: (windowRef: string) => void,
@@ -235,23 +224,27 @@ async function runCalculator(
   current = typeof equals?.element_ref === "string"
     ? await clickCalculatorControl(client, current, [normalized(equals.label)])
     : await calculatorKeypress(client, current, ["enter"]);
-  return { passed: showsExactly703(current), current };
+  current = await observeWindow(client, windowRef, true);
+  return { passed: await verifyExactVisibleText(current, "703"), current };
 }
 
 export async function restoreCalculator(
   client: Client,
   touched: boolean,
   windowRef: string | undefined,
+  verifyVisibleText: (result: CallToolResult, expected: string) => Promise<boolean> =
+    verifyExactVisibleText,
 ): Promise<void> {
   if (!touched) return;
   if (windowRef === undefined) throw new SmokeFailure("verification_failed");
   const current = await observeWindow(client, windowRef, true);
-  const restored = await clickCalculatorControl(
+  await clickCalculatorControl(
     client,
     current,
     ["AC", "Clear", "All Clear", "清除", "全部清除"],
   );
-  if (!showsExactlyValue(restored, "0")) {
+  const observed = await observeWindow(client, windowRef, true);
+  if (!await verifyVisibleText(observed, "0")) {
     throw new SmokeFailure("verification_failed");
   }
 }

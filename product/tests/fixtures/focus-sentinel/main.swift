@@ -19,7 +19,6 @@ label.frame = NSRect(x: 20, y: 130, width: 320, height: 24)
 window.contentView?.addSubview(label)
 
 let textField = NSTextField(frame: NSRect(x: 40, y: 75, width: 280, height: 28))
-textField.placeholderString = "Native acceptance value"
 textField.setAccessibilityLabel("Native unique text value")
 window.contentView?.addSubview(textField)
 
