@@ -184,6 +184,8 @@ describe("TextEdit owned-window smoke", () => {
   it("closes only the owned ref and proves it disappeared without inventing an empty AXValue", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([
+      windowState("focus-owned", "owned", true),
+      acted("focused-owned"),
       windowState("fresh-before-clear", "owned", true),
       acted("after-close"),
       desktop("desktop-after", ["preexisting"]),
@@ -195,18 +197,25 @@ describe("TextEdit owned-window smoke", () => {
       windowState("before-clear", "owned", true),
     )).resolves.toBeUndefined();
     expect(calls[1]?.arguments).toMatchObject({
+      snapshot_id: "focus-owned",
+      action: { type: "click", element_ref: "element_focus-owned" },
+      delivery: "foreground",
+    });
+    expect(calls[3]?.arguments).toMatchObject({
       action: { type: "invoke_menu", path: ["File", "Close"] },
     });
-    expect(calls[2]?.arguments).toMatchObject({
+    expect(calls[4]?.arguments).toMatchObject({
       discover: { query: "com.apple.TextEdit" },
     });
-    expect(calls[1]?.arguments?.snapshot_id).toBe("fresh-before-clear");
+    expect(calls[3]?.arguments?.snapshot_id).toBe("fresh-before-clear");
     expect(JSON.stringify(calls)).not.toContain("set_value");
   });
 
   it("treats an absent TextEdit app after close as successful cleanup", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([
+      windowState("focus-owned", "owned", true),
+      acted("focused-owned"),
       windowState("fresh-before-close", "owned", true),
       acted("after-close"),
       result({ snapshot_id: "desktop-after", apps: [], windows: [] }, true),
@@ -222,6 +231,8 @@ describe("TextEdit owned-window smoke", () => {
   it("polls the owned ref until an asynchronous close transition finishes", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([
+      windowState("focus-owned", "owned", true),
+      acted("focused-owned"),
       windowState("fresh-before-close", "owned", true),
       acted("after-close"),
       desktop("desktop-closing", ["owned"]),
@@ -239,6 +250,8 @@ describe("TextEdit owned-window smoke", () => {
   it("fails cleanup when the owned ref survives close", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([
+      windowState("focus-owned", "owned", true),
+      acted("focused-owned"),
       windowState("fresh-before-clear", "owned", true),
       acted("after-close"),
       desktop("desktop-after", ["preexisting", "owned"]),
@@ -379,6 +392,8 @@ describe("Calculator cleanup", () => {
     const textCurrent = windowState("text-before-clear", "text-owned", true);
     const client = scriptedClient([
       calculatorObserveFailure,
+      windowState("focus-text-cleanup", "text-owned", true),
+      acted("focused-text", "text-owned"),
       windowState("fresh-text-cleanup", "text-owned", true),
       acted("text-after-close", "text-owned"),
       desktop("desktop-after", ["preexisting"]),
@@ -400,6 +415,8 @@ describe("Calculator cleanup", () => {
   it("dismisses a save sheet only on the exact owned TextEdit ref", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([
+      windowState("focus-text-cleanup", "text-owned", true),
+      acted("focused-text", "text-owned"),
       windowState("fresh-text-cleanup", "text-owned", true),
       acted("text-after-close", "text-owned"),
       desktop("desktop-sheet", ["preexisting", "text-owned"]),
@@ -417,7 +434,7 @@ describe("Calculator cleanup", () => {
     expect(calls[0]?.arguments).toMatchObject({
       target: { kind: "window", window_ref: "text-owned" },
     });
-    expect(calls[4]?.arguments).toMatchObject({
+    expect(calls[6]?.arguments).toMatchObject({
       action: { type: "click", element_ref: "discard_sheet" },
     });
     expect(JSON.stringify(calls)).not.toContain("preexisting\",\"action");

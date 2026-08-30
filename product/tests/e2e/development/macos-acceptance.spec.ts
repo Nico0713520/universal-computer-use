@@ -44,7 +44,6 @@ import {
 } from "./macos-acceptance-result-checks.js";
 import {
   CHROME_BUNDLE_ID,
-  FOCUS_SENTINEL_BUNDLE_ID,
   FOCUS_SENTINEL_TEXT_LABEL,
   FOCUS_SENTINEL_WINDOW_TITLE,
   WINDOW_TITLE,
@@ -662,34 +661,38 @@ async function runFixtureCorrectness(
         hasPng(current) && overlayState.overlay_clicks === 1;
     },
     focusPreserved: async () => {
-      await resetFixture(fixture.url);
+      const nativeInitialState = await resetFocusSentinelText(sentinel);
       await activateFocusSentinel(sentinel);
       await activateOwnedApplication({
         bundleIdentifier: CHROME_BUNDLE_ID,
         processIdentifier: browserPid,
       });
-      await activateFocusSentinel(sentinel);
-      let current = await observeFixture(client, windowRef, true);
+      let current = await observeFixture(
+        client,
+        sentinelWindowRef,
+        true,
+        FOCUS_SENTINEL_TEXT_LABEL,
+      );
       const backgroundGrounding = requireSnapshot(current);
+      const nativeText = requireElement(current, FOCUS_SENTINEL_TEXT_LABEL);
+      const nonce = `ucu-focus-${Date.now()}`;
       current = await callTool(
         client,
         "computer_act",
-        buildBackgroundSemanticClickRequest(
-          backgroundGrounding,
-          requireElement(current, "Semantic Beta").elementRef,
-          "background",
-        ),
+        buildSemanticSetValueRequest(backgroundGrounding, nativeText.elementRef, nonce),
       );
-      const sequenceState = await waitForState(
-        fixture.url,
-        (state) => state.semantic_sequence.join(",") === "beta",
-      );
+      const textState = await waitForFocusSentinelText(sentinel, nonce);
       const identity = await frontmostIdentity();
       return sentinelAlive(sentinel) &&
-        identity.bundleIdentifier === FOCUS_SENTINEL_BUNDLE_ID &&
-        identity.processIdentifier === sentinel.pid &&
-        validBackgroundSemanticExecution(current, backgroundGrounding) &&
-        sequenceState.semantic_sequence.join(",") === "beta";
+        identity.bundleIdentifier === CHROME_BUNDLE_ID &&
+        identity.processIdentifier === browserPid &&
+        validEmptyTextGrounding(nativeInitialState, nativeText) &&
+        validSemanticSetValueResult(current, {
+          groundingSnapshot: backgroundGrounding,
+          nonce,
+          oracleText: textState.text,
+          oracleWriteCount: textState.text_write_count,
+        });
     },
   });
 }
