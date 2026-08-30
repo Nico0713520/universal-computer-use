@@ -17,9 +17,12 @@ import {
 import {
   PerformanceRecorder,
   PERFORMANCE_SCENARIO_NAMES,
+  type PerformanceOutcome,
   type PerformanceSample,
   type PerformanceScenarioName,
 } from "./performance-recorder.js";
+import { classifyToolCallFailure } from "./performance-classification.js";
+import { preparePerformanceScenario } from "./performance-preparation.js";
 import { runRealAppSmoke } from "./macos-real-app-smoke.js";
 import {
   buildForegroundPositiveControlRequest,
@@ -119,17 +122,125 @@ async function observeFixture(
   return result;
 }
 
-async function timedCall(operation: () => Promise<CallToolResult>): Promise<Readonly<{
-  durationMs: number;
-  result?: CallToolResult;
-}>> {
+type TimedToolCall =
+  | Readonly<{ durationMs: number; result: CallToolResult }>
+  | Readonly<{ durationMs: number; error: unknown }>;
+
+async function timedCall(operation: () => Promise<CallToolResult>): Promise<TimedToolCall> {
   const startedAt = performance.now();
   try {
     const result = await operation();
     return { durationMs: Math.ceil(Math.max(0, performance.now() - startedAt)), result };
-  } catch {
-    return { durationMs: Math.ceil(Math.max(0, performance.now() - startedAt)) };
+  } catch (error) {
+    return { durationMs: Math.ceil(Math.max(0, performance.now() - startedAt)), error };
   }
+}
+
+function structuredIfPresent(result: CallToolResult): ReturnType<typeof structured> | undefined {
+  const value = structured(result);
+  return typeof value === "object" && value !== null ? value : undefined;
+}
+
+function measuredToolFailure(call: TimedToolCall): PerformanceOutcome | undefined {
+  if ("error" in call) {
+    return classifyToolCallFailure({ kind: "thrown", error: call.error });
+  }
+  const state = structuredIfPresent(call.result);
+  return classifyToolCallFailure({
+    kind: "result",
+    resultIsError: call.result.isError === true,
+    errorCodes: [state?.code, state?.action_result?.error_code],
+  });
+}
+
+async function collectMeasuredStages(
+  connection: Connection,
+  cursor: number,
+  expectedTool: "computer_observe" | "computer_act",
+  durationMs: number,
+): Promise<PerformanceSample["stages"] | undefined> {
+  const stages = await connection.telemetry.waitForOne(cursor, expectedTool);
+  const toolTotal = stages?.tool_total;
+  return stages === undefined ? undefined : {
+    ...stages,
+    transport_overhead: Math.max(0, durationMs - (toolTotal ?? durationMs)),
+  };
+}
+
+function measuredSample(
+  measured: TimedToolCall,
+  stages: PerformanceSample["stages"] | undefined,
+  outcome?: PerformanceOutcome,
+): IterationResult {
+  return {
+    durationMs: measured.durationMs,
+    outcome: outcome ?? (stages === undefined ? "telemetry_missing" : "passed"),
+    stages: stages ?? {},
+  };
+}
+
+function preparationFailureSample(startedAt: number): IterationResult {
+  return {
+    durationMs: Math.ceil(Math.max(0, performance.now() - startedAt)),
+    outcome: "fixture_unavailable",
+    stages: {},
+  };
+}
+
+function validObservePerformanceContract(
+  result: CallToolResult,
+  windowRef: string,
+  visual: boolean,
+): boolean {
+  const state = structuredIfPresent(result);
+  const screenshot = state?.screenshot;
+  return state !== undefined &&
+    state.target?.kind === "window" &&
+    state.target.window_ref === windowRef &&
+    (!visual || (
+      typeof screenshot?.width === "number" && Number.isFinite(screenshot.width) &&
+      screenshot.width > 0 &&
+      typeof screenshot.height === "number" && Number.isFinite(screenshot.height) &&
+      screenshot.height > 0
+    )) &&
+    validFixtureObserve(result, visual);
+}
+
+function validSemanticPerformanceContract(
+  result: CallToolResult,
+  groundingSnapshot: string,
+  nonce: string,
+): boolean {
+  const state = structuredIfPresent(result);
+  const matchingValues = state?.elements?.filter((element) => element.value === nonce) ?? [];
+  return state !== undefined &&
+    typeof state.snapshot_id === "string" &&
+    state.snapshot_id !== groundingSnapshot &&
+    state.consumed_snapshot_id === groundingSnapshot &&
+    state.action_result?.status === "executed" &&
+    state.action_result.effect === "confirmed" &&
+    state.action_result.delivery === "background" &&
+    state.verification?.status === "satisfied" &&
+    state.observation_mode === "semantic" &&
+    state.visual_status === "not_requested" &&
+    !hasPng(result) &&
+    matchingValues.length === 1;
+}
+
+function validPixelPerformanceContract(
+  result: CallToolResult,
+  groundingSnapshot: string,
+): boolean {
+  const state = structuredIfPresent(result);
+  return state !== undefined &&
+    typeof state.snapshot_id === "string" &&
+    state.snapshot_id !== groundingSnapshot &&
+    state.consumed_snapshot_id === groundingSnapshot &&
+    state.action_result?.status === "executed" &&
+    state.action_result.delivery === "foreground" &&
+    state.observation_mode === "visual" &&
+    state.visual_status === "available" &&
+    hasPng(result);
 }
 
 function optionalSnapshot(result: CallToolResult | undefined): string | undefined {
@@ -156,91 +267,224 @@ async function attemptTool(operation: () => Promise<CallToolResult>): Promise<Ca
 async function performanceIteration(
   name: PerformanceScenarioName,
   index: number,
-  client: Connection["client"],
+  connection: Connection,
   fixture: FixtureProcess,
   windowRef: string,
   layout: FixtureLayout,
   sentinel: FocusSentinel,
   sentinelWindowRef: string,
 ): Promise<IterationResult> {
-  const initialState = await resetFixture(fixture.url);
+  const preparationStartedAt = performance.now();
+  let prepared: Awaited<ReturnType<typeof preparePerformanceScenario>>;
+  try {
+    prepared = await preparePerformanceScenario(name, {
+      readFixtureState: () => fixtureJson<HarnessState>(fixture.url, "/state"),
+      resetSentinelText: () => resetFocusSentinelText(sentinel),
+    });
+  } catch {
+    return preparationFailureSample(preparationStartedAt);
+  }
 
   if (name === "window_visual_observe" || name === "window_semantic_observe") {
     const includeScreenshot = name === "window_visual_observe";
-    const measured = await timedCall(() => callTool(client, "computer_observe", {
+    const cursor = connection.telemetry.cursor();
+    const measured = await timedCall(() => callTool(connection.client, "computer_observe", {
       target: { kind: "window", window_ref: windowRef },
       include_screenshot: includeScreenshot,
       elements: { max_elements: 150, max_depth: 12 },
     }));
-    const correctnessPassed = measured.result !== undefined &&
-      validFixtureObserve(measured.result, includeScreenshot);
-    return {
-      durationMs: measured.durationMs,
-      outcome: correctnessPassed ? "passed" : "oracle_mismatch",
-      stages: {},
-    };
+    const stages = await collectMeasuredStages(
+      connection,
+      cursor,
+      "computer_observe",
+      measured.durationMs,
+    );
+    const toolFailure = measuredToolFailure(measured);
+    if (toolFailure !== undefined) return measuredSample(measured, stages, toolFailure);
+    if (!("result" in measured) || !validObservePerformanceContract(
+      measured.result,
+      windowRef,
+      includeScreenshot,
+    )) {
+      return measuredSample(measured, stages, "contract_mismatch");
+    }
+    return measuredSample(measured, stages);
   }
 
   if (name === "semantic_action_next_state") {
-    const nativeInitialState = await resetFocusSentinelText(sentinel);
-    const grounded = await observeFixture(
-      client,
-      sentinelWindowRef,
-      true,
-      FOCUS_SENTINEL_TEXT_LABEL,
-    );
-    const text = requireElement(grounded, FOCUS_SENTINEL_TEXT_LABEL);
-    const groundingSnapshot = requireSnapshot(grounded);
-    const nonce = `ucu-perf-${index}-${Date.now()}`;
-    const measured = await timedCall(() => callTool(
-      client,
-      "computer_act",
-      buildSemanticSetValueRequest(groundingSnapshot, text.elementRef, nonce),
+    if (prepared.kind !== "semantic") return preparationFailureSample(preparationStartedAt);
+    const groundingCursor = connection.telemetry.cursor();
+    const groundedCall = await timedCall(() => callTool(
+      connection.client,
+      "computer_observe",
+      {
+        target: { kind: "window", window_ref: sentinelWindowRef },
+        include_screenshot: false,
+        elements: { query: FOCUS_SENTINEL_TEXT_LABEL, max_elements: 150, max_depth: 12 },
+      },
     ));
-    const oracle = measured.result?.isError === true
-      ? sentinel.state.current
-      : await waitForFocusSentinelText(sentinel, nonce).catch(() => sentinel.state.current);
-    const correctnessPassed = validEmptyTextGrounding(nativeInitialState, text) &&
-      measured.result !== undefined && validSemanticSetValueResult(measured.result, {
-        groundingSnapshot,
-        nonce,
-        oracleText: oracle.text,
-        oracleWriteCount: oracle.text_write_count,
-      });
-    return {
-      durationMs: measured.durationMs,
-      outcome: correctnessPassed ? "passed" : "oracle_mismatch",
-      stages: {},
-    };
+    const groundingStages = await connection.telemetry.waitForOne(
+      groundingCursor,
+      "computer_observe",
+    );
+    const groundingFailure = measuredToolFailure(groundedCall);
+    if (groundingFailure !== undefined) {
+      return measuredSample(groundedCall, {}, groundingFailure);
+    }
+    if (groundingStages === undefined) {
+      return measuredSample(groundedCall, {}, "telemetry_missing");
+    }
+    if (!("result" in groundedCall)) {
+      return measuredSample(groundedCall, {}, "contract_mismatch");
+    }
+    let text: ReturnType<typeof requireElement>;
+    let groundingSnapshot: string;
+    try {
+      const grounded = groundedCall.result;
+      const state = structuredIfPresent(grounded);
+      if (
+        state?.target?.kind !== "window" ||
+        state.target.window_ref !== sentinelWindowRef ||
+        state.observation_mode !== "semantic" ||
+        state.visual_status !== "not_requested" ||
+        hasPng(grounded)
+      ) throw new Error("semantic_grounding_contract_mismatch");
+      text = requireElement(grounded, FOCUS_SENTINEL_TEXT_LABEL);
+      groundingSnapshot = requireSnapshot(grounded);
+    } catch {
+      return measuredSample(groundedCall, {}, "contract_mismatch");
+    }
+    if (!validEmptyTextGrounding(prepared.sentinelState, text)) {
+      return preparationFailureSample(preparationStartedAt);
+    }
+    const nonce = `ucu-perf-${index}-${Date.now()}`;
+    const request = buildSemanticSetValueRequest(groundingSnapshot, text.elementRef, nonce);
+    const cursor = connection.telemetry.cursor();
+    const measured = await timedCall(() => callTool(
+      connection.client,
+      "computer_act",
+      request,
+    ));
+    const stages = await collectMeasuredStages(
+      connection,
+      cursor,
+      "computer_act",
+      measured.durationMs,
+    );
+    const toolFailure = measuredToolFailure(measured);
+    if (toolFailure !== undefined) return measuredSample(measured, stages, toolFailure);
+    if (!("result" in measured) || !validSemanticPerformanceContract(
+      measured.result,
+      groundingSnapshot,
+      nonce,
+    )) {
+      return measuredSample(measured, stages, "contract_mismatch");
+    }
+    let oracle;
+    try {
+      oracle = await waitForFocusSentinelText(sentinel, nonce);
+    } catch {
+      if (!sentinelAlive(sentinel)) {
+        return measuredSample(measured, stages, "fixture_unavailable");
+      }
+      oracle = sentinel.state.current;
+    }
+    if (
+      oracle.reset_generation !== prepared.sentinelState.reset_generation
+      || oracle.text !== nonce
+      || oracle.text_write_count !== 1
+    ) {
+      return measuredSample(measured, stages, "oracle_mismatch");
+    }
+    return measuredSample(measured, stages);
   }
 
-  const grounded = await observeFixture(client, windowRef, true);
-  const groundingSnapshot = requireSnapshot(grounded);
-  const point = fixedVisualPoint(layout, grounded, "double-target");
-  const measured = await timedCall(() => callTool(client, "computer_act", {
+  if (
+    prepared.kind !== "pixel"
+    || !Number.isSafeInteger(prepared.fixtureState.pixel_clicks)
+    || prepared.fixtureState.pixel_clicks < 0
+  ) {
+    return preparationFailureSample(preparationStartedAt);
+  }
+  const groundingCursor = connection.telemetry.cursor();
+  const groundedCall = await timedCall(() => callTool(
+    connection.client,
+    "computer_observe",
+    {
+      target: { kind: "window", window_ref: windowRef },
+      include_screenshot: true,
+      elements: { max_elements: 150, max_depth: 12 },
+    },
+  ));
+  const groundingStages = await connection.telemetry.waitForOne(
+    groundingCursor,
+    "computer_observe",
+  );
+  const groundingFailure = measuredToolFailure(groundedCall);
+  if (groundingFailure !== undefined) {
+    return measuredSample(groundedCall, {}, groundingFailure);
+  }
+  if (groundingStages === undefined) {
+    return measuredSample(groundedCall, {}, "telemetry_missing");
+  }
+  if (!("result" in groundedCall)) {
+    return measuredSample(groundedCall, {}, "contract_mismatch");
+  }
+  let groundingSnapshot: string;
+  let point: ReturnType<typeof fixedVisualPoint>;
+  try {
+    const grounded = groundedCall.result;
+    if (!validObservePerformanceContract(grounded, windowRef, true)) {
+      throw new Error("pixel_grounding_contract_mismatch");
+    }
+    groundingSnapshot = requireSnapshot(grounded);
+    point = fixedVisualPoint(layout, grounded, "double-target");
+  } catch {
+    return measuredSample(groundedCall, {}, "contract_mismatch");
+  }
+  const request = {
     snapshot_id: groundingSnapshot,
     action: { type: "click", ...point },
     delivery: "foreground",
     next_observation: { mode: "visual" },
-  }));
-  const oracle = await waitForState(
-    fixture.url,
-    (state) => state.pixel_clicks === initialState.pixel_clicks + 1 || measured.result?.isError === true,
-  ).catch(() => fixtureJson<HarnessState>(fixture.url, "/state"));
-  const correctnessPassed = measured.result !== undefined && validPixelActionResult(measured.result, {
+  } as const;
+  const cursor = connection.telemetry.cursor();
+  const measured = await timedCall(() => callTool(connection.client, "computer_act", request));
+  const stages = await collectMeasuredStages(
+    connection,
+    cursor,
+    "computer_act",
+    measured.durationMs,
+  );
+  const toolFailure = measuredToolFailure(measured);
+  if (toolFailure !== undefined) return measuredSample(measured, stages, toolFailure);
+  if (!("result" in measured) || !validPixelPerformanceContract(
+    measured.result,
     groundingSnapshot,
-    beforeClicks: initialState.pixel_clicks,
-    afterClicks: oracle.pixel_clicks,
-  });
-  return {
-    durationMs: measured.durationMs,
-    outcome: correctnessPassed ? "passed" : "oracle_mismatch",
-    stages: {},
-  };
+  )) {
+    return measuredSample(measured, stages, "contract_mismatch");
+  }
+  let oracle: HarnessState;
+  try {
+    oracle = await waitForState(
+      fixture.url,
+      (state) => state.pixel_clicks === prepared.fixtureState.pixel_clicks + 1,
+    );
+  } catch {
+    try {
+      oracle = await fixtureJson<HarnessState>(fixture.url, "/state");
+    } catch {
+      return measuredSample(measured, stages, "fixture_unavailable");
+    }
+  }
+  if (oracle.pixel_clicks !== prepared.fixtureState.pixel_clicks + 1) {
+    return measuredSample(measured, stages, "oracle_mismatch");
+  }
+  return measuredSample(measured, stages);
 }
 
 async function runPerformanceProfiles(
-  client: Connection["client"],
+  connection: Connection,
   fixture: FixtureProcess,
   windowRef: string,
   layout: FixtureLayout,
@@ -253,7 +497,7 @@ async function runPerformanceProfiles(
       const sample = await performanceIteration(
         name,
         index,
-        client,
+        connection,
         fixture,
         windowRef,
         layout,
@@ -262,7 +506,6 @@ async function runPerformanceProfiles(
       );
       if (index < 5) recorder.recordWarmup(name, sample);
       else recorder.recordMeasured(name, sample);
-      await fixtureJson<HarnessState>(fixture.url, "/state");
     }
   }
   return recorder.performance();
@@ -680,7 +923,7 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
       };
 
       performanceEvidence = await runPerformanceProfiles(
-        connection.client,
+        connection,
         fixture,
         windowRef,
         layout,

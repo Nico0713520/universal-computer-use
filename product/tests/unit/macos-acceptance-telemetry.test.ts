@@ -86,4 +86,30 @@ describe("macOS acceptance telemetry collector", () => {
     expect(projected).toEqual({ engine_execute: 4, tool_total: 9 });
     expect(JSON.stringify(projected)).not.toMatch(/private|snapshot|prompt|timestamp/);
   });
+
+  it("waits for a late cross-stream record without a fixed sleep", async () => {
+    const collector = new AcceptanceTelemetryCollector();
+    const cursor = collector.cursor();
+    const waiting = collector.waitForOne(cursor, "computer_observe", 100);
+    setImmediate(() => collector.ingest(record("computer_observe", { tool_total_ms: 4 })));
+
+    await expect(waiting).resolves.toEqual({ tool_total: 4 });
+  });
+
+  it("poisons correlation after a missing record until the collector is cleared", async () => {
+    const collector = new AcceptanceTelemetryCollector();
+    await expect(collector.waitForOne(collector.cursor(), "computer_observe", 1))
+      .resolves.toBeUndefined();
+
+    const poisonedCursor = collector.cursor();
+    collector.ingest(record("computer_observe", { tool_total_ms: 4 }));
+    await expect(collector.waitForOne(poisonedCursor, "computer_observe", 10))
+      .resolves.toBeUndefined();
+
+    collector.clear();
+    const recoveredCursor = collector.cursor();
+    collector.ingest(record("computer_observe", { tool_total_ms: 5 }));
+    await expect(collector.waitForOne(recoveredCursor, "computer_observe", 10))
+      .resolves.toEqual({ tool_total: 5 });
+  });
 });

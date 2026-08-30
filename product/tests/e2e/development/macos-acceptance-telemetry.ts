@@ -31,19 +31,21 @@ const READY_LINE = "computer-use-mcp: ready on stdio";
 
 export class AcceptanceTelemetryCollector {
   readonly #events: CollectedEvent[] = [];
+  readonly #listeners = new Set<() => void>();
   #pending = "";
+  #poisoned = false;
 
   ingest(chunk: string): void {
     this.#pending += chunk;
     const lines = this.#pending.split(/\r?\n/u);
     this.#pending = lines.pop() ?? "";
     for (const line of lines) {
-      if (line.length > MAX_JSONL_LINE_LENGTH) this.#events.push({ kind: "invalid" });
+      if (line.length > MAX_JSONL_LINE_LENGTH) this.#append({ kind: "invalid" });
       else this.#ingestLine(line);
     }
     if (this.#pending.length > MAX_JSONL_LINE_LENGTH) {
       this.#pending = "";
-      this.#events.push({ kind: "invalid" });
+      this.#append({ kind: "invalid" });
     }
   }
 
@@ -55,7 +57,12 @@ export class AcceptanceTelemetryCollector {
     cursor: number,
     expectedTool: CollectedRecord["tool"],
   ): AcceptanceTelemetryStages | undefined {
-    if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > this.#events.length) {
+    if (
+      this.#poisoned ||
+      !Number.isSafeInteger(cursor) ||
+      cursor < 0 ||
+      cursor > this.#events.length
+    ) {
       return undefined;
     }
     const candidates = this.#events.slice(cursor);
@@ -68,9 +75,55 @@ export class AcceptanceTelemetryCollector {
     return { ...candidate.stages };
   }
 
+  async waitForOne(
+    cursor: number,
+    expectedTool: CollectedRecord["tool"],
+    timeoutMs = 250,
+  ): Promise<AcceptanceTelemetryStages | undefined> {
+    if (
+      this.#poisoned ||
+      !Number.isSafeInteger(cursor) ||
+      cursor < 0 ||
+      !Number.isFinite(timeoutMs) ||
+      timeoutMs < 0
+    ) return undefined;
+
+    if (this.#events.length <= cursor) {
+      const observed = await new Promise<boolean>((resolve) => {
+        let settled = false;
+        const finish = (value: boolean): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          this.#listeners.delete(onEvent);
+          resolve(value);
+        };
+        const onEvent = (): void => finish(true);
+        const timeout = setTimeout(() => finish(false), timeoutMs);
+        this.#listeners.add(onEvent);
+        if (this.#events.length > cursor) onEvent();
+      });
+      if (!observed) {
+        this.#poisoned = true;
+        return undefined;
+      }
+    }
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    return this.consumeOne(cursor, expectedTool);
+  }
+
   clear(): void {
     this.#pending = "";
     this.#events.length = 0;
+    this.#poisoned = false;
+    for (const listener of this.#listeners) listener();
+    this.#listeners.clear();
+  }
+
+  #append(event: CollectedEvent): void {
+    this.#events.push(event);
+    for (const listener of [...this.#listeners]) listener();
   }
 
   #ingestLine(line: string): void {
@@ -79,25 +132,25 @@ export class AcceptanceTelemetryCollector {
     try {
       const parsed = JSON.parse(line) as unknown;
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        this.#events.push({ kind: "invalid" });
+        this.#append({ kind: "invalid" });
         return;
       }
       value = parsed as Record<string, unknown>;
     } catch {
-      this.#events.push({ kind: "invalid" });
+      this.#append({ kind: "invalid" });
       return;
     }
     if (value.tool_name !== "computer_observe" && value.tool_name !== "computer_act") {
-      this.#events.push({ kind: "invalid" });
+      this.#append({ kind: "invalid" });
       return;
     }
     if (typeof value.timings !== "object" || value.timings === null || Array.isArray(value.timings)) {
-      this.#events.push({ kind: "invalid" });
+      this.#append({ kind: "invalid" });
       return;
     }
     const input = value.timings as Record<string, unknown>;
     if (Object.keys(input).some((field) => !TIMING_INPUT_FIELDS.has(field))) {
-      this.#events.push({ kind: "invalid" });
+      this.#append({ kind: "invalid" });
       return;
     }
     const stages: Partial<Record<AcceptanceTelemetryStageName, number>> = {};
@@ -105,15 +158,15 @@ export class AcceptanceTelemetryCollector {
       const timing = input[source];
       if (timing === undefined) continue;
       if (typeof timing !== "number" || !Number.isFinite(timing) || timing < 0) {
-        this.#events.push({ kind: "invalid" });
+        this.#append({ kind: "invalid" });
         return;
       }
       stages[target] = timing;
     }
     if (Object.keys(stages).length === 0) {
-      this.#events.push({ kind: "invalid" });
+      this.#append({ kind: "invalid" });
       return;
     }
-    this.#events.push({ kind: "timing", tool: value.tool_name, stages: Object.freeze(stages) });
+    this.#append({ kind: "timing", tool: value.tool_name, stages: Object.freeze(stages) });
   }
 }
