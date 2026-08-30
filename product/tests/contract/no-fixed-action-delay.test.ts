@@ -66,6 +66,10 @@ describe("no fixed action delay contract", () => {
         text: "function cancellableWait(waitMs: number) { setTimeout(() => undefined, waitMs); }",
       },
       {
+        path: "src/engine/runtime-startup.ts",
+        text: "function boundedRuntimeStartupWait(delayMs: number) { setTimeout(() => undefined, delayMs); }",
+      },
+      {
         path: "src/cli/process-runner.ts",
         text: [
           "const TERMINATION_GRACE_MS = 250;",
@@ -85,6 +89,12 @@ describe("no fixed action delay contract", () => {
       text: "function withTimeout(timeoutMs: number) { setTimeout(() => undefined, 3000); }",
     }])).toEqual([
       { path: "src/core/observe.ts", line: 1, callee: "setTimeout" },
+    ]);
+    expect(scanDelayCalls([{
+      path: "src/engine/runtime-startup.ts",
+      text: "function boundedRuntimeStartupWait(delayMs: number) { setTimeout(() => undefined, 3000); }",
+    }])).toEqual([
+      { path: "src/engine/runtime-startup.ts", line: 1, callee: "setTimeout" },
     ]);
   });
 

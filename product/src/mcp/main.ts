@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
 import type { Readable, Writable } from "node:stream";
@@ -11,8 +12,13 @@ import { ComputerUseRuntime } from "../core/runtime.js";
 import { CuaEngine } from "../engine/cua.js";
 import { loadEngineLock } from "../engine/lock.js";
 import type { EnginePort } from "../engine/port.js";
+import {
+  boundedRuntimeStartupWait,
+  createRuntimeConnector,
+} from "../engine/runtime-startup.js";
 import { ComputerUseError } from "../errors.js";
 import { createMetadataLogger, type MetadataLogger } from "../logging/logger.js";
+import { nodeProcessRunner } from "../cli/process-runner.js";
 import { createComputerUseServer } from "./server.js";
 
 type StdioOptions = Readonly<{
@@ -27,6 +33,15 @@ export function createProductionRuntime(
 ): ComputerUseRuntime {
   return new ComputerUseRuntime(engine, undefined, undefined, { logger });
 }
+
+export const connectProductionEngine = createRuntimeConnector({
+  platform: process.platform,
+  connect: (lock) => CuaEngine.connect(lock),
+  access,
+  runner: nodeProcessRunner,
+  wait: boundedRuntimeStartupWait,
+  now: Date.now,
+});
 
 export async function runStdioServer(
   runtime: ComputerUseRuntime,
@@ -93,10 +108,22 @@ export async function runStdioServer(
   await done;
 }
 
-async function runDefaultServer(): Promise<void> {
-  const lock = await loadEngineLock();
-  const engine = await CuaEngine.connect(lock);
-  await runStdioServer(createProductionRuntime(engine));
+type DefaultServerDependencies = Readonly<{
+  loadLock: typeof loadEngineLock;
+  connectEngine: typeof connectProductionEngine;
+  runServer: typeof runStdioServer;
+}>;
+
+export async function runDefaultServer(
+  dependencies: DefaultServerDependencies = {
+    loadLock: loadEngineLock,
+    connectEngine: connectProductionEngine,
+    runServer: runStdioServer,
+  },
+): Promise<void> {
+  const lock = await dependencies.loadLock();
+  const engine = await dependencies.connectEngine(lock);
+  await dependencies.runServer(createProductionRuntime(engine));
 }
 
 function isDirectEntryPoint(): boolean {

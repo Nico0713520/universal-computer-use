@@ -18,6 +18,7 @@ const ALLOWED = new Set([
   "src/core/verifier.ts|cancellableSleep|setTimeout|ms",
   "src/core/verifier.ts|verifyWindowState|sleep|delay",
   "src/engine/cua.ts|cancellableWait|setTimeout|waitMs",
+  "src/engine/runtime-startup.ts|boundedRuntimeStartupWait|setTimeout|delayMs",
   "src/cli/process-runner.ts|run|setTimeout|options.timeoutMs",
   "src/cli/process-runner.ts|run|setTimeout|TERMINATION_GRACE_MS",
 ]);

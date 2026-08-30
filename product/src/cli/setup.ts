@@ -10,6 +10,7 @@ import {
   type EngineLock,
   type EnginePlatform,
 } from "../engine/lock.js";
+import { verifyMacRuntimeSignature } from "../engine/runtime-startup.js";
 import { ComputerUseError } from "../errors.js";
 import type { DoctorReport } from "./doctor.js";
 import type { Downloader, ProcessRunner, ProcessResult } from "./process-runner.js";
@@ -95,56 +96,6 @@ async function requireSuccess(
     throw new Error(`${label} failed: ${result.stderr.trim() || result.stdout.trim()}`);
   }
   return result;
-}
-
-async function verifyMacSignature(
-  lock: EngineLock,
-  runner: ProcessRunner,
-  appPath: string,
-): Promise<void> {
-  await requireSuccess(
-    await runner.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", appPath], {
-      timeoutMs: 30_000,
-    }),
-    "codesign verification",
-  );
-  await requireSuccess(
-    await runner.run("/usr/sbin/spctl", ["--assess", "--type", "execute", appPath], {
-      timeoutMs: 30_000,
-    }),
-    "Gatekeeper assessment",
-  );
-
-  const signer = lock.platforms.macos.signer;
-  if (signer.kind !== "apple") throw new Error("invalid macOS signer lock");
-  if (signer.team_id === null && signer.bundle_id === null && signer.designated_requirement_sha256 === null) {
-    return;
-  }
-  const details = await requireSuccess(
-    await runner.run("/usr/bin/codesign", ["-dv", "--verbose=4", appPath], {
-      timeoutMs: 30_000,
-    }),
-    "codesign identity inspection",
-  );
-  const text = `${details.stdout}\n${details.stderr}`;
-  if (signer.team_id !== null && !text.split(/\r?\n/).includes(`TeamIdentifier=${signer.team_id}`)) {
-    throw new Error("macOS signer TeamIdentifier mismatch");
-  }
-  if (signer.bundle_id !== null && !text.split(/\r?\n/).includes(`Identifier=${signer.bundle_id}`)) {
-    throw new Error("macOS signer bundle identifier mismatch");
-  }
-  if (signer.designated_requirement_sha256 !== null) {
-    const requirement = await requireSuccess(
-      await runner.run("/usr/bin/codesign", ["-dr", "-", appPath], { timeoutMs: 30_000 }),
-      "designated requirement inspection",
-    );
-    const actual = createHash("sha256")
-      .update(`${requirement.stdout}\n${requirement.stderr}`.trim())
-      .digest("hex");
-    if (actual !== signer.designated_requirement_sha256) {
-      throw new Error("macOS designated requirement mismatch");
-    }
-  }
 }
 
 type WindowsSignature = {
@@ -240,7 +191,7 @@ export async function runSetup(
       const executablePath =
         dependencies.macExecutablePath ??
         "/Applications/CuaDriver.app/Contents/MacOS/cua-driver";
-      await verifyMacSignature(dependencies.lock, dependencies.runner, appPath);
+      await verifyMacRuntimeSignature(dependencies.lock, dependencies.runner, appPath);
       await requireSuccess(
         await dependencies.runner.run("/usr/bin/open", ["-n", "-g", appPath, "--args", "serve"], {
           timeoutMs: 30_000,

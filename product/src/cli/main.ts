@@ -8,7 +8,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { CuaEngine } from "../engine/cua.js";
 import { loadEngineLock, type EngineLock } from "../engine/lock.js";
 import { ComputerUseError, ERROR_CODES } from "../errors.js";
-import { createProductionRuntime, runStdioServer } from "../mcp/main.js";
+import {
+  connectProductionEngine,
+  createProductionRuntime,
+  runStdioServer,
+} from "../mcp/main.js";
 import { renderConfig, type ConfigClient } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { probeMacInteractiveSession } from "./interactive-session.js";
@@ -31,6 +35,7 @@ type CliDependencies = Readonly<{
   downloader: Downloader;
   runner: ProcessRunner;
   connectEngine: typeof CuaEngine.connect;
+  connectMcpEngine?: typeof CuaEngine.connect;
   nodeExecutablePath: string;
   mcpScriptPath: string;
   productOwnedPaths: readonly string[];
@@ -57,6 +62,7 @@ const defaultDependencies: CliDependencies = {
   downloader: fetchDownloader,
   runner: nodeProcessRunner,
   connectEngine: CuaEngine.connect,
+  connectMcpEngine: connectProductionEngine,
   nodeExecutablePath: process.execPath,
   mcpScriptPath,
   // Task 9 owns host-specific Skill links. Until it creates a product-owned
@@ -185,7 +191,7 @@ export async function runCli(
   if (command === "mcp") {
     requireOnly(args, []);
     const lock = await dependencies.loadLock();
-    const engine = await dependencies.connectEngine(lock);
+    const engine = await (dependencies.connectMcpEngine ?? dependencies.connectEngine)(lock);
     await dependencies.runMcpServer(createProductionRuntime(engine));
     return 0;
   }

@@ -17,6 +17,10 @@ describe("computer-use mcp", () => {
       return true;
     });
     const engine = new FakeEngine();
+    const diagnosticConnect = vi.fn(async () => {
+      throw new Error("diagnostic connector must not serve MCP");
+    });
+    const startupConnect = vi.fn(async () => engine as unknown as CuaEngine);
 
     try {
       const exitCode = await runCli(
@@ -29,7 +33,8 @@ describe("computer-use mcp", () => {
           loadLock: loadEngineLock,
           downloader: { async download() {} },
           runner: { async run() { return { code: 0, stdout: "", stderr: "" }; } },
-          connectEngine: async () => engine as unknown as CuaEngine,
+          connectEngine: diagnosticConnect,
+          connectMcpEngine: startupConnect,
           nodeExecutablePath: process.execPath,
           mcpScriptPath: "/fixture/dist/mcp/main.js",
           productOwnedPaths: [],
@@ -42,6 +47,8 @@ describe("computer-use mcp", () => {
       );
 
       expect(exitCode).toBe(0);
+      expect(startupConnect).toHaveBeenCalledOnce();
+      expect(diagnosticConnect).not.toHaveBeenCalled();
       expect(stdout).toEqual([]);
       expect(cliStderr).toEqual([]);
       const logLines = processStderr.join("").trim().split("\n").filter(Boolean);
