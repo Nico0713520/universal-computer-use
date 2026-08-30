@@ -108,11 +108,11 @@ function validDoctor(value, lockedVersion) {
     Number.isInteger(value.screenshot?.height) && value.screenshot.height > 0;
 }
 
-async function validEvidence(value, lockedVersion) {
+async function validEvidence(value, lockedVersion, productVersion) {
   if (!(value?.schema_version === 3 &&
     value.evidence_type === "computer-use-macos-development-acceptance" &&
     (value.status === "passed" || value.status === "degraded" || value.status === "failed") &&
-    value.metadata?.product_version === "0.2.3" &&
+    value.metadata?.product_version === productVersion &&
     value.metadata?.protocol_version === "1.2.0" &&
     value.metadata?.engine_version === lockedVersion &&
     typeof value.cleanup_passed === "boolean")) return false;
@@ -214,6 +214,9 @@ async function main() {
   if (sourceCheckout.some((present) => !present)) {
     throw new AcceptanceFailure("acceptance_preflight_failed:source_checkout_required");
   }
+  const productVersion = JSON.parse(
+    await readFile(join(PRODUCT_DIR, "package.json"), "utf8"),
+  ).version;
 
   const testModeRequested = process.env.CUA_ACCEPTANCE_TEST_MODE === "1" ||
     TEST_KEYS.some((key) => process.env[key] !== undefined);
@@ -381,7 +384,7 @@ async function main() {
     if (evidence.cleanup_passed !== true) {
       throw new AcceptanceFailure("acceptance_failed:cleanup_failed");
     }
-    if (!(await validEvidence(evidence, lock.version))) {
+    if (!(await validEvidence(evidence, lock.version, productVersion))) {
       throw new AcceptanceFailure("acceptance_failed:evidence_missing_or_invalid");
     }
 

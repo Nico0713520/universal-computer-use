@@ -14,7 +14,7 @@
       "additionalProperties": false,
       "required": ["product_version", "protocol_version", "engine_version", "macos_version", "architecture"],
       "properties": {
-        "product_version": { "const": "0.2.3" },
+        "product_version": { "const": "0.2.4" },
         "protocol_version": { "const": "1.2.0" },
         "engine_version": { "const": "0.22.2" },
         "macos_version": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){0,3}$", "maxLength": 32 },

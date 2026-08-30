@@ -217,8 +217,16 @@ describe("named-host development evidence", () => {
       expect(runbook).toContain("plugin confirmation count is zero");
       expect(runbook).toContain("host approval");
       expect(runbook).toContain("CUA_HOST_DEVELOPMENT_EVIDENCE_FILES");
-      expect(runbook).toContain("development-passed is not verified");
+      expect(runbook).toContain("`development-passed` is not `verified`");
       expect(runbook).toContain("cannot satisfy release verification");
+    }
+
+    for (const host of ["codex", "hanaagent", "workbuddy"] as const) {
+      const runbook = await readFile(new URL(`${host}.md`, hostDirectory), "utf8");
+      expect(runbook).toContain("quit only the installed CuaDriver");
+      expect(runbook).toContain("without a fixed sleep");
+      expect(runbook).toMatch(/bridge script|shell-driven JSON-RPC/);
+      expect(runbook).toContain("does not count as direct");
     }
 
     for (const host of ["hanaagent", "workbuddy"] as const) {

@@ -30,6 +30,12 @@ The MCP server exposes only `computer_observe` and `computer_act`. The plugin ne
 
 If a host sees text but not the screenshot, it does not support MCP `ImageContent` on this route. Keep it `experimental` or `not-compatible`; do not add a second vision model inside the plugin.
 
+## macOS host starts before CuaDriver
+
+Product 0.2.4 makes one bounded recovery attempt only when the first pre-session connection returns `runtime_unavailable`. It verifies the installed `/Applications/CuaDriver.app`, starts its `serve` process, and exits readiness polling on the first successful connection. A missing app returns `runtime_missing`; a signing mismatch returns `engine_version_mismatch`; a failed start or 10-second deadline returns `runtime_unavailable`. This startup path never receives or replays an MCP tool request. Run `computer-use doctor --json` separately when recovery fails; doctor diagnoses and performs no startup repair.
+
+After adding the MCP server to a host, restart the host and begin a new conversation. A conversation whose tool inventory was frozen before registration will not gain the two tools dynamically. Shell-driven JSON-RPC can diagnose transport behavior but is not direct-host compatibility evidence.
+
 ## Slow or inaccurate loops
 
 - Measure a native host connection, not a temporary shell bridge. The MCP server must remain one long-running stdio process because snapshot state is process-local. Do not add a fixed post-action sleep: `computer_act` already captures and returns the next screenshot as soon as the engine call completes.

@@ -1,7 +1,7 @@
 # Universal Computer Use macOS Host Preview Design
 
-**Status:** Written review requested  
-**Target:** `0.2.4` developer preview  
+**Status:** Written review requested
+**Target:** `0.2.4` developer preview
 **Platform:** macOS 14+ on Apple silicon or Intel x64
 
 ## 1. Goal
@@ -192,4 +192,3 @@ The phase is complete only when:
 - screenshot deltas or new image codecs;
 - arbitrary action batching;
 - a proprietary native Runtime, CuaDriver rebranding, or permission-identity replacement.
-

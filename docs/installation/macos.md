@@ -36,6 +36,8 @@ After installation, setup verifies `/Applications/CuaDriver.app` with `codesign 
 
 The plugin does not modify Codex, Kimi, or another host's configuration automatically.
 
+After installation, product 0.2.4 can recover an installed but stopped CuaDriver when a host starts the MCP process. Recovery happens before the MCP session and any snapshot exist: it verifies the locked app signature, starts `serve`, and polls readiness until the first successful connection or a 10-second hard deadline. It never replays an observation or GUI action. `computer-use doctor --json` remains side-effect-free and does not start the Runtime.
+
 ## Screen Recording and Accessibility
 
 macOS requires both permissions for the signed `CuaDriver.app` identity:

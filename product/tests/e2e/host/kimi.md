@@ -61,4 +61,4 @@ CUA_HOST_DEVELOPMENT_EVIDENCE_FILES=/absolute/private/evidence/kimi-development.
   npx --yes pnpm@9.0.4 exec vitest run tests/contract/host-development-evidence.test.ts
 ```
 
-`development-passed is not verified` and cannot satisfy release verification. It must not update release evidence, engine eligibility, or the production compatibility table.
+`development-passed` is not `verified` and cannot satisfy release verification. It must not update release evidence, engine eligibility, or the production compatibility table.

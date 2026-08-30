@@ -17,6 +17,8 @@ Stop if build, setup, or doctor fails. Copy the generated generic MCP object int
 
 After restart, record the exact HanaAgent version and host-reported model ID. In its tool view, confirm that the complete server inventory is exactly `computer_observe` and `computer_act`. A bridge script or shell-driven JSON-RPC session is useful for diagnosis but does not count as direct named-host evidence.
 
+Before the two GUI tasks, quit only the installed CuaDriver through the normal macOS app lifecycle, then start a new HanaAgent conversation. Confirm that MCP startup makes the same signed CuaDriver ready without rerunning setup and without a fixed sleep. Stop this check if macOS asks for missing Screen Recording or Accessibility permission; grant the permission manually, restart CuaDriver and HanaAgent, and record the interruption truthfully. Startup recovery happens before the MCP session and cannot count as a replayed GUI action.
+
 ## Two direct-host tasks
 
 Run both tasks with the same host-reported model:
@@ -35,4 +37,4 @@ CUA_HOST_DEVELOPMENT_EVIDENCE_FILES=/absolute/private/evidence/hanaagent-develop
   npx --yes pnpm@9.0.4 exec vitest run tests/contract/host-development-evidence.test.ts
 ```
 
-`development-passed is not verified` and cannot satisfy release verification. It must not update release evidence, engine eligibility, or the production compatibility table.
+`development-passed` is not `verified` and cannot satisfy release verification. It must not update release evidence, engine eligibility, or the production compatibility table.

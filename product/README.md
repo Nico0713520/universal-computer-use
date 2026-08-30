@@ -1,6 +1,6 @@
 # Universal Computer Use Plugin
 
-A lightweight local MCP bridge that lets a compatible multimodal agent observe and operate the current desktop. The host agent supplies the vision model and decision loop; product `0.2.3` and protocol `1.2.0` supply the validation, lifecycle, and execution bridge.
+A lightweight local MCP bridge that lets a compatible multimodal agent observe and operate the current desktop. The host agent supplies the vision model and decision loop; product `0.2.4` and protocol `1.2.0` supply the validation, lifecycle, and execution bridge.
 
 Cua Driver is a separate MIT-licensed runtime dependency. Its Rust and native platform code are not bundled as product source, modified, or re-signed by this project. The exact reviewed runtime and installer artifacts are pinned in `engine.lock.json`.
 
@@ -30,6 +30,20 @@ node dist/cli/main.js config --client generic
 
 Use `config --client codex` or `config --client kimi` for the documented host-specific status and configuration. WorkBuddy and DeepSeek Harness adapters are included as experimental declarations; they are not represented as verified integrations.
 
+## Local developer-preview package
+
+The npm name is reserved but not published. Create and install an exact local preview without changing the release gate:
+
+```bash
+npm pack
+npm install --global ./universal-computer-use-plugin-0.2.4.tgz
+computer-use setup --development
+computer-use doctor --json
+computer-use config --client generic
+```
+
+Publishing that artifact externally requires a separate explicit release action. Normal `computer-use setup` remains blocked while the locked engine is development-only.
+
 ## Development checks
 
 ```bash
@@ -43,7 +57,7 @@ npm pack --dry-run --json
 
 ## Current platform scope
 
-- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background semantic delivery, background window-pixel routing with explicit foreground escalation, bounded verification, safe app launch and the schema-v3 correctness/performance evidence harness are implemented. On the current development Mac, three consecutive covered-window profiles during concurrent WorkBuddy activity each achieved 30/30 background pixel effects: p50 266–268 ms and p95 285–373 ms. The paired semantic action profile stayed 30/30 at p50 1,149–1,157 ms and p95 1,172–1,197 ms. These are local development measurements, not release evidence; the full three-run lane remains incomplete because this long-lived test account contains pre-v0.2.3 TextEdit artifacts, so the product remains Developer Preview.
+- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background semantic delivery, background window-pixel routing with explicit foreground escalation, bounded verification, safe app launch and the schema-v3 correctness/performance evidence harness are implemented. Product 0.2.4 also verifies and starts an already-installed stopped CuaDriver before opening the MCP session, using readiness polling with a 10-second hard deadline and no replayed GUI call. On the current development Mac, three consecutive covered-window profiles during concurrent WorkBuddy activity each achieved 30/30 background pixel effects: p50 266–268 ms and p95 285–373 ms. The paired semantic action profile stayed 30/30 at p50 1,149–1,157 ms and p95 1,172–1,197 ms. These are local development measurements, not release evidence; the full three-run lane remains incomplete because this long-lived test account contains pre-v0.2.3 TextEdit artifacts, so the product remains Developer Preview.
 - Windows with Cua 0.22.2: primary-desktop screenshot/input compatibility remains implemented. The pinned upstream `list_apps`, `list_windows`, and `get_window_state` entries are stubs, so window precision/background mode is intentionally not advertised as available. Windows 100%/125%/150% DPI evidence remains a release blocker.
 
-The `0.2.3` product still locks Cua `0.22.2`; both platforms are development-eligible but not release-eligible. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. See `../docs/troubleshooting.md` for permissions, evidence, and release details.
+The `0.2.4` product still locks Cua `0.22.2`; both platforms are development-eligible but not release-eligible. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. See `../docs/troubleshooting.md` for permissions, evidence, and release details.

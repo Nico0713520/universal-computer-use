@@ -63,12 +63,12 @@ describe("upstream source map", () => {
     );
   });
 
-  it("keeps current docs on product 0.2.3 and protocol 1.2 adaptive behavior", async () => {
+  it("keeps current docs on product 0.2.4 and protocol 1.2 adaptive behavior", async () => {
     const docs = await Promise.all(currentDocUrls.map((url) => readFile(url, "utf8")));
     const combined = docs.join("\n");
 
     for (const doc of docs) {
-      expect(doc).toContain("0.2.3");
+      expect(doc).toContain("0.2.4");
       expect(doc).toContain("1.2.0");
     }
     expect(combined).toContain("next_observation");

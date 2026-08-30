@@ -32,7 +32,7 @@ macOS / Windows desktop
 
 The adapter exposes one UCU session to the host but keeps Cua's mutually exclusive desktop- and window-capture scopes in separate internal sessions. Desktop calls stay on the desktop scope; exact window screenshots and background element actions stay on the window scope.
 
-Product `0.2.3` uses protocol `1.2.0` and keeps the public MCP surface at exactly two tools:
+Product `0.2.4` uses protocol `1.2.0` and keeps the public MCP surface at exactly two tools:
 
 - `computer_observe` returns a one-use `snapshot_id` for the desktop or an exact window, with a PNG when a visual frame is requested and bounded elements for window observations.
 - `computer_act` validates and consumes that snapshot, executes exactly one action, and returns the fresh target state plus a new snapshot ID.
@@ -58,9 +58,22 @@ Development setup installs only the exact checksummed scripts and Cua Runtime ve
 
 The npm package name is reserved in the project metadata but is not published yet. Ordinary `setup`, Beta verification, and Stable verification deliberately fail closed until the engine, platform, host-loop, and soak evidence gates are complete.
 
+To share the explicit 0.2.4 developer preview without publishing it, build a local npm tarball from `product`, install that exact file on the test Mac, and keep the development flag visible:
+
+```bash
+cd product
+npm pack
+npm install --global ./universal-computer-use-plugin-0.2.4.tgz
+computer-use setup --development
+computer-use doctor --json
+computer-use config --client generic
+```
+
+External npm or GitHub prerelease publication is a separate release action. The tarball does not include Cua native binaries and does not make the locked Runtime release-eligible.
+
 ## Current status
 
-The v0.2.3 developer preview now measures the macOS path without forcing the target window to the foreground. Schema-v3 evidence records exact correctness counts, classified failures and redacted per-stage aggregates for four fixed 5-warm-up/30-sample profiles; a fatal harness failure writes a separate redacted diagnostic instead of a partial or falsely passing report. On this Mac, three consecutive covered-window profiles during concurrent WorkBuddy activity each produced 30/30 background pixel effects, with p50 266–268 ms and p95 285–373 ms; semantic background actions also stayed 30/30. Deterministic contracts are green. These are local development measurements, not promotion evidence: the complete three-run lane is still pending on a clean macOS account because old TextEdit artifacts from pre-v0.2.3 diagnostics make the real-app cleanup lane non-independent.
+The v0.2.4 developer preview adds bounded macOS Runtime recovery before the MCP session exists: when the locked CuaDriver app is installed but its daemon is stopped, the MCP entrypoint verifies the installed signature, starts `serve`, and polls readiness only until the first successful connection or a 10-second hard deadline. It never replays an observation or action, and `doctor` remains diagnostic-only. The prior schema-v3 measurements remain the current local performance evidence: three consecutive covered-window profiles during concurrent WorkBuddy activity each produced 30/30 background pixel effects, with p50 266–268 ms and p95 285–373 ms; semantic background actions also stayed 30/30. These are local development measurements, not promotion evidence: the complete three-run lane is still pending on a clean macOS account because old TextEdit artifacts from pre-v0.2.3 diagnostics make the real-app cleanup lane non-independent.
 
 | Capability | Code | Contract | macOS real | Named host | Release |
 |---|---|---|---|---|---|

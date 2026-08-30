@@ -47,6 +47,8 @@ node dist/cli/main.js config --client codex
 
 Stop if build, setup, or doctor fails. Register the absolute Node and MCP script paths printed by the config command, then restart Codex; registering during an active conversation is insufficient. In the restarted host, record the exact Codex version and host-reported model ID, and confirm the complete tool inventory is exactly `computer_observe` and `computer_act`.
 
+Before the two GUI tasks, quit only the installed CuaDriver through the normal macOS app lifecycle, then start a new Codex conversation. Confirm that MCP startup makes the same signed CuaDriver ready without rerunning setup and without a fixed sleep. Stop this check if macOS asks for missing Screen Recording or Accessibility permission; grant the permission manually, restart CuaDriver and Codex, and record the interruption truthfully. Startup recovery happens before the MCP session and cannot count as a replayed GUI action. A bridge script or shell-driven JSON-RPC session remains diagnostic-only and does not count as direct-host evidence.
+
 Run both tasks with the same host-reported model:
 
 1. Ask the Agent to discover and lock the Calculator exact window, use exact-window mode, calculate `37 × 19`, visibly confirm `703`, and stop.
@@ -61,4 +63,4 @@ CUA_HOST_DEVELOPMENT_EVIDENCE_FILES=/absolute/private/evidence/codex-development
   npx --yes pnpm@9.0.4 exec vitest run tests/contract/host-development-evidence.test.ts
 ```
 
-`development-passed is not verified` and cannot satisfy release verification. It must not update release evidence, engine eligibility, or the production compatibility table.
+`development-passed` is not `verified` and cannot satisfy release verification. It must not update release evidence, engine eligibility, or the production compatibility table.
