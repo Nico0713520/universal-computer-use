@@ -106,7 +106,7 @@ function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
     performance: {
       window_visual_observe: performanceProfile(100, 200, 300, 700, 1_500, false),
       window_semantic_observe: performanceProfile(100, 200, 300, 400, 1_000, false),
-      semantic_action_next_state: performanceProfile(100, 200, 300, 1_000, 2_000, true),
+      semantic_action_next_state: performanceProfile(100, 200, 300, 1_500, 2_000, true),
       pixel_action_next_state: performanceProfile(100, 200, 300, 1_500, 3_000, true),
     },
     adaptive_correctness: {

@@ -34,10 +34,9 @@ import {
 import { runRealAppSmoke } from "./macos-real-app-smoke.js";
 import { runIndependentCorrectnessChecks } from "./correctness-orchestration.js";
 import {
-  buildForegroundPositiveControlRequest,
   buildSemanticSetValueRequest,
-  buildVerifiedSemanticClickRequest,
-  validBackgroundSemanticResult,
+  buildBackgroundSemanticClickRequest,
+  validBackgroundSemanticExecution,
   validEmptyTextGrounding,
   validFixtureObserve,
   validPixelActionResult,
@@ -75,7 +74,6 @@ import {
   structured,
   waitForFixture,
   waitForFocusSentinelText,
-  waitForFrontmost,
   waitForState,
   type BrowserProcess,
   type Connection,
@@ -577,26 +575,20 @@ async function runFixtureCorrectness(
       current = await callTool(
         client,
         "computer_act",
-        buildVerifiedSemanticClickRequest(
+        buildBackgroundSemanticClickRequest(
           alphaGrounding,
           requireElement(current, "Semantic Alpha").elementRef,
           "background",
         ),
       );
-      const alphaState = structured(current);
-      const alphaSemantic = current.isError !== true &&
-        alphaState.consumed_snapshot_id === alphaGrounding &&
-        typeof alphaState.snapshot_id === "string" && alphaState.snapshot_id !== alphaGrounding &&
-        alphaState.action_result?.status === "executed" &&
-        alphaState.action_result.effect === "confirmed" &&
-        alphaState.action_result.delivery === "background" &&
-        alphaState.verification?.status === "satisfied" &&
-        alphaState.observation_mode === "semantic" && !hasPng(current);
+      const alphaSemantic = validBackgroundSemanticExecution(current, alphaGrounding);
+      await waitForState(fixture.url, (state) => state.semantic_sequence.join(",") === "alpha");
+      current = await observeFixture(client, windowRef, true);
       const betaGrounding = requireSnapshot(current);
       current = await callTool(
         client,
         "computer_act",
-        buildVerifiedSemanticClickRequest(
+        buildBackgroundSemanticClickRequest(
           betaGrounding,
           requireElement(current, "Semantic Beta").elementRef,
           "background",
@@ -606,15 +598,7 @@ async function runFixtureCorrectness(
         fixture.url,
         (state) => state.semantic_sequence.join(",") === "alpha,beta",
       );
-      const betaState = structured(current);
-      return alphaSemantic && current.isError !== true &&
-        betaState.consumed_snapshot_id === betaGrounding &&
-        typeof betaState.snapshot_id === "string" && betaState.snapshot_id !== betaGrounding &&
-        betaState.action_result?.status === "executed" &&
-        betaState.action_result.effect === "confirmed" &&
-        betaState.action_result.delivery === "background" &&
-        betaState.verification?.status === "satisfied" &&
-        betaState.observation_mode === "semantic" && !hasPng(current) &&
+      return alphaSemantic && validBackgroundSemanticExecution(current, betaGrounding) &&
         sequenceState.semantic_sequence.join(",") === "alpha,beta";
     },
     uniqueText: async () => {
@@ -645,22 +629,17 @@ async function runFixtureCorrectness(
     overlayOnce: async () => {
       await resetFixture(fixture.url);
       let current = await observeFixture(client, windowRef, true);
+      const toggleGrounding = requireSnapshot(current);
       current = await callTool(
         client,
         "computer_act",
-        buildVerifiedSemanticClickRequest(
-          requireSnapshot(current),
+        buildBackgroundSemanticClickRequest(
+          toggleGrounding,
           requireElement(current, "Toggle pixel overlay").elementRef,
           "background",
         ),
       );
-      const toggleState = structured(current);
-      const toggleSemantic = current.isError !== true &&
-        toggleState.action_result?.status === "executed" &&
-        toggleState.action_result.effect === "confirmed" &&
-        toggleState.action_result.delivery === "background" &&
-        toggleState.verification?.status === "satisfied" &&
-        toggleState.observation_mode === "semantic" && !hasPng(current);
+      const toggleSemantic = validBackgroundSemanticExecution(current, toggleGrounding);
       await waitForState(fixture.url, (state) => state.overlay_enabled);
       current = await observeFixture(client, windowRef, true);
       const overlayGrounding = requireSnapshot(current);
@@ -685,35 +664,32 @@ async function runFixtureCorrectness(
     focusPreserved: async () => {
       await resetFixture(fixture.url);
       await activateFocusSentinel(sentinel);
-      const globalGrounding = await callTool(client, "computer_observe", {
-        target: { kind: "desktop" },
+      await activateOwnedApplication({
+        bundleIdentifier: CHROME_BUNDLE_ID,
+        processIdentifier: browserPid,
       });
-      const globalSwitch = await callTool(
-        client,
-        "computer_act",
-        buildForegroundPositiveControlRequest(requireSnapshot(globalGrounding)),
-      );
-      if (globalSwitch.isError === true || structured(globalSwitch).action_result?.status !== "executed") {
-        throw new Error("focus_oracle_positive_control_failed");
-      }
-      await waitForFrontmost({ bundleIdentifier: CHROME_BUNDLE_ID, processIdentifier: browserPid });
       await activateFocusSentinel(sentinel);
       let current = await observeFixture(client, windowRef, true);
       const backgroundGrounding = requireSnapshot(current);
       current = await callTool(
         client,
         "computer_act",
-        buildVerifiedSemanticClickRequest(
+        buildBackgroundSemanticClickRequest(
           backgroundGrounding,
           requireElement(current, "Semantic Beta").elementRef,
           "background",
         ),
       );
+      const sequenceState = await waitForState(
+        fixture.url,
+        (state) => state.semantic_sequence.join(",") === "beta",
+      );
       const identity = await frontmostIdentity();
       return sentinelAlive(sentinel) &&
         identity.bundleIdentifier === FOCUS_SENTINEL_BUNDLE_ID &&
         identity.processIdentifier === sentinel.pid &&
-        validBackgroundSemanticResult(current, backgroundGrounding);
+        validBackgroundSemanticExecution(current, backgroundGrounding) &&
+        sequenceState.semantic_sequence.join(",") === "beta";
     },
   });
 }

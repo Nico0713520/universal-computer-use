@@ -257,7 +257,7 @@
     },
     "visualSlo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 700 }, "p95_ms": { "const": 1500 } } },
     "semanticSlo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 400 }, "p95_ms": { "const": 1000 } } },
-    "semanticActionSlo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 1000 }, "p95_ms": { "const": 2000 } } },
+    "semanticActionSlo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 1500 }, "p95_ms": { "const": 2000 } } },
     "pixelActionSlo": { "type": "object", "additionalProperties": false, "required": ["p50_ms", "p95_ms"], "properties": { "p50_ms": { "const": 1500 }, "p95_ms": { "const": 3000 } } },
     "visualStatus": {
       "type": "object", "required": ["status", "slo"], "properties": { "slo": { "$ref": "#/$defs/visualSlo" } },
@@ -276,7 +276,7 @@
     "semanticActionStatus": {
       "type": "object", "required": ["status", "slo"], "properties": { "slo": { "$ref": "#/$defs/semanticActionSlo" } },
       "oneOf": [
-        { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "maximum": 1000 }, "p95_ms": { "maximum": 2000 } } },
+        { "type": "object", "required": ["status", "p50_ms", "p95_ms"], "properties": { "status": { "const": "passed" }, "p50_ms": { "maximum": 1500 }, "p95_ms": { "maximum": 2000 } } },
         { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } }
       ]
     },

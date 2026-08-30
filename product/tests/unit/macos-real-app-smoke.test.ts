@@ -132,6 +132,7 @@ describe("TextEdit owned-window smoke", () => {
     const client = scriptedClient([
       desktop("desktop-1", []),
       acted("launch-next"),
+      acted("created-after-launch"),
       desktop("desktop-2", ["owned"]),
     ], calls);
 
@@ -139,9 +140,14 @@ describe("TextEdit owned-window smoke", () => {
     expect(calls.map((call) => call.name)).toEqual([
       "computer_observe",
       "computer_act",
+      "computer_act",
       "computer_observe",
     ]);
     expect(calls[1]?.arguments).toMatchObject({ action: { type: "launch_app" } });
+    expect(calls[2]?.arguments).toMatchObject({
+      snapshot_id: "launch-next",
+      action: { type: "keypress", keys: ["cmd", "n"] },
+    });
     expect(JSON.stringify(calls)).not.toContain("set_value");
   });
 

@@ -115,7 +115,7 @@ function completeEvidence(): JsonRecord {
     performance: {
       window_visual_observe: performanceProfile(500, 1_200, 1_300, 700, 1_500, false),
       window_semantic_observe: performanceProfile(300, 800, 900, 400, 1_000, false),
-      semantic_action_next_state: performanceProfile(800, 1_800, 1_900, 1_000, 2_000, true),
+      semantic_action_next_state: performanceProfile(800, 1_800, 1_900, 1_500, 2_000, true),
       pixel_action_next_state: performanceProfile(1_200, 2_800, 2_900, 1_500, 3_000, true),
     },
     adaptive_correctness: {

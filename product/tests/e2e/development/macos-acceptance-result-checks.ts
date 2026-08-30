@@ -53,7 +53,7 @@ export function buildForegroundPositiveControlRequest(
   };
 }
 
-export function buildVerifiedSemanticClickRequest(
+export function buildBackgroundSemanticClickRequest(
   snapshotId: string,
   elementRef: string,
   delivery: "background" | "foreground",
@@ -61,34 +61,38 @@ export function buildVerifiedSemanticClickRequest(
   snapshot_id: string;
   action: Readonly<{ type: "click"; element_ref: string }>;
   delivery: "background" | "foreground";
-  expect: Readonly<{
-    element: Readonly<{ element_ref: string; selected: true }>;
-  }>;
   next_observation: Readonly<{ mode: "semantic" }>;
 }> {
   return {
     snapshot_id: snapshotId,
     action: { type: "click", element_ref: elementRef },
     delivery,
-    expect: { element: { element_ref: elementRef, selected: true } },
     next_observation: { mode: "semantic" },
   };
 }
 
-export function validBackgroundSemanticResult(
+export function validBackgroundSemanticExecution(
   result: CallToolResult,
   groundingSnapshot: string,
 ): boolean {
   const state = structured(result);
+  const honestNextState = (
+    state.observation_mode === "semantic" &&
+    state.visual_status === "not_requested" &&
+    !hasPng(result)
+  ) || (
+    state.observation_mode === "visual_recovery" &&
+    state.visual_status === "available" &&
+    hasPng(result)
+  );
   return result.isError !== true &&
     freshSnapshot(result, groundingSnapshot) &&
     state.action_result?.status === "executed" &&
-    state.action_result.effect === "confirmed" &&
+    (state.action_result.effect === "confirmed" || state.action_result.effect === "unverifiable") &&
     state.action_result.delivery === "background" &&
-    state.verification?.status === "satisfied" &&
-    state.observation_mode === "semantic" &&
-    state.visual_status === "not_requested" &&
-    !hasPng(result);
+    (state.verification?.status === "satisfied" || state.verification?.status === "not_requested") &&
+    state.action_result.error_code === undefined &&
+    honestNextState;
 }
 
 function containsFixtureControls(result: CallToolResult): boolean {

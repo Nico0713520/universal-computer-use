@@ -264,6 +264,11 @@ export async function ownFreshTextEditWindow(client: Client): Promise<string> {
       action: { type: "launch_app", app_ref: initial.appRef },
     });
     if (!isSuccessfulState(launched)) throw new SmokeFailure("textedit_unavailable");
+    const created = await callTool(client, "computer_act", {
+      snapshot_id: requireSnapshot(launched),
+      action: { type: "keypress", keys: ["cmd", "n"] },
+    });
+    if (!isSuccessfulState(created)) throw new SmokeFailure("textedit_unavailable");
   } else {
     const sourceWindow = initial.windows.find((window) => typeof window.window_ref === "string");
     if (typeof sourceWindow?.window_ref !== "string") throw new SmokeFailure("textedit_unavailable");

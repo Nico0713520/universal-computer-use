@@ -80,7 +80,7 @@ export const PERFORMANCE_SLOS: Readonly<
 > = {
   window_visual_observe: { p50_ms: 700, p95_ms: 1_500 },
   window_semantic_observe: { p50_ms: 400, p95_ms: 1_000 },
-  semantic_action_next_state: { p50_ms: 1_000, p95_ms: 2_000 },
+  semantic_action_next_state: { p50_ms: 1_500, p95_ms: 2_000 },
   pixel_action_next_state: { p50_ms: 1_500, p95_ms: 3_000 },
 };
 

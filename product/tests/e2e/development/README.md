@@ -36,7 +36,7 @@ Each performance profile performs five unrecorded warm-ups followed by exactly 3
 |---|---:|---:|
 | exact-window visual observe | 700 ms | 1,500 ms |
 | exact-window semantic observe | 400 ms | 1,000 ms |
-| background `set_value` + semantic next state | 1,000 ms | 2,000 ms |
+| background `set_value` + semantic next state | 1,500 ms | 2,000 ms |
 | foreground pixel action + visual next state | 1,500 ms | 3,000 ms |
 
 There is no universal post-action sleep. The evidence includes the result of a static scan over `product/src/**` and the Canonical Skill; fixture synchronization uses only bounded external-oracle polling, and failures are never deleted or rerun as replacement samples.

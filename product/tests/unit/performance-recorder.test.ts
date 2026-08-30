@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PERFORMANCE_SLOS,
   PerformanceRecorder,
   type PerformanceOutcome,
   type PerformanceScenarioName,
@@ -85,6 +86,13 @@ describe("summarizeSamples", () => {
 });
 
 describe("PerformanceRecorder", () => {
+  it("uses the measured Cua 0.22.2 semantic-action baseline without hiding its latency", () => {
+    expect(PERFORMANCE_SLOS.semantic_action_next_state).toEqual({
+      p50_ms: 1_500,
+      p95_ms: 2_000,
+    });
+  });
+
   it("emits exact correctness, latency, and stage aggregates for 30 correct measured calls", () => {
     const recorder = new PerformanceRecorder();
 

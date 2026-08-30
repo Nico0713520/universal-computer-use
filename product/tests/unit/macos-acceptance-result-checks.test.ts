@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildSemanticSetValueRequest,
   buildForegroundPositiveControlRequest,
-  buildVerifiedSemanticClickRequest,
+  buildBackgroundSemanticClickRequest,
   validEmptyTextGrounding,
-  validBackgroundSemanticResult,
+  validBackgroundSemanticExecution,
   validFixtureObserve,
   validPixelActionResult,
   validSemanticSetValueResult,
@@ -65,8 +65,8 @@ describe("macOS acceptance result checks", () => {
     )).toBe(false);
   });
 
-  it("builds a semantic button click with a transition expectation", () => {
-    const request = buildVerifiedSemanticClickRequest(
+  it("builds a background semantic click without pretending browser AX selection is verifiable", () => {
+    const request = buildBackgroundSemanticClickRequest(
       "snap_grounding123",
       "el_button1234567890",
       "background",
@@ -74,9 +74,9 @@ describe("macOS acceptance result checks", () => {
     expect(ActInputSchema.parse(request)).toEqual(request);
     expect(request).toMatchObject({
       delivery: "background",
-      expect: { element: { selected: true } },
       next_observation: { mode: "semantic" },
     });
+    expect(request).not.toHaveProperty("expect");
   });
 
   it("builds a desktop-global positive control without window-only delivery or next observation", () => {
@@ -154,16 +154,16 @@ describe("macOS acceptance result checks", () => {
     })).toBe(false);
   });
 
-  it("ties focus evidence to the actual background-action grounding snapshot", () => {
+  it("accepts an honest unverifiable background result only as execution evidence", () => {
     const state = result({
       snapshot_id: "after-background",
       consumed_snapshot_id: "background-grounding",
-      observation_mode: "semantic",
-      visual_status: "not_requested",
-      action_result: { status: "executed", effect: "confirmed", delivery: "background" },
-      verification: { status: "satisfied" },
-    });
-    expect(validBackgroundSemanticResult(state, "background-grounding")).toBe(true);
-    expect(validBackgroundSemanticResult(state, "foreground-grounding")).toBe(false);
+      observation_mode: "visual_recovery",
+      visual_status: "available",
+      action_result: { status: "executed", effect: "unverifiable", delivery: "background" },
+      verification: { status: "not_requested" },
+    }, true);
+    expect(validBackgroundSemanticExecution(state, "background-grounding")).toBe(true);
+    expect(validBackgroundSemanticExecution(state, "foreground-grounding")).toBe(false);
   });
 });
