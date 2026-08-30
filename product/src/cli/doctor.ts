@@ -36,6 +36,7 @@ export type DoctorOptions = Readonly<{
 export type DoctorDependencies = Readonly<{
   lock: EngineLock;
   connectEngine: (lock: EngineLock) => Promise<EnginePort>;
+  probeInteractiveSession: () => Promise<boolean | null>;
 }>;
 
 function serializedError(error: unknown): NonNullable<DoctorReport["error"]> {
@@ -110,6 +111,25 @@ export async function runDoctor(
       );
     }
     requiredToolsPresent = true;
+    if (platform === "macos") {
+      const interactiveSession = await dependencies.probeInteractiveSession();
+      if (interactiveSession === false) {
+        throw new ComputerUseError(
+          "interactive_session_required",
+          "The macOS login window is active",
+          "stop",
+          false,
+        );
+      }
+      if (interactiveSession === null) {
+        throw new ComputerUseError(
+          "runtime_unavailable",
+          "The macOS interactive session could not be verified",
+          "doctor",
+          true,
+        );
+      }
+    }
     const observed = await engine.observe(new AbortController().signal);
     if (observed.platform !== platform) {
       throw new ComputerUseError(

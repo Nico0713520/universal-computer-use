@@ -13,7 +13,11 @@ describe("doctor", () => {
 
     const report = await runDoctor(
       { platform: "darwin", arch: "arm64" },
-      { lock, connectEngine: vi.fn(async () => engine) },
+      {
+        lock,
+        connectEngine: vi.fn(async () => engine),
+        probeInteractiveSession: vi.fn(async () => true),
+      },
     );
 
     expect(report).toEqual({
@@ -49,6 +53,7 @@ describe("doctor", () => {
             true,
           );
         }),
+        probeInteractiveSession: vi.fn(async () => true),
       },
     );
 
@@ -73,7 +78,11 @@ describe("doctor", () => {
 
     const report = await runDoctor(
       { platform: "darwin", arch: "arm64" },
-      { lock: await loadEngineLock(), connectEngine: vi.fn(async () => engine) },
+      {
+        lock: await loadEngineLock(),
+        connectEngine: vi.fn(async () => engine),
+        probeInteractiveSession: vi.fn(async () => true),
+      },
     );
 
     expect(report).toMatchObject({
@@ -103,7 +112,11 @@ describe("doctor", () => {
 
     const report = await runDoctor(
       { platform: "darwin", arch: "x64" },
-      { lock: await loadEngineLock(), connectEngine: vi.fn(async () => engine) },
+      {
+        lock: await loadEngineLock(),
+        connectEngine: vi.fn(async () => engine),
+        probeInteractiveSession: vi.fn(async () => true),
+      },
     );
 
     expect(report).toMatchObject({
@@ -132,7 +145,11 @@ describe("doctor", () => {
 
     const report = await runDoctor(
       { platform: "darwin", arch: "arm64" },
-      { lock: await loadEngineLock(), connectEngine: vi.fn(async () => engine) },
+      {
+        lock: await loadEngineLock(),
+        connectEngine: vi.fn(async () => engine),
+        probeInteractiveSession: vi.fn(async () => true),
+      },
     );
 
     expect(report.permissions).toBe("required");
@@ -143,7 +160,11 @@ describe("doctor", () => {
     const connectEngine = vi.fn(async () => new FakeEngine());
     const report = await runDoctor(
       { platform: "linux", arch: "x64" },
-      { lock: await loadEngineLock(), connectEngine },
+      {
+        lock: await loadEngineLock(),
+        connectEngine,
+        probeInteractiveSession: vi.fn(async () => true),
+      },
     );
 
     expect(report).toMatchObject({
@@ -153,5 +174,53 @@ describe("doctor", () => {
       error: { code: "unsupported_platform" },
     });
     expect(connectEngine).not.toHaveBeenCalled();
+  });
+
+  it("refuses loginwindow before capture", async () => {
+    const engine = new FakeEngine({ platform: "macos" });
+
+    const report = await runDoctor(
+      { platform: "darwin", arch: "arm64" },
+      {
+        lock: await loadEngineLock(),
+        connectEngine: async () => engine,
+        probeInteractiveSession: async () => false,
+      },
+    );
+
+    expect(report).toMatchObject({
+      ok: false,
+      engine_connected: true,
+      required_tools_present: true,
+      desktop_unlocked: false,
+      observation_succeeded: false,
+      screenshot: null,
+      error: { code: "interactive_session_required" },
+    });
+    expect(engine.observations).toBe(0);
+  });
+
+  it("fails closed before capture when the interactive session is unavailable", async () => {
+    const engine = new FakeEngine({ platform: "macos" });
+
+    const report = await runDoctor(
+      { platform: "darwin", arch: "arm64" },
+      {
+        lock: await loadEngineLock(),
+        connectEngine: async () => engine,
+        probeInteractiveSession: async () => null,
+      },
+    );
+
+    expect(report).toMatchObject({
+      ok: false,
+      engine_connected: true,
+      required_tools_present: true,
+      desktop_unlocked: null,
+      observation_succeeded: false,
+      screenshot: null,
+      error: { code: "runtime_unavailable" },
+    });
+    expect(engine.observations).toBe(0);
   });
 });

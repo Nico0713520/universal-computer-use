@@ -11,6 +11,7 @@ import { ComputerUseError, ERROR_CODES } from "../errors.js";
 import { createProductionRuntime, runStdioServer } from "../mcp/main.js";
 import { renderConfig, type ConfigClient } from "./config.js";
 import { runDoctor } from "./doctor.js";
+import { probeMacInteractiveSession } from "./interactive-session.js";
 import {
   fetchDownloader,
   nodeProcessRunner,
@@ -113,7 +114,15 @@ export async function runCli(
         downloader: dependencies.downloader,
         runner: dependencies.runner,
         runDoctor: () =>
-          runDoctor({}, { lock, connectEngine: dependencies.connectEngine }),
+          runDoctor(
+            {},
+            {
+              lock,
+              connectEngine: dependencies.connectEngine,
+              probeInteractiveSession: () =>
+                probeMacInteractiveSession(dependencies.runner),
+            },
+          ),
       },
     );
     if (report.warning !== undefined) {
@@ -129,7 +138,12 @@ export async function runCli(
     const lock = await dependencies.loadLock();
     const report = await runDoctor(
       {},
-      { lock, connectEngine: dependencies.connectEngine },
+      {
+        lock,
+        connectEngine: dependencies.connectEngine,
+        probeInteractiveSession: () =>
+          probeMacInteractiveSession(dependencies.runner),
+      },
     );
     io.stdout.write(`${JSON.stringify(report)}\n`);
     return report.ok ? 0 : 1;
