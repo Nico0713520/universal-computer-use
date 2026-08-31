@@ -58,13 +58,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "pattern": "^(?![A-Za-z]:[\\\\/])(?!.*(?:^|[ ._:+/()@-])(?:[Pp][Rr][Ii][Vv][Aa][Tt][Ee]|[Pp][Rr][Oo][Mm][Pp][Tt]|[Cc][Ll][Ii][Pp][Bb][Oo][Aa][Rr][Dd]|[Uu][Ss][Ee][Rr][-_ ]?[Cc][Oo][Nn][Tt][Ee][Nn][Tt])(?:$|[ ._:+/()@-]))[A-Za-z0-9](?:[A-Za-z0-9 ._:+/()@-]*[A-Za-z0-9)])?$"
+          "pattern": "^(?![A-Za-z]:[\\\\/])(?![A-Za-z][A-Za-z0-9+.-]*://)(?!.*(?:/Users/|/home/))(?!.+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$)[A-Za-z0-9](?:[A-Za-z0-9 ._:+/()@-]*[A-Za-z0-9)])?$"
         },
         "reported_model_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256,
-          "pattern": "^(?![A-Za-z]:[\\\\/])(?!.*(?:^|[ ._:+/()@-])(?:[Pp][Rr][Ii][Vv][Aa][Tt][Ee]|[Pp][Rr][Oo][Mm][Pp][Tt]|[Cc][Ll][Ii][Pp][Bb][Oo][Aa][Rr][Dd]|[Uu][Ss][Ee][Rr][-_ ]?[Cc][Oo][Nn][Tt][Ee][Nn][Tt])(?:$|[ ._:+/()@-]))[A-Za-z0-9](?:[A-Za-z0-9 ._:+/()@-]*[A-Za-z0-9)])?$"
+          "pattern": "^(?![A-Za-z]:[\\\\/])(?![A-Za-z][A-Za-z0-9+.-]*://)(?!.*(?:/Users/|/home/))(?!.+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$)[A-Za-z0-9](?:[A-Za-z0-9 ._:+/()@-]*[A-Za-z0-9)])?$"
         }
       }
     },

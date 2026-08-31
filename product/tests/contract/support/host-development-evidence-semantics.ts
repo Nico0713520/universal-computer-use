@@ -79,14 +79,15 @@ const signalContracts: Record<
     limitation: "natural-stop-failed",
     fact: (value) => {
       const stop = child(value, "natural_stop");
-      return stop.result !== "pass"
+      return stop.result === "fail"
         || (typeof stop.tool_calls_after_goal === "number" && stop.tool_calls_after_goal > 0);
     },
   },
   "precondition-blocked": {
     statuses: ["blocked", "not-run"],
     limitation: "precondition-blocked",
-    fact: () => true,
+    fact: (value) => taskResults(value).includes("not-run")
+      && child(value, "natural_stop").result === "not-run",
   },
 };
 

@@ -261,10 +261,12 @@ describe("named-host development evidence v2", () => {
     }
   });
 
-  it("supports exact host display identifiers while rejecting paths and privacy-shaped values", async () => {
+  it("supports exact host display identifiers while rejecting path, URI, and email shapes", async () => {
     const parser = await evidenceParser();
     const displayedVersion = completeDevelopmentEvidence();
     (displayedVersion.host as JsonRecord).version = "HanaAgent 2026.8 (Preview)";
+    expect(parser.safeParse(displayedVersion).success).toBe(true);
+    (displayedVersion.host as JsonRecord).version = "Private Preview 2026.8";
     expect(parser.safeParse(displayedVersion).success).toBe(true);
     for (const modelId of [
       "gpt-5.6-sol",
@@ -274,6 +276,9 @@ describe("named-host development evidence v2", () => {
       "Claude 3.7 Sonnet",
       "GPT-5.6 (High)",
       "projects/demo/locations/us/models/vision-1",
+      "vendor/private/model-v1",
+      "vendor/prompt/model-v1",
+      "vendor/clipboard/user-content-v1",
     ]) {
       const candidate = completeDevelopmentEvidence();
       (candidate.host as JsonRecord).reported_model_id = modelId;
@@ -281,18 +286,19 @@ describe("named-host development evidence v2", () => {
     }
 
     const mutations: Array<[string, (value: JsonRecord) => void]> = [
-      ["version sentence", (value) => { (value.host as JsonRecord).version = "paste this private prompt"; }],
       ["version path", (value) => { (value.host as JsonRecord).version = "/Applications/HanaAgent.app"; }],
-      ["model private marker", (value) => { (value.host as JsonRecord).reported_model_id = "OpenAI/Private/Model"; }],
-      ["model prompt marker", (value) => { (value.host as JsonRecord).reported_model_id = "vendor/PrOmPt/model"; }],
-      ["model clipboard marker", (value) => { (value.host as JsonRecord).reported_model_id = "CLIPBOARD"; }],
-      ["model user content marker", (value) => { (value.host as JsonRecord).reported_model_id = "vendor/User_Content/model"; }],
-      ["model spaced user content marker", (value) => { (value.host as JsonRecord).reported_model_id = "Vendor User Content Model"; }],
       ["leading whitespace", (value) => { (value.host as JsonRecord).reported_model_id = " Kimi K3"; }],
       ["trailing whitespace", (value) => { (value.host as JsonRecord).reported_model_id = "Kimi K3 "; }],
       ["embedded newline", (value) => { (value.host as JsonRecord).reported_model_id = "Kimi\nK3"; }],
+      ["file URI", (value) => { (value.host as JsonRecord).reported_model_id = "file:///Users/name/model"; }],
+      ["HTTP URI", (value) => { (value.host as JsonRecord).reported_model_id = "https://example.com/model"; }],
+      ["email identity", (value) => { (value.host as JsonRecord).reported_model_id = "person@example.com"; }],
+      ["home shortcut", (value) => { (value.host as JsonRecord).reported_model_id = "~/models/vision"; }],
       ["model POSIX path", (value) => { (value.host as JsonRecord).reported_model_id = "/Users/private/model"; }],
+      ["model Linux home path", (value) => { (value.host as JsonRecord).reported_model_id = "/home/private/model"; }],
+      ["embedded macOS user path", (value) => { (value.host as JsonRecord).reported_model_id = "resource/Users/name/model"; }],
       ["model Windows path", (value) => { (value.host as JsonRecord).reported_model_id = "C:\\Users\\private\\model"; }],
+      ["model Windows slash path", (value) => { (value.host as JsonRecord).reported_model_id = "C:/Users/private/model"; }],
     ];
     for (const [label, mutate] of mutations) {
       const candidate = completeDevelopmentEvidence();
@@ -427,7 +433,11 @@ describe("named-host development evidence v2", () => {
         signal: "precondition-blocked",
         status: "blocked",
         limitation: "precondition-blocked",
-        makeFactFail: () => {},
+        makeFactFail: (value) => {
+          const task = ((value.task_results as JsonRecord).calculator as JsonRecord);
+          task.result = "not-run";
+          value.natural_stop = { result: "not-run", tool_calls_after_goal: 0 };
+        },
         makeDifferentFactFail: () => {},
       },
     ];
@@ -460,6 +470,21 @@ describe("named-host development evidence v2", () => {
     preconditionWithFailedStatus.non_pass_signal = "precondition-blocked";
     preconditionWithFailedStatus.limitations = ["precondition-blocked"];
     expect(parser.safeParse(preconditionWithFailedStatus).success).toBe(false);
+
+    const preconditionWithoutStoppedLoop = completeDevelopmentEvidence();
+    preconditionWithoutStoppedLoop.status = "blocked";
+    preconditionWithoutStoppedLoop.non_pass_signal = "precondition-blocked";
+    preconditionWithoutStoppedLoop.limitations = ["precondition-blocked"];
+    const preconditionTask = ((preconditionWithoutStoppedLoop.task_results as JsonRecord).calculator as JsonRecord);
+    preconditionTask.result = "not-run";
+    expect(parser.safeParse(preconditionWithoutStoppedLoop).success).toBe(false);
+
+    const naturalStopNotRun = completeDevelopmentEvidence();
+    naturalStopNotRun.status = "failed";
+    naturalStopNotRun.non_pass_signal = "natural-stop-failed";
+    naturalStopNotRun.limitations = ["natural-stop-failed"];
+    naturalStopNotRun.natural_stop = { result: "not-run", tool_calls_after_goal: 0 };
+    expect(parser.safeParse(naturalStopNotRun).success).toBe(false);
   });
 
   it("binds verified host authorization and limitations in both directions", async () => {
