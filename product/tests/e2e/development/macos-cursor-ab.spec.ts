@@ -209,9 +209,12 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
             diagnostic.recordObservedRoute(execution.route);
             throw new Error("cursor_ab_route_mismatch");
           }
+          if (after.canvas_clicks !== before.canvas_clicks + 1) {
+            throw new Error("cursor_ab_effect_mismatch");
+          }
           const sample: CursorAbSample = {
             durationMs,
-            correct: after.canvas_clicks === before.canvas_clicks + 1,
+            correct: true,
             route: "synthetic_events",
           };
           if (index < 5) recorder.recordWarmup(mode, sample);

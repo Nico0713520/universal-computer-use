@@ -29,4 +29,12 @@ describe("Cursor A/B synthetic-event route contract", () => {
     expect(body.match(/record\("canvas_click"/g)).toHaveLength(1);
     expect(source).not.toContain('byId("cursor-ab-target").addEventListener("click"');
   });
+
+  it("fails fast on the first missing exactly-once effect", async () => {
+    const source = await readFile(specUrl, "utf8");
+
+    expect(source).toContain('throw new Error("cursor_ab_effect_mismatch")');
+    expect(source).toContain("correct: true");
+    expect(source).not.toContain("correct: after.canvas_clicks === before.canvas_clicks + 1");
+  });
 });
