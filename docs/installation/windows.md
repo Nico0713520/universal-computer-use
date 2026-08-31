@@ -1,5 +1,7 @@
 # Windows installation
 
+Version 0.2.6 does not promote Windows as part of the Mac Agent Preview. Windows remains a development-only desktop compatibility path: there is no public Beta, signed one-click MSI, or SmartScreen-ready installer yet, and UAC secure desktop remains unsupported.
+
 ## Prerequisites
 
 - Windows 10 or Windows 11 on x64. Windows ARM64 and 32-bit Windows are outside the v0.2 release matrix.

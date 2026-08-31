@@ -16,8 +16,8 @@ describe("engine lock", () => {
       await readFile(new URL("../../package.json", import.meta.url), "utf8"),
     ) as { version?: unknown };
 
-    expect(manifest.version).toBe("0.2.5");
-    expect(PRODUCT_VERSION).toBe("0.2.5");
+    expect(manifest.version).toBe("0.2.6");
+    expect(PRODUCT_VERSION).toBe("0.2.6");
     expect(PROTOCOL_VERSION).toBe("1.2.0");
   });
 

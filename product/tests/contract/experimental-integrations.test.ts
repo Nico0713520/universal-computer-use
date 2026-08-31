@@ -45,6 +45,7 @@ describe("experimental host adapters", () => {
 
     expect(manifest).toMatchObject({
       name: "computer-use",
+      version: "0.2.6",
       status: "experimental",
       computerUse: {
         skill: canonicalSkillReference,
@@ -178,7 +179,11 @@ describe("experimental host adapters", () => {
       expect(row[5]).toBe("not-tested");
       expect(row[6]).toBe("not-tested");
       expect(row[7]).toBe("not-tested");
-      expect(row[8]).toMatch(/declaration-only|host loading/i);
+      expect(row[8]).toMatch(
+        row[0] === "WorkBuddy"
+          ? /exact-commit external|host loading/i
+          : /declaration-only|host loading/i,
+      );
     }
     expect(compatibility).not.toMatch(/\| (?:WorkBuddy|DeepSeek Harness) \| verified \|/);
   });

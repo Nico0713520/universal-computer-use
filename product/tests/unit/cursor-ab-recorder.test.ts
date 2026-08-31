@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CursorAbRecorder } from "../e2e/development/cursor-ab-recorder.js";
 
 const METADATA = {
-  product_version: "0.2.5",
+  product_version: "0.2.6",
   engine_version: "0.22.2",
   macos_version: "15.6.1",
   architecture: "arm64",

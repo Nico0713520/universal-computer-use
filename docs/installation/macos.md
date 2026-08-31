@@ -1,5 +1,7 @@
 # macOS installation
 
+Version 0.2.6 is a Mac Agent Preview (Developer Preview), not a public Beta. There is no one-click installer, DMG, notarized public package, or automatic host configuration in this milestone.
+
 ## Prerequisites
 
 - macOS 14 or newer on Apple silicon or Intel x64.
@@ -9,22 +11,21 @@
 
 Model rule: this plugin uses the host Agent's current multimodal model. It does not include a model, model API key, planner, or private vision service.
 
-## Install and set up
+## Install and set up the Preview
 
-Install the package globally, then run setup:
-
-```bash
-npm install --global @universal-computer-use/plugin
-computer-use setup
-```
-
-Normal setup fails closed with `engine_not_release_eligible` unless the exact macOS engine in `engine.lock.json` has completed its signer and E2E promotion gates. A developer may explicitly install the locked development baseline:
+The npm package is not published. Build the current Preview from source, then explicitly select the development-only Runtime lane:
 
 ```bash
+cd product
+npx --yes pnpm@9.0.4 install --frozen-lockfile --ignore-scripts
+npx --yes pnpm@9.0.4 build
+npm install --global .
 computer-use setup --development
 ```
 
 Development setup always prints a machine-readable `development_only:true` warning. It is not a public-release qualification and cannot be hidden with a quiet flag.
+
+The global `computer-use setup` path is reserved for a future promoted package and currently fails closed with `engine_not_release_eligible`. Do not present the source build or a local tarball as a signed public installer.
 
 Setup downloads `install.sh` from the exact locked GitHub release and its helper scripts from the exact locked Cua source commit into one temporary directory. It verifies every script SHA-256 before executing the local entry point, pins `CUA_DRIVER_RS_VERSION`, and never follows `latest` or `main`. The unmodified upstream installer downloads the release archive; the asset hash in the lock is promotion evidence rather than a claim that this wrapper re-hashes that internal archive transfer.
 
@@ -34,9 +35,9 @@ After installation, setup verifies `/Applications/CuaDriver.app` with `codesign 
 /Applications/CuaDriver.app/Contents/MacOS/cua-driver permissions grant
 ```
 
-The plugin does not modify Codex, Kimi, or another host's configuration automatically.
+The plugin does not modify Codex, HanaAgent, WorkBuddy, Kimi, or another host's configuration automatically. The permission dialogs and System Settings entries keep the visible CuaDriver attribution; UCU does not hide or rebrand the signed Runtime identity.
 
-After installation, product 0.2.5 can recover an installed but stopped CuaDriver when a host starts the MCP process. Recovery happens before the MCP session and any snapshot exist: it verifies the locked app signature, starts `serve`, and polls readiness until the first successful connection or a 10-second hard deadline. It never replays an observation or GUI action and never restarts Cua after the MCP session starts. During session initialization, UCU disables Cua's session-owned Agent Cursor on both internal sessions and verifies the state before accepting tools. `computer-use doctor --json` remains side-effect-free and does not start the Runtime.
+After installation, product 0.2.6 can recover an installed but stopped CuaDriver when a host starts the MCP process. Recovery happens before the MCP session and any snapshot exist: it verifies the locked app signature, starts `serve`, and polls readiness until the first successful connection or a 10-second hard deadline. It never replays an observation or GUI action and never restarts Cua after the MCP session starts. During session initialization, UCU disables Cua's session-owned Agent Cursor on both internal sessions and verifies the state before accepting tools. Both doctor modes remain diagnostic and do not start the Runtime.
 
 ## Screen Recording and Accessibility
 
@@ -52,12 +53,13 @@ These prompts are operating-system security boundaries and cannot be bypassed by
 ## Diagnose
 
 ```bash
+computer-use doctor
 computer-use doctor --json
 ```
 
-Doctor connects to the exact locked Runtime, validates its version and required tool contract, performs exactly one screenshot observation, performs no input action, and closes the diagnostic session. The JSON includes plugin/protocol/engine versions, connection and tool status, interactive desktop status, permission status when the Runtime reports it, and screenshot dimensions. Any required failure sets `ok:false` and exits 1.
+Bare `computer-use doctor` prints a concise human-readable readiness summary. `computer-use doctor --json` prints the stable machine-readable report. Both connect to the exact locked Runtime, validate its version and required tool contract, perform exactly one screenshot observation, perform no input action, and close the diagnostic session. The JSON includes plugin/protocol/engine versions, connection and tool status, interactive desktop status, normalized permission status, and screenshot dimensions. Any required failure sets `ok:false` and exits 1.
 
-Cua Driver 0.22.2 does not expose a complete portable permission-state object through the public SDK. Doctor therefore reports `permissions:"unknown"` after a successful capture, or `permissions:"required"` only when the Runtime explicitly returns `permission_required`; it does not invent a grant state.
+On macOS, doctor asks the signed daemon directly with `/Applications/CuaDriver.app/Contents/MacOS/cua-driver permissions status --json`. It trusts a result only when the response attributes itself to the driver daemon and bundle ID `com.trycua.driver`; malformed or untrusted responses stay `unknown`. A recognized capture/input permission failure may report the specific missing permission, but doctor never infers the calling Node process's privileges as CuaDriver privileges.
 
 ## Configure the host Agent
 
@@ -67,17 +69,23 @@ Generate one of the supported configurations:
 computer-use config --client generic
 computer-use config --client codex
 computer-use config --client kimi
+computer-use config --client hanaagent
+computer-use config --client workbuddy
 ```
 
-The generic command prints JSON only to stdout. Its `command` is the absolute path to the current Node executable and `args[0]` is the absolute path to `dist/mcp/main.js`, so the host never relies on an executable bit, `PATH`, or an npm shim. Explanatory text goes to stderr. The other commands print a copyable MCP registration command with those same two paths as independently quoted arguments. The host must pass returned PNG images to its own current multimodal model and allow the model to alternate `computer_observe` and one `computer_act` call. Any approval dialogs belong to the host's policy, not this plugin.
+Generic, HanaAgent, and WorkBuddy print JSON only to stdout. Each JSON object's `command` is the absolute path to the current Node executable and `args[0]` is the absolute path to `dist/mcp/main.js`, so the host never relies on an executable bit, `PATH`, or an npm shim. Codex and Kimi print a copyable registration command with those same two paths as independently quoted arguments. All named output is for manual direct stdio registration; no command edits the host's settings. Explanatory text goes to stderr.
 
-## Upgrade
+Install or link the packaged Canonical Computer Use Skill at `product/skills/computer-use/SKILL.md`. The host must pass returned PNG images to its own current multimodal model and alternate `computer_observe` with one `computer_act`; the plugin does not include an internal vision model. Restart the selected host and start a new conversation before checking for the two tools, because an existing conversation may have frozen its tool inventory. Any approval dialogs belong to the host's policy, not this plugin. Run one host at a time; Multi-Agent concurrent control is deferred.
 
-Upgrade the npm package, review its pinned `engine.lock.json`, and run setup again:
+## Upgrade a source Preview
+
+Fetch an explicitly selected source revision, review its pinned `engine.lock.json`, rebuild it, and run setup again:
 
 ```bash
-npm update --global @universal-computer-use/plugin
-computer-use setup
+npx --yes pnpm@9.0.4 install --frozen-lockfile --ignore-scripts
+npx --yes pnpm@9.0.4 build
+npm install --global .
+computer-use setup --development
 computer-use doctor --json
 ```
 

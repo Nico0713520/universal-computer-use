@@ -1,16 +1,17 @@
 # Computer Use Plugin Troubleshooting
 
-This plugin uses the host Agent's current multimodal model. It does not contain a model, provider endpoint, API key, GUI, or native input implementation. The separately installed, version-locked Cua Runtime owns capture, permissions, signing and input delivery.
+This plugin uses the host Agent's current multimodal model. It does not include an internal vision model, provider endpoint, API key, GUI, or native input implementation. The separately installed, version-locked Cua Runtime owns capture, permissions, signing and input delivery. Version 0.2.6 is a Mac Agent Preview (Developer Preview), not a public Beta.
 
 ## Start with doctor
 
-Run `computer-use doctor --json`. A healthy report has `ok:true`, the exact engine version from `product/engine.lock.json`, every required tool, an unlocked interactive desktop and one successful primary-display PNG observation. On macOS the command first performs a bounded, read-only frontmost-session probe; it refuses `loginwindow` or an unverifiable interactive session before asking Cua to capture the screen.
+Run `computer-use doctor` for a human-readable readiness summary or `computer-use doctor --json` for the stable machine-readable report. A healthy JSON report has `ok:true`, the exact engine version from `product/engine.lock.json`, every required tool, an unlocked interactive desktop and one successful primary-display PNG observation. On macOS the command first performs a bounded, read-only frontmost-session probe; it refuses `loginwindow` or an unverifiable interactive session before asking Cua to capture the screen.
 
 `engine_version_mismatch` means the installed Runtime and lock differ. Do not follow `latest`, use a nightly, or edit the lock by hand. Either reinstall the exact lock with `computer-use setup --development` for local development, or stage and prove a formal release before public use. Ordinary `computer-use setup` deliberately rejects the current development-only lock.
 
 ## macOS 14+
 
 - Grant both Screen Recording and Accessibility to the signed `CuaDriver.app` through System Settings. If capture or input remains denied, remove the stale permission entry, reopen the unchanged signed app, grant both permissions again, then rerun doctor.
+- Doctor probes `/Applications/CuaDriver.app/Contents/MacOS/cua-driver permissions status --json` and trusts only the signed CuaDriver attribution with bundle ID `com.trycua.driver`; otherwise the permission state remains unknown. System Settings retains visible CuaDriver attribution rather than a hidden UCU identity.
 - `codesign --verify --deep --strict /Applications/CuaDriver.app` and `spctl --assess --type execute /Applications/CuaDriver.app` must succeed for release evidence. A changed bundle, TeamIdentifier or designated requirement is a different identity and must not reuse old evidence.
 - Retina is correct only when the Runtime reports a backing scale greater than `1` and Task 10's visible marker measurement proves screenshot-pixel clicks and drags. Do not compensate by multiplying coordinates in the plugin or by guessing a browser title-bar offset.
 - The current console user must own an unlocked Aqua session. Lock screen, loginwindow and disconnected remote sessions are outside v0.2.
@@ -26,15 +27,17 @@ Run `computer-use doctor --json`. A healthy report has `ok:true`, the exact engi
 
 ## Host Agent behavior
 
-The MCP server exposes only `computer_observe` and `computer_act`. The plugin never displays a per-action approval, but Codex, Kimi or another host may still require its own approval. Configure automatic tool use in the host's documented policy; the plugin cannot and must not bypass it. A host is not `verified` merely because its model can see images: evidence must prove first- and second-turn PNG delivery, continued calls and natural stop.
+The MCP server exposes exactly two tools: `computer_observe` and `computer_act`. The plugin never displays a per-action approval, but Codex, HanaAgent, WorkBuddy, Kimi or another host may still require its own approval. Configure automatic tool use in the host's documented policy; the plugin cannot and must not bypass it. A host is not `verified` merely because its model can see images: evidence must prove first- and second-turn PNG delivery, continued calls and natural stop.
 
 If a host sees text but not the screenshot, it does not support MCP `ImageContent` on this route. Keep it `experimental` or `not-compatible`; do not add a second vision model inside the plugin.
 
 ## macOS host starts before CuaDriver
 
-Product 0.2.5 makes one bounded recovery attempt only when the first pre-session connection returns `runtime_unavailable`. It verifies the installed `/Applications/CuaDriver.app`, starts its `serve` process, and exits readiness polling on the first successful connection. A missing app returns `runtime_missing`; a signing mismatch returns `engine_version_mismatch`; a failed start or 10-second deadline returns `runtime_unavailable`. This startup path never receives or replays an MCP tool request. UCU never restarts Cua after the MCP session starts. Run `computer-use doctor --json` separately when recovery fails; doctor diagnoses and performs no startup repair.
+Product 0.2.6 makes one bounded recovery attempt only when the first pre-session connection returns `runtime_unavailable`. It verifies the installed `/Applications/CuaDriver.app`, starts its `serve` process, and exits readiness polling on the first successful connection. A missing app returns `runtime_missing`; a signing mismatch returns `engine_version_mismatch`; a failed start or 10-second deadline returns `runtime_unavailable`. This startup path never receives or replays an MCP tool request. UCU never restarts Cua after the MCP session starts. Run either doctor mode separately when recovery fails; doctor diagnoses and performs no startup repair.
 
 After adding the MCP server to a host, restart the host and begin a new conversation. A conversation whose tool inventory was frozen before registration will not gain the two tools dynamically. Shell-driven JSON-RPC can diagnose transport behavior but is not direct-host compatibility evidence.
+
+Use `computer-use config --client hanaagent` or `computer-use config --client workbuddy` for their named manual direct stdio JSON. Both point to the same Canonical Computer Use Skill and do not edit host settings. Test one host at a time; Multi-Agent concurrent control is deferred and simultaneous Agents may fight over foreground focus.
 
 ## Slow or inaccurate loops
 
