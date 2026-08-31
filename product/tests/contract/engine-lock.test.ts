@@ -63,6 +63,8 @@ describe("engine lock", () => {
       "invoke_menu",
       "set_value",
       "health_report",
+      "set_agent_cursor_enabled",
+      "get_agent_cursor_state",
     ]);
     expect(lock.platforms.macos.installer_files.map(({ name }) => name)).toEqual([
       "install.sh",
