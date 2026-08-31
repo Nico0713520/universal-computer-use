@@ -569,16 +569,23 @@ describe("real app smoke isolation", () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const unavailable = result({ snapshot_id: "desktop", apps: [], windows: [] }, true);
     const client = scriptedClient([unavailable, unavailable], calls);
+    const openDocument = vi.fn(async () => { throw new Error("controlled_open_failure"); });
 
-    await expect(runRealAppSmoke(client)).resolves.toMatchObject({
+    await expect(runRealAppSmoke(client, openDocument)).resolves.toMatchObject({
       calculator_703: false,
       textedit_unique_value: false,
       textedit_single_write: false,
       error_code: "calculator_unavailable",
     });
-    expect(calls.map((call) => call.arguments?.discover)).toEqual([
-      { apps: true, windows: true, query: "com.apple.calculator" },
-      { apps: true, windows: true, query: "com.apple.TextEdit" },
-    ]);
+    expect(calls[0]?.arguments?.discover).toEqual({
+      apps: true,
+      windows: true,
+      query: "com.apple.calculator",
+    });
+    expect(calls[1]?.arguments?.discover).toMatchObject({ windows: true });
+    expect(calls[1]?.arguments?.discover).not.toHaveProperty("apps");
+    expect((calls[1]?.arguments?.discover as { query?: unknown }).query)
+      .toMatch(/^ucu-[0-9a-f-]+\.txt$/);
+    expect(openDocument).toHaveBeenCalledOnce();
   });
 });

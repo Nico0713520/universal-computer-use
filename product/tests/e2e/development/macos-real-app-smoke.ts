@@ -280,17 +280,13 @@ export async function ownFreshTextEditWindow(
   openDocument: (path: string) => Promise<void> = openTextEditDocument,
 ): Promise<string> {
   const ownedTitle = basename(documentPath);
-  const initial = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
-  if (initial.windows.some((window) => normalized(window.title) === normalized(ownedTitle))) {
+  if ((await textEditWindows(client, ownedTitle)).length !== 0) {
     throw new SmokeFailure("textedit_unavailable");
   }
   await openDocument(documentPath);
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    const refreshed = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
-    const matches = refreshed.windows.filter((window) =>
-      normalized(window.title) === normalized(ownedTitle));
-    const owned = selectExactVisibleWindow(matches);
+    const owned = selectExactVisibleWindow(await textEditWindows(client, ownedTitle));
     if (typeof owned?.window_ref === "string") return owned.window_ref;
     await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
   }
@@ -350,13 +346,23 @@ export function validTextEditSetValueResult(
     matches.length === 1 && verificationState;
 }
 
-async function textEditWindows(client: Client): Promise<readonly PublicWindow[]> {
+async function textEditWindows(
+  client: Client,
+  ownedTitle?: string,
+): Promise<readonly PublicWindow[]> {
   const result = await callTool(client, "computer_observe", {
     target: { kind: "desktop" },
-    discover: { apps: true, windows: true, query: "com.apple.TextEdit" },
+    discover: ownedTitle === undefined
+      ? { apps: true, windows: true, query: "com.apple.TextEdit" }
+      : { windows: true, query: ownedTitle },
   });
   if (result.isError === true || !hasPng(result)) throw new SmokeFailure("verification_failed");
-  return structured(result).windows ?? [];
+  const windows = structured(result).windows ?? [];
+  return ownedTitle === undefined
+    ? windows
+    : windows.filter((window) =>
+        normalized(window.title) === normalized(ownedTitle) &&
+        normalized(window.app_name).toLocaleLowerCase("en-US") === "textedit");
 }
 
 async function waitForTextEditWindowGone(
@@ -367,7 +373,7 @@ async function waitForTextEditWindowGone(
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   do {
-    const windows = await textEditWindows(client);
+    const windows = await textEditWindows(client, ownedTitle);
     const ownedStillVisible = ownedTitle === undefined
       ? windows.some((window) => window.window_ref === ownedWindowRef)
       : windows.some((window) => window.title === ownedTitle && window.is_on_screen !== false);
@@ -500,7 +506,10 @@ export async function cleanupSmokeResources(
   return passed;
 }
 
-export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
+export async function runRealAppSmoke(
+  client: Client,
+  openDocument: (path: string) => Promise<void> = openTextEditDocument,
+): Promise<RealAppSmoke> {
   let calculatorWindowRef: string | undefined;
   let calculatorTouched = false;
   let calculatorCurrent: CallToolResult | undefined;
@@ -531,7 +540,7 @@ export async function runRealAppSmoke(client: Client): Promise<RealAppSmoke> {
     ownedTextEditTitle = `ucu-${randomUUID()}.txt`;
     const documentPath = join(ownedTextEditRoot, ownedTextEditTitle);
     await writeFile(documentPath, "", { flag: "wx" });
-    ownedTextEditWindow = await ownFreshTextEditWindow(client, documentPath);
+    ownedTextEditWindow = await ownFreshTextEditWindow(client, documentPath, openDocument);
     const textEdit = await runTextEdit(client, ownedTextEditWindow);
     textEditCurrent = textEdit.current;
     textEditPassed = textEdit.passed;
