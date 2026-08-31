@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -266,18 +266,8 @@ export async function restoreCalculator(
   }
 }
 
-function oneNewWindow(
-  before: ReadonlySet<string>,
-  after: readonly PublicWindow[],
-): string | undefined {
-  const added = after.filter((window) =>
-    typeof window.window_ref === "string" && !before.has(window.window_ref));
-  const selected = selectExactVisibleWindow(added);
-  return typeof selected?.window_ref === "string" ? selected.window_ref : undefined;
-}
-
 async function openTextEditDocument(documentPath: string): Promise<void> {
-  const child = spawn("/usr/bin/open", ["-a", "TextEdit", documentPath], {
+  const child = spawn("/usr/bin/open", ["-g", "-a", "TextEdit", documentPath], {
     stdio: ["ignore", "ignore", "ignore"],
   });
   const [code] = await once(child, "exit") as [number | null];
@@ -289,14 +279,19 @@ export async function ownFreshTextEditWindow(
   documentPath: string,
   openDocument: (path: string) => Promise<void> = openTextEditDocument,
 ): Promise<string> {
+  const ownedTitle = basename(documentPath);
   const initial = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
-  const before = initial.windowRefs;
+  if (initial.windows.some((window) => normalized(window.title) === normalized(ownedTitle))) {
+    throw new SmokeFailure("textedit_unavailable");
+  }
   await openDocument(documentPath);
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     const refreshed = await discoverApp(client, "com.apple.TextEdit", "textedit_unavailable");
-    const owned = oneNewWindow(before, refreshed.windows);
-    if (owned !== undefined) return owned;
+    const matches = refreshed.windows.filter((window) =>
+      normalized(window.title) === normalized(ownedTitle));
+    const owned = selectExactVisibleWindow(matches);
+    if (typeof owned?.window_ref === "string") return owned.window_ref;
     await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
   }
   throw new SmokeFailure("textedit_unavailable");

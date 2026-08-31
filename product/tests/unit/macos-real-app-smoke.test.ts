@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it, vi } from "vitest";
@@ -33,6 +35,24 @@ function desktop(snapshot: string, windows: readonly string[]): CallToolResult {
       app_ref: "app_textedit",
       app_name: "TextEdit",
       title: window_ref,
+    })),
+  }, true);
+}
+
+function desktopWithTitles(
+  snapshot: string,
+  windows: readonly Readonly<{ ref: string; title: string; visible?: boolean }>[],
+): CallToolResult {
+  return result({
+    snapshot_id: snapshot,
+    apps: [{ app_ref: "app_textedit", display_name: "TextEdit", running: windows.length > 0 }],
+    windows: windows.map((window) => ({
+      window_ref: window.ref,
+      app_ref: "app_textedit",
+      app_name: "TextEdit",
+      title: window.title,
+      is_on_screen: window.visible ?? true,
+      minimized: false,
     })),
   }, true);
 }
@@ -140,6 +160,14 @@ function scriptedClient(
 }
 
 describe("TextEdit owned-window smoke", () => {
+  it("opens the owned document without foregrounding TextEdit", async () => {
+    const source = await readFile(
+      new URL("../e2e/development/macos-real-app-smoke.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain('["-g", "-a", "TextEdit", documentPath]');
+  });
+
   it("accepts confirmed TextEdit readback when Cua honestly reports verification_unknown", () => {
     const response = result({
       snapshot_id: "fresh",
@@ -164,8 +192,8 @@ describe("TextEdit owned-window smoke", () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const openDocument = vi.fn(async () => undefined);
     const client = scriptedClient([
-      desktop("desktop-1", []),
-      desktop("desktop-2", ["owned"]),
+      desktopWithTitles("desktop-1", []),
+      desktopWithTitles("desktop-2", [{ ref: "owned", title: "owned.txt" }]),
     ], calls);
 
     await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
@@ -178,12 +206,15 @@ describe("TextEdit owned-window smoke", () => {
     expect(JSON.stringify(calls)).not.toContain("set_value");
   });
 
-  it("opens an owned document beside existing windows and proves exactly one new ref", async () => {
+  it("opens an owned document beside existing windows and proves its exact title", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const openDocument = vi.fn(async () => undefined);
     const client = scriptedClient([
-      desktop("desktop-1", ["preexisting"]),
-      desktop("desktop-2", ["preexisting", "owned"]),
+      desktopWithTitles("desktop-1", [{ ref: "preexisting", title: "notes.txt" }]),
+      desktopWithTitles("desktop-2", [
+        { ref: "preexisting", title: "notes.txt" },
+        { ref: "owned", title: "owned.txt" },
+      ]),
     ], calls);
 
     await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
@@ -191,6 +222,33 @@ describe("TextEdit owned-window smoke", () => {
     expect(openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
     expect(calls).toHaveLength(2);
     expect(JSON.stringify(calls)).not.toContain("set_value");
+  });
+
+  it("selects the exact owned title even when another window appears concurrently", async () => {
+    const openDocument = vi.fn(async () => undefined);
+    const client = scriptedClient([
+      desktopWithTitles("desktop-1", [{ ref: "preexisting", title: "notes.txt" }]),
+      desktopWithTitles("desktop-2", [
+        { ref: "preexisting", title: "notes.txt" },
+        { ref: "unrelated", title: "other.txt" },
+        { ref: "owned", title: "owned.txt" },
+      ]),
+    ], []);
+
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
+      .resolves.toBe("owned");
+    expect(openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
+  });
+
+  it("fails closed before opening when the supposedly unique title already exists", async () => {
+    const openDocument = vi.fn(async () => undefined);
+    const client = scriptedClient([
+      desktopWithTitles("desktop-1", [{ ref: "preexisting", title: "owned.txt" }]),
+    ], []);
+
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
+      .rejects.toThrow("textedit_unavailable");
+    expect(openDocument).not.toHaveBeenCalled();
   });
 
   it("closes only the owned ref and proves it disappeared without inventing an empty AXValue", async () => {
