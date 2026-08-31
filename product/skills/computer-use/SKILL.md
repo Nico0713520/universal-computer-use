@@ -31,8 +31,6 @@ Prefer background delivery for window click, scroll, drag, typing, and keypress.
 
 After one full window screenshot grounds the task, a confirmed low-risk element or menu action may request `next_observation: {"mode":"semantic"}`. Use the fresh snapshot returned by `computer_act`; do not call `computer_observe` again when it is available. A semantic snapshot has no proven pixel frame, so it may address elements but never coordinates.
 
-For a coordinate-driven loop, request `next_observation: {"mode":"visual"}`. That response is deliberately screenshot-only to avoid redundant element-tree work; call `computer_observe` again before switching back to element addressing.
-
 `observation_mode:"visual_recovery"` means the requested or inherited semantic path was upgraded because the action was coordinate-based, foreground, failed, refused, unconfirmed, or otherwise unsafe. Inspect the returned PNG and decide again; never replay the action automatically. Canvas, video, and WebGL remain visual one-action/one-frame loops.
 
 Never insert a fixed post-action wait. Verification observes immediately and conditionally backs off through 50/100/200/400/500 ms only when verification is required; there is no universal post-action wait. Use an explicit `wait(ms)` action only when fresh evidence shows loading or animation is still in progress. Send complete text once rather than one character per action.

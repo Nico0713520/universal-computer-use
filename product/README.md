@@ -9,7 +9,7 @@ The MCP surface contains exactly two tools:
 - `computer_observe` captures the main display, can discover opaque app/window targets, and on macOS can return an exact window PNG plus bounded Accessibility elements.
 - `computer_act` validates one action against that one-use snapshot, prefers precise element handles, supports explicit background/foreground window delivery, verifies bounded postconditions, and returns the fresh target state without a redundant observe call.
 
-After one full exact-window screenshot, a confirmed low-risk semantic action can request `next_observation: {"mode":"semantic"}` and continue from bounded elements without another PNG. An explicit `next_observation: {"mode":"visual"}` is screenshot-only and skips redundant element-tree enumeration; call `computer_observe` again before a later semantic action. Coordinate, foreground, failed, refused, unconfirmed, and otherwise unsafe paths instead return `observation_mode:"visual_recovery"`; the Agent must inspect that visual state and must not replay the action automatically. A semantic snapshot cannot authorize coordinates.
+After one full exact-window screenshot, a confirmed low-risk semantic action can request `next_observation: {"mode":"semantic"}` and continue from bounded elements without another PNG. Coordinate, foreground, failed, refused, unconfirmed, and otherwise unsafe paths instead return `observation_mode:"visual_recovery"`; the Agent must inspect that visual state and must not replay the action automatically. A semantic snapshot cannot authorize coordinates.
 
 The plugin has no model, provider endpoint, API key, internal planner, OCR service, per-action dialog, or GUI. It does not include an internal vision model. Host approval and safety policy still apply.
 

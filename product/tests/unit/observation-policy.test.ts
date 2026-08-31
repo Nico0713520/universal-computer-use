@@ -85,33 +85,21 @@ describe("post-action observation policy", () => {
     });
   });
 
-  it("makes an explicitly requested visual next state screenshot-only", () => {
-    expect(decideInitialObservation({
-      consumedOptions: OPTIONS,
-      requestedMode: "visual",
-      action: ELEMENT_CLICK,
-      execution: CONFIRMED,
-      hasResolvedExpectation: false,
-    })).toEqual({
-      options: { includeScreenshot: true, maxElements: 0, maxDepth: 0 },
-      observationMode: "visual",
-      semanticCandidate: false,
-      hasResolvedExpectation: false,
-    });
-  });
-
-  it("preserves element limits when visual mode is inherited", () => {
-    expect(decideInitialObservation({
-      consumedOptions: OPTIONS,
-      action: ELEMENT_CLICK,
-      execution: CONFIRMED,
-      hasResolvedExpectation: false,
-    })).toEqual({
-      options: OPTIONS,
-      observationMode: "visual",
-      semanticCandidate: false,
-      hasResolvedExpectation: false,
-    });
+  it("keeps visual when requested or inherited and preserves element limits", () => {
+    for (const requestedMode of ["visual", undefined] as const) {
+      expect(decideInitialObservation({
+        consumedOptions: OPTIONS,
+        ...(requestedMode === undefined ? {} : { requestedMode }),
+        action: ELEMENT_CLICK,
+        execution: CONFIRMED,
+        hasResolvedExpectation: false,
+      })).toEqual({
+        options: OPTIONS,
+        observationMode: "visual",
+        semanticCandidate: false,
+        hasResolvedExpectation: false,
+      });
+    }
   });
 
   it("inherits semantic only from an existing no-screenshot snapshot", () => {

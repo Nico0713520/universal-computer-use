@@ -52,11 +52,8 @@ export function decideInitialObservation(input: Readonly<{
     (input.execution.route === "accessibility" || input.execution.route === "system_api") &&
     (input.execution.delivery === "background" || input.execution.delivery === "not_applicable") &&
     input.execution.escalation === undefined;
-  const explicitVisual = input.requestedMode === "visual";
   return {
-    options: explicitVisual
-      ? { includeScreenshot: true, maxElements: 0, maxDepth: 0 }
-      : { ...input.consumedOptions, includeScreenshot: !safe },
+    options: { ...input.consumedOptions, includeScreenshot: !safe },
     observationMode: safe ? "semantic" : wantsSemantic ? "visual_recovery" : "visual",
     semanticCandidate: safe,
     hasResolvedExpectation: input.hasResolvedExpectation,
