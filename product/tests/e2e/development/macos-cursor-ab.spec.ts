@@ -195,8 +195,8 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
             window_id: native.window_id,
             x: point.x,
             y: point.y,
-            button: "right",
-            count: 1,
+            button: "left",
+            count: 2,
             delivery_mode: "background",
           }));
           const durationMs = Math.ceil(Math.max(0, performance.now() - startedAt));

@@ -6,29 +6,29 @@ const fixtureUrl = new URL("../fixtures/desktop-harness/index.html", import.meta
 const specUrl = new URL("../e2e/development/macos-cursor-ab.spec.ts", import.meta.url);
 
 describe("Cursor A/B synthetic-event route contract", () => {
-  it("asks Cua for a right click while retaining one click per call", async () => {
+  it("asks Cua for a double left click to bypass the single-click AX shortcut", async () => {
     const source = await readFile(specUrl, "utf8");
     const call = source.match(/sdk\.callTool\("click", JSON\.stringify\(\{([\s\S]*?)\}\)\);/);
 
-    expect(call?.[1]).toContain('button: "right"');
-    expect(call?.[1]).not.toContain('button: "left"');
+    expect(call?.[1]).toContain('button: "left"');
+    expect(call?.[1]).not.toContain('button: "right"');
     expect(call?.[1]).not.toContain('button: "middle"');
-    expect(call?.[1]).toContain("count: 1");
+    expect(call?.[1]).toContain("count: 2");
     expect(source).toContain('if (execution.route !== "synthetic_events")');
   });
 
-  it("records the canvas oracle exactly once for a suppressed context menu", async () => {
+  it("records one oracle effect per double-click action", async () => {
     const source = await readFile(fixtureUrl, "utf8");
     const listener = source.match(
       /byId\("cursor-ab-target"\)\.addEventListener\("([^"]+)", \(event\) => \{([\s\S]*?)\n    \}\);/,
     );
     const body = listener?.[2] ?? "";
 
-    expect(listener?.[1]).toBe("contextmenu");
-    expect(body).toContain("event.preventDefault();");
+    expect(listener?.[1]).toBe("dblclick");
     expect(body.match(/record\("canvas_click"/g)).toHaveLength(1);
     expect(source).not.toContain('byId("cursor-ab-target").addEventListener("click"');
     expect(source).not.toContain('byId("cursor-ab-target").addEventListener("auxclick"');
+    expect(source).not.toContain('byId("cursor-ab-target").addEventListener("contextmenu"');
   });
 
   it("fails fast on the first missing exactly-once effect", async () => {

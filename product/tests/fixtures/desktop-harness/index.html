@@ -269,8 +269,7 @@
     byId("semantic-gamma-input").addEventListener("click", () => pressAndRecord("semantic-gamma-input", "semantic", { value: "gamma" }));
     byId("overlay-toggle-input").addEventListener("click", () => pressAndRecord("overlay-toggle-input", "overlay_toggle"));
     byId("overlay-target").addEventListener("click", () => record("overlay_click"));
-    byId("cursor-ab-target").addEventListener("contextmenu", (event) => {
-      event.preventDefault();
+    byId("cursor-ab-target").addEventListener("dblclick", (event) => {
       record("canvas_click", { x: event.clientX, y: event.clientY });
     });
     byId("double-target").addEventListener("click", () => record("pixel_click"));
