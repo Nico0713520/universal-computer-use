@@ -45,6 +45,7 @@ type CliDependencies = Readonly<{
   connectMcpEngine?: (lock: EngineLock) => Promise<EnginePort>;
   nodeExecutablePath: string;
   mcpScriptPath: string;
+  mcpScriptExists?: () => Promise<boolean>;
   productOwnedPaths: readonly string[];
   isEngineInstalled: () => Promise<boolean>;
   runMcpServer: typeof runStdioServer;
@@ -86,6 +87,14 @@ const defaultDependencies: CliDependencies = {
   connectMcpEngine: connectProductionEngine,
   nodeExecutablePath: process.execPath,
   mcpScriptPath,
+  async mcpScriptExists() {
+    try {
+      await access(mcpScriptPath);
+      return true;
+    } catch {
+      return false;
+    }
+  },
   // Task 9 owns host-specific Skill links. Until it creates a product-owned
   // manifest, safe uninstall deliberately removes no inferred user paths.
   productOwnedPaths: [],
@@ -105,7 +114,7 @@ function usage(): string {
     "Usage:",
     "  computer-use setup [--development]",
     "  computer-use doctor [--json]",
-    "  computer-use config --client generic|codex|kimi",
+    "  computer-use config --client generic|codex|kimi|hanaagent|workbuddy",
     "  computer-use uninstall [--engine]",
     "  computer-use mcp",
   ].join("\n");
@@ -177,8 +186,19 @@ export async function runCli(
   if (command === "config") {
     if (args.length !== 2 || args[0] !== "--client") throw new Error(usage());
     const client = args[1];
-    if (client !== "generic" && client !== "codex" && client !== "kimi") {
+    if (
+      client !== "generic" &&
+      client !== "codex" &&
+      client !== "kimi" &&
+      client !== "hanaagent" &&
+      client !== "workbuddy"
+    ) {
       throw new Error(`unsupported config client: ${client}`);
+    }
+    if (!(await (dependencies.mcpScriptExists?.() ?? Promise.resolve(true)))) {
+      throw new Error(
+        `MCP build output is missing: ${dependencies.mcpScriptPath}. Run the package build first.`,
+      );
     }
     const output = renderConfig(
       client satisfies ConfigClient,

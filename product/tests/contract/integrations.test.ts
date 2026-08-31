@@ -6,6 +6,13 @@ const artifactUrls = {
   generic: new URL("../../integrations/generic/mcp.json", import.meta.url),
   codex: new URL("../../integrations/codex/README.md", import.meta.url),
   kimi: new URL("../../integrations/kimi/README.md", import.meta.url),
+  hanaagent: new URL("../../integrations/hanaagent/README.md", import.meta.url),
+  workbuddy: new URL("../../integrations/workbuddy/README.md", import.meta.url),
+  workbuddyMcp: new URL("../../integrations/workbuddy/.mcp.json", import.meta.url),
+  workbuddyManifest: new URL(
+    "../../integrations/workbuddy/.codebuddy-plugin/plugin.json",
+    import.meta.url,
+  ),
   compatibility: new URL("../../../docs/host-compatibility.md", import.meta.url),
 } as const;
 
@@ -30,7 +37,7 @@ describe("host integration artifacts", () => {
     });
   });
 
-  it.each(["codex", "kimi"] as const)(
+  it.each(["codex", "kimi", "hanaagent", "workbuddy"] as const)(
     "%s installs the canonical Skill and generates an absolute production command",
     async (host) => {
       const artifacts = await readArtifacts();
@@ -42,9 +49,42 @@ describe("host integration artifacts", () => {
       expect(readme).toContain("absolute MCP script");
       expect(readme).toContain("computer_observe");
       expect(readme).toContain("computer_act");
+      if (host === "hanaagent" || host === "workbuddy") {
+        expect(readme).toContain("new conversation");
+      }
       expect(readme).not.toContain("## Control loop");
     },
   );
+
+  it.each(["hanaagent", "workbuddy"] as const)(
+    "%s documents a manual source-build registration without claiming host verification",
+    async (host) => {
+      const artifacts = await readArtifacts();
+      const readme = artifacts[host];
+
+      expect(readme).toContain("pnpm install --frozen-lockfile");
+      expect(readme).toContain("pnpm build");
+      expect(readme).toContain("setup --development");
+      expect(readme).toContain("doctor --json");
+      expect(readme).toContain("manual");
+      expect(readme).toContain("not tested");
+      expect(readme).not.toMatch(/auto(?:matic)?[- ]install/i);
+    },
+  );
+
+  it("keeps the committed WorkBuddy MCP file as a fail-closed absolute-path example", async () => {
+    const { workbuddyMcp } = await readArtifacts();
+    const parsed = JSON.parse(workbuddyMcp) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    const server = parsed.mcpServers["computer-use"];
+
+    expect(server).toEqual({
+      command: "/replace/with/absolute/path/to/node",
+      args: ["/replace/with/absolute/path/to/universal-computer-use/product/dist/mcp/main.js"],
+    });
+    expect(workbuddyMcp).not.toContain("computer-use-mcp");
+  });
 
   it("keeps model-provider configuration out of every integration artifact", async () => {
     const artifacts = await readArtifacts();

@@ -51,8 +51,10 @@ describe("experimental host adapters", () => {
     expect(mcp).toEqual({
       mcpServers: {
         "computer-use": {
-          command: "computer-use-mcp",
-          args: [],
+          command: "/replace/with/absolute/path/to/node",
+          args: [
+            "/replace/with/absolute/path/to/universal-computer-use/product/dist/mcp/main.js",
+          ],
         },
       },
     });
