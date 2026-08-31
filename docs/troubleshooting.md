@@ -32,7 +32,7 @@ If a host sees text but not the screenshot, it does not support MCP `ImageConten
 
 ## macOS host starts before CuaDriver
 
-Product 0.2.4 makes one bounded recovery attempt only when the first pre-session connection returns `runtime_unavailable`. It verifies the installed `/Applications/CuaDriver.app`, starts its `serve` process, and exits readiness polling on the first successful connection. A missing app returns `runtime_missing`; a signing mismatch returns `engine_version_mismatch`; a failed start or 10-second deadline returns `runtime_unavailable`. This startup path never receives or replays an MCP tool request. Run `computer-use doctor --json` separately when recovery fails; doctor diagnoses and performs no startup repair.
+Product 0.2.5 makes one bounded recovery attempt only when the first pre-session connection returns `runtime_unavailable`. It verifies the installed `/Applications/CuaDriver.app`, starts its `serve` process, and exits readiness polling on the first successful connection. A missing app returns `runtime_missing`; a signing mismatch returns `engine_version_mismatch`; a failed start or 10-second deadline returns `runtime_unavailable`. This startup path never receives or replays an MCP tool request. UCU never restarts Cua after the MCP session starts. Run `computer-use doctor --json` separately when recovery fails; doctor diagnoses and performs no startup repair.
 
 After adding the MCP server to a host, restart the host and begin a new conversation. A conversation whose tool inventory was frozen before registration will not gain the two tools dynamically. Shell-driven JSON-RPC can diagnose transport behavior but is not direct-host compatibility evidence.
 
@@ -50,7 +50,7 @@ After adding the MCP server to a host, restart the host and begin a new conversa
 
 Runtime metadata logs are JSONL on the MCP process's standard error. They contain only timestamp, per-process hashes, tool/action type, duration, route/effect/delivery and stable error code. They must not contain screenshot bytes, typed text, key contents, clipboard data, model prompts or environment values. Standard output is reserved for MCP frames.
 
-The real platform, host and soak evidence files belong outside the repository. They are strict, redacted JSON without screenshots or traces. A macOS development run that cannot build complete schema-v3 evidence writes a separate sibling `*.diagnostic.json` after cleanup; it is a failure report, never passing evidence. CI uploads JSON evidence only.
+The real platform, host and soak evidence files belong outside the repository. They are strict, redacted JSON without screenshots or traces. A macOS development run that cannot build complete schema-v4 evidence writes a separate sibling `*.diagnostic.json` after cleanup; it is a failure report, never passing evidence. Schema v4 may include aggregate action-route counts, but never typed content, screenshots, raw samples, or window titles. CI uploads JSON evidence only.
 
 ## Development setup and uninstall
 

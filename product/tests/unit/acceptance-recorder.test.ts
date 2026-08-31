@@ -31,7 +31,7 @@ const SCENARIO_NAMES: readonly AcceptanceScenarioName[] = [
 ];
 
 const METADATA: AcceptanceMetadata = {
-  product_version: "0.2.4",
+  product_version: "0.2.5",
   protocol_version: "1.2.0",
   engine_version: "0.22.2",
   macos_version: "15.6.1",

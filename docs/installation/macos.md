@@ -36,7 +36,7 @@ After installation, setup verifies `/Applications/CuaDriver.app` with `codesign 
 
 The plugin does not modify Codex, Kimi, or another host's configuration automatically.
 
-After installation, product 0.2.4 can recover an installed but stopped CuaDriver when a host starts the MCP process. Recovery happens before the MCP session and any snapshot exist: it verifies the locked app signature, starts `serve`, and polls readiness until the first successful connection or a 10-second hard deadline. It never replays an observation or GUI action. `computer-use doctor --json` remains side-effect-free and does not start the Runtime.
+After installation, product 0.2.5 can recover an installed but stopped CuaDriver when a host starts the MCP process. Recovery happens before the MCP session and any snapshot exist: it verifies the locked app signature, starts `serve`, and polls readiness until the first successful connection or a 10-second hard deadline. It never replays an observation or GUI action and never restarts Cua after the MCP session starts. During session initialization, UCU disables Cua's session-owned Agent Cursor on both internal sessions and verifies the state before accepting tools. `computer-use doctor --json` remains side-effect-free and does not start the Runtime.
 
 ## Screen Recording and Accessibility
 

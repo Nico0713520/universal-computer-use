@@ -1,6 +1,6 @@
 # Universal Computer Use Plugin
 
-A lightweight local MCP bridge that lets a compatible multimodal agent observe and operate the current desktop. The host agent supplies the vision model and decision loop; product `0.2.4` and protocol `1.2.0` supply the validation, lifecycle, and execution bridge.
+A lightweight local MCP bridge that lets a compatible multimodal agent observe and operate the current desktop. The host agent supplies the vision model and decision loop; product `0.2.5` and protocol `1.2.0` supply the validation, lifecycle, and execution bridge.
 
 Cua Driver is a separate MIT-licensed runtime dependency. Its Rust and native platform code are not bundled as product source, modified, or re-signed by this project. The exact reviewed runtime and installer artifacts are pinned in `engine.lock.json`.
 
@@ -36,7 +36,7 @@ The npm name is reserved but not published. Create and install an exact local pr
 
 ```bash
 npm pack
-npm install --global ./universal-computer-use-plugin-0.2.4.tgz
+npm install --global ./universal-computer-use-plugin-0.2.5.tgz
 computer-use setup --development
 computer-use doctor --json
 computer-use config --client generic
@@ -49,15 +49,17 @@ Publishing that artifact externally requires a separate explicit release action.
 ```bash
 npx --yes pnpm@9.0.4 test
 npx --yes pnpm@9.0.4 typecheck
-npx --yes pnpm@9.0.4 acceptance:macos
+npx --yes pnpm@9.0.4 acceptance:macos -- --exclusive-desktop
+npx --yes pnpm@9.0.4 acceptance:macos:profile -- --profile pixel_action_next_state --exclusive-desktop
+npx --yes pnpm@9.0.4 acceptance:macos:cursor-ab -- --exclusive-desktop
 npm pack --dry-run --json
 ```
 
-`acceptance:macos` is a source-only real-machine lane. It opens an isolated deterministic Chrome fixture plus an owned native AppKit text/focus fixture, uses one long-lived stdio MCP client for four 5-warm-up/30-sample profiles, records a production/Canonical-Skill fixed-delay scan plus separate semantic-sequence, exactly-once pixel/input, visual-recovery and native-focus proofs, then runs owned Calculator/TextEdit smoke and reconnect checks. The precise semantic-input lane uses the native control because Cua correctly treats browser AX echo as untrusted. It writes only schema-v3 redacted correctness and timing aggregates outside the repository; a fatal harness failure writes a separate strict diagnostic after cleanup. See [`tests/e2e/development/README.md`](tests/e2e/development/README.md). It does not create release evidence.
+These source-only real-machine lanes deliberately refuse to run without `--exclusive-desktop`, because the full lane activates owned applications and foreground delivery can change focus. The full lane performs four 5-warm-up/30-sample profiles plus semantic-sequence, exactly-once, visual-recovery, native-focus, Calculator/TextEdit smoke, and reconnect proofs. The focused lane runs one named profile without opening Calculator or TextEdit. The Cursor A/B lane toggles only a single owned Window session and measures the same deterministic target without restarting Cua. Schema-v4 evidence contains only redacted correctness/timing aggregates and aggregate action-route counts; it does not create release evidence. See [`tests/e2e/development/README.md`](tests/e2e/development/README.md).
 
 ## Current platform scope
 
-- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background semantic delivery, background window-pixel routing with explicit foreground escalation, bounded verification, safe app launch and the schema-v3 correctness/performance evidence harness are implemented. Product 0.2.4 also verifies and starts an already-installed stopped CuaDriver before opening the MCP session, using readiness polling with a 10-second hard deadline and no replayed GUI call. Installed npm bin symlinks now resolve to the packaged CLI and MCP entrypoints. On the current development Mac, three consecutive covered-window profiles during concurrent WorkBuddy activity each achieved 30/30 background pixel effects: p50 266–268 ms and p95 285–373 ms. The paired semantic action profile stayed 30/30 at p50 1,149–1,157 ms and p95 1,172–1,197 ms. These are local development measurements, not release evidence; the full three-run lane remains incomplete because this long-lived test account contains pre-v0.2.3 TextEdit artifacts, so the product remains Developer Preview.
+- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background semantic delivery, background window-pixel routing with explicit foreground escalation, bounded verification, and safe app launch are implemented. Product 0.2.5 disables Cua's session-owned Agent Cursor on both internal sessions and verifies both readbacks before serving MCP calls, so ordinary UCU automation does not inherit visible cursor animation. The harness has no fixed post-action sleep. Schema-v4 development evidence separates aggregate `accessibility` and `synthetic_events` action routes. Foreground delivery can still change application focus, and the real same-target Cursor A/B must be run deliberately on an idle Mac before making any new latency claim.
 - Windows with Cua 0.22.2: primary-desktop screenshot/input compatibility remains implemented. The pinned upstream `list_apps`, `list_windows`, and `get_window_state` entries are stubs, so window precision/background mode is intentionally not advertised as available. Windows 100%/125%/150% DPI evidence remains a release blocker.
 
-The `0.2.4` product still locks Cua `0.22.2`; both platforms are development-eligible but not release-eligible. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. See `../docs/troubleshooting.md` for permissions, evidence, and release details.
+The `0.2.5` product still locks Cua `0.22.2`; both platforms are development-eligible but not release-eligible. Startup recovery may start an already-installed stopped runtime before a session exists, but UCU never restarts it after the MCP session starts and never replays a GUI action. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. See `../docs/troubleshooting.md` for permissions, evidence, and release details.

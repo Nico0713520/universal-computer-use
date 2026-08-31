@@ -19,7 +19,7 @@ function evidence(): Record<string, unknown> {
     evidence_type: "computer-use-macos-cursor-ab",
     status: "passed",
     metadata: {
-      product_version: "0.2.4",
+      product_version: "0.2.5",
       engine_version: "0.22.2",
       macos_version: "15.6.1",
       architecture: "arm64",
