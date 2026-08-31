@@ -11,6 +11,10 @@ import { loadEngineLock } from "../../../src/engine/lock.js";
 import { mapCuaResult } from "../../../src/engine/result-mapper.js";
 import { PRODUCT_VERSION } from "../../../src/version.js";
 import {
+  CursorAbDiagnosticTracker,
+  runCursorAbGuardedLifecycle,
+} from "./cursor-ab-diagnostic.js";
+import {
   CursorAbRecorder,
   type CursorAbMode,
   type CursorAbSample,
@@ -101,9 +105,9 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
     if (evidencePath === undefined || !evidencePath.startsWith("/")) {
       throw new Error("cursor_ab_evidence_path_missing");
     }
-    requireInteractiveSession(await frontmostIdentity());
+    const diagnosticPath = `${evidencePath}.diagnostic.json`;
+    const diagnostic = new CursorAbDiagnosticTracker();
     const recorder = new CursorAbRecorder();
-    const lock = await loadEngineLock();
     let fixture: FixtureProcess | undefined;
     let browser: BrowserProcess | undefined;
     let sdk: CuaDriverLike | undefined;
@@ -118,7 +122,12 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
     let initialPoint: string | undefined;
     let finalPoint: string | undefined;
 
-    try {
+    const lock = await runCursorAbGuardedLifecycle({
+      diagnosticPath,
+      tracker: diagnostic,
+      operation: async () => {
+      requireInteractiveSession(await frontmostIdentity());
+      const activeLock = await loadEngineLock();
       fixture = await startFixture();
       browser = await launchBrowser(fixture.url);
       const layout = await waitForFixture(fixture.url);
@@ -130,7 +139,7 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
 
       sdk = CuaDriver.connect(undefined);
       const metadata = await sdk.metadata();
-      if (metadata.driverVersion !== lock.version) throw new Error("cursor_ab_engine_version_mismatch");
+      if (metadata.driverVersion !== activeLock.version) throw new Error("cursor_ab_engine_version_mismatch");
       initialDriverPid = metadata.pid;
       session = `ucu_cursor_ab_${randomUUID()}`;
       initialSession = session;
@@ -173,8 +182,10 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
         if (sdk === undefined || session === undefined || fixture === undefined) {
           throw new Error("cursor_ab_runtime_missing");
         }
+        diagnostic.setPhase("cursor_state");
         await setAndReadCursor(sdk, session, enabled);
         recorder.recordReadback(mode, enabled);
+        diagnostic.setPhase("measurement");
         for (let index = 0; index < 35; index += 1) {
           const before = await fixtureJson<HarnessState>(fixture.url, "/state");
           const startedAt = performance.now();
@@ -208,6 +219,7 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
       await runMode("enabled", true);
       await runMode("disabled", false);
 
+      diagnostic.setPhase("invariants");
       const finalMetadata = await sdk.metadata();
       finalDriverPid = finalMetadata.pid;
       finalSession = (await sdk.getSessionState({ session })).session;
@@ -234,7 +246,9 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
       if (finalState.image === undefined) throw new Error("cursor_ab_capture_missing");
       const endPoint = pointForCanvas(layout, finalState.image.width, finalState.image.height);
       finalPoint = `${endPoint.x}:${endPoint.y}`;
-    } finally {
+      return activeLock;
+      },
+      cleanup: async () => {
       const cleanup = async (operation: () => Promise<void>): Promise<void> => {
         try {
           await operation();
@@ -255,25 +269,32 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
         await stopOwnedProcess(fixture?.child);
         fixture = undefined;
       });
-    }
+      if (cleanupFailure !== undefined) throw cleanupFailure;
+      },
+    });
 
-    if (cleanupFailure !== undefined) throw cleanupFailure;
-    if (process.arch !== "arm64" && process.arch !== "x64") {
-      throw new Error("cursor_ab_architecture_unsupported");
+    diagnostic.setPhase("evidence");
+    try {
+      if (process.arch !== "arm64" && process.arch !== "x64") {
+        throw new Error("cursor_ab_architecture_unsupported");
+      }
+      const evidence = recorder.evidence({
+        product_version: PRODUCT_VERSION,
+        engine_version: lock.version,
+        macos_version: await macosVersion(),
+        architecture: process.arch === "arm64" ? "arm64" : "x86_64",
+      }, {
+        same_driver_process: initialDriverPid !== undefined && initialDriverPid === finalDriverPid,
+        same_session: initialSession !== undefined && initialSession === finalSession,
+        same_target: initialTarget !== undefined && initialTarget === finalTarget &&
+          initialPoint !== undefined && initialPoint === finalPoint,
+      }, true);
+      await validateEvidence(evidence);
+      await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { flag: "wx" });
+      expect(evidence.status).toBe("passed");
+    } catch (error) {
+      await diagnostic.write(diagnosticPath, error, true);
+      throw error;
     }
-    const evidence = recorder.evidence({
-      product_version: PRODUCT_VERSION,
-      engine_version: lock.version,
-      macos_version: await macosVersion(),
-      architecture: process.arch === "arm64" ? "arm64" : "x86_64",
-    }, {
-      same_driver_process: initialDriverPid !== undefined && initialDriverPid === finalDriverPid,
-      same_session: initialSession !== undefined && initialSession === finalSession,
-      same_target: initialTarget !== undefined && initialTarget === finalTarget &&
-        initialPoint !== undefined && initialPoint === finalPoint,
-    }, true);
-    await validateEvidence(evidence);
-    await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { flag: "wx" });
-    expect(evidence.status).toBe("passed");
   }, 240_000);
 });

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-computer-use.invalid/schemas/macos-cursor-ab-diagnostic-v1.json",
+  "title": "Redacted macOS Cursor A/B Failure Diagnostic",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evidence_type", "status", "phase", "error_code", "cleanup_passed", "timestamp"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence_type": { "const": "computer-use-macos-cursor-ab-diagnostic" },
+    "status": { "const": "failed" },
+    "phase": {
+      "enum": ["setup", "cursor_state", "measurement", "invariants", "evidence", "cleanup"]
+    },
+    "error_code": {
+      "enum": [
+        "route_mismatch",
+        "cursor_state_failed",
+        "effect_mismatch",
+        "target_failed",
+        "invariants_failed",
+        "cleanup_failed",
+        "capture_failed",
+        "session_failed",
+        "runtime_failed",
+        "internal_error"
+      ]
+    },
+    "cleanup_passed": { "type": "boolean" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+      "maxLength": 40
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "cleanup_passed": { "const": false } }, "required": ["cleanup_passed"] },
+      "then": {
+        "properties": {
+          "phase": { "const": "cleanup" },
+          "error_code": { "const": "cleanup_failed" }
+        }
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "properties": { "phase": { "const": "cleanup" } }, "required": ["phase"] },
+            { "properties": { "error_code": { "const": "cleanup_failed" } }, "required": ["error_code"] }
+          ]
+        }
+      }
+    }
+  ]
+}

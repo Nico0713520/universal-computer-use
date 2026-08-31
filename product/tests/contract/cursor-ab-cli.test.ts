@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -64,6 +64,18 @@ function doctor(): Record<string, unknown> {
   };
 }
 
+function diagnostic(): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    evidence_type: "computer-use-macos-cursor-ab-diagnostic",
+    status: "failed",
+    phase: "measurement",
+    error_code: "route_mismatch",
+    cleanup_passed: true,
+    timestamp: "2026-08-31T00:00:00.000Z",
+  };
+}
+
 async function fixturePath(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "ucu-cursor-ab-cli-test-"));
   temporaryRoots.push(root);
@@ -112,6 +124,21 @@ describe("macOS Cursor A/B launcher", () => {
     await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("rejects a pre-existing sibling diagnostic before the child can run", async () => {
+    const path = await fixturePath();
+    await writeFile(`${path}.diagnostic.json`, `${JSON.stringify(diagnostic())}\n`);
+    const result = await run(path, undefined, {
+      CUA_CURSOR_AB_TEST_CHILD_RESULT: "must-not-be-read",
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "cursor_ab_preflight_failed:diagnostic_path_exists\n",
+    });
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("writes one strict same-process/session/target artifact", async () => {
     const path = await fixturePath();
     const result = await run(path);
@@ -121,6 +148,52 @@ describe("macOS Cursor A/B launcher", () => {
       stderr: "",
     });
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual(evidence());
+  });
+
+  it("preserves a strict child diagnostic and emits only its stable error code", async () => {
+    const path = await fixturePath();
+    const diagnosticPath = `${path}.diagnostic.json`;
+    const rawFailure = "Error: secret-token at /Users/alice/private/input.txt\nstack trace";
+    const result = await run(path, undefined, {
+      CUA_CURSOR_AB_TEST_CHILD_RESULT: "",
+      CUA_CURSOR_AB_TEST_CHILD_DIAGNOSTIC_RESULT: JSON.stringify(diagnostic()),
+      CUA_CURSOR_AB_TEST_CHILD_EXIT_CODE: "1",
+      CUA_CURSOR_AB_TEST_CHILD_STDERR: rawFailure,
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "cursor_ab_failed:route_mismatch\n",
+    });
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+    const persisted = await readFile(diagnosticPath, "utf8");
+    expect(JSON.parse(persisted)).toEqual(diagnostic());
+    expect(`${result.stdout}${result.stderr}${persisted}`).not.toContain("secret-token");
+    expect(`${result.stdout}${result.stderr}${persisted}`).not.toContain("/Users/alice");
+    expect(`${result.stdout}${result.stderr}${persisted}`).not.toContain("stack trace");
+  });
+
+  it("rejects and removes a child diagnostic that contains raw failure content", async () => {
+    const path = await fixturePath();
+    const malformed = {
+      ...diagnostic(),
+      message: "secret-token at /Users/alice/private/input.txt",
+    };
+    const result = await run(path, undefined, {
+      CUA_CURSOR_AB_TEST_CHILD_RESULT: "",
+      CUA_CURSOR_AB_TEST_CHILD_DIAGNOSTIC_RESULT: JSON.stringify(malformed),
+      CUA_CURSOR_AB_TEST_CHILD_EXIT_CODE: "1",
+      CUA_CURSOR_AB_TEST_CHILD_STDERR: "raw stack /Users/alice/private/input.txt secret-token",
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "cursor_ab_failed:evidence_missing_or_invalid\n",
+    });
+    await expect(readFile(`${path}.diagnostic.json`)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(`${result.stdout}${result.stderr}`).not.toMatch(/secret-token|\/Users\/alice|raw stack/);
   });
 
   it.each([

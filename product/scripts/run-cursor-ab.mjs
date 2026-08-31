@@ -11,8 +11,10 @@ const PRODUCT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_BROWSER = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const SOURCE_FILES = [
   "tests/e2e/development/macos-cursor-ab.spec.ts",
+  "tests/e2e/development/cursor-ab-diagnostic.ts",
   "tests/e2e/development/cursor-ab-recorder.ts",
   "tests/e2e/development/cursor-ab-evidence.schema.json",
+  "tests/e2e/development/cursor-ab-diagnostic.schema.json",
   "tests/fixtures/desktop-harness/index.html",
   "tests/fixtures/desktop-harness/server.mjs",
   "engine.lock.json",
@@ -23,7 +25,10 @@ const TEST_KEYS = [
   "CUA_CURSOR_AB_TEST_DOCTOR_JSON",
   "CUA_CURSOR_AB_TEST_BROWSER",
   "CUA_CURSOR_AB_TEST_CHILD_RESULT",
+  "CUA_CURSOR_AB_TEST_CHILD_DIAGNOSTIC_RESULT",
   "CUA_CURSOR_AB_TEST_CHILD_EXIT_CODE",
+  "CUA_CURSOR_AB_TEST_CHILD_STDOUT",
+  "CUA_CURSOR_AB_TEST_CHILD_STDERR",
 ];
 
 class CursorAbFailure extends Error {
@@ -118,12 +123,26 @@ async function validEvidence(value, engineVersion, productVersion) {
   return validate(value) && validSemantics(value);
 }
 
+async function validDiagnostic(value) {
+  const { default: Ajv2020 } = await import("ajv/dist/2020.js");
+  const schema = JSON.parse(await readFile(
+    join(PRODUCT_DIR, "tests/e2e/development/cursor-ab-diagnostic.schema.json"),
+    "utf8",
+  ));
+  const validate = new Ajv2020({ allErrors: true, strict: false, validateFormats: false })
+    .compile(schema);
+  return validate(value);
+}
+
 async function selectEvidencePath(configured) {
   if (configured !== undefined) {
     if (!isAbsolute(configured)) {
       throw new CursorAbFailure("cursor_ab_preflight_failed:evidence_path_must_be_absolute");
     }
     if (await exists(configured)) throw new CursorAbFailure("cursor_ab_preflight_failed:evidence_path_exists");
+    if (await exists(`${configured}.diagnostic.json`)) {
+      throw new CursorAbFailure("cursor_ab_preflight_failed:diagnostic_path_exists");
+    }
     try {
       await access(dirname(configured));
     } catch {
@@ -198,14 +217,27 @@ async function main() {
 
     let childFailed = false;
     if (testMode) {
-      let simulated;
-      try {
-        simulated = JSON.parse(process.env.CUA_CURSOR_AB_TEST_CHILD_RESULT ?? "");
-      } catch {
-        throw new CursorAbFailure("cursor_ab_failed:lane_failed");
-      }
-      await writeFile(selected.path, `${JSON.stringify(simulated, null, 2)}\n`, { flag: "wx" });
       childFailed = (process.env.CUA_CURSOR_AB_TEST_CHILD_EXIT_CODE ?? "0") !== "0";
+      const simulatedEvidence = process.env.CUA_CURSOR_AB_TEST_CHILD_RESULT;
+      if (simulatedEvidence !== undefined && simulatedEvidence !== "") {
+        try {
+          await writeFile(selected.path, `${JSON.stringify(JSON.parse(simulatedEvidence), null, 2)}\n`, {
+            flag: "wx",
+          });
+        } catch (error) {
+          if (error?.code === "EEXIST") throw error;
+        }
+      }
+      const simulatedDiagnostic = process.env.CUA_CURSOR_AB_TEST_CHILD_DIAGNOSTIC_RESULT;
+      if (simulatedDiagnostic !== undefined && simulatedDiagnostic !== "") {
+        try {
+          await writeFile(`${selected.path}.diagnostic.json`, `${JSON.stringify(JSON.parse(simulatedDiagnostic), null, 2)}\n`, {
+            flag: "wx",
+          });
+        } catch (error) {
+          if (error?.code === "EEXIST") throw error;
+        }
+      }
     } else {
       const child = await runProcess(process.execPath, [
         join(PRODUCT_DIR, "node_modules/vitest/vitest.mjs"),
@@ -228,9 +260,30 @@ async function main() {
     try {
       evidence = JSON.parse(await readFile(selected.path, "utf8"));
     } catch {
-      throw new CursorAbFailure("cursor_ab_failed:evidence_missing_or_invalid");
+      evidence = undefined;
     }
-    if (!(await validEvidence(evidence, lock.version, productVersion))) {
+    if (evidence === undefined || !(await validEvidence(evidence, lock.version, productVersion))) {
+      let diagnosticRaw;
+      try {
+        diagnosticRaw = await readFile(`${selected.path}.diagnostic.json`, "utf8");
+      } catch {
+        diagnosticRaw = undefined;
+      }
+      let diagnostic;
+      if (diagnosticRaw !== undefined) {
+        try {
+          diagnostic = JSON.parse(diagnosticRaw);
+        } catch {
+          diagnostic = undefined;
+        }
+      }
+      if (childFailed && diagnostic !== undefined && await validDiagnostic(diagnostic)) {
+        preserve = true;
+        throw new CursorAbFailure(`cursor_ab_failed:${diagnostic.error_code}`);
+      }
+      if (diagnosticRaw !== undefined) {
+        await rm(`${selected.path}.diagnostic.json`, { force: true });
+      }
       throw new CursorAbFailure("cursor_ab_failed:evidence_missing_or_invalid");
     }
     preserve = true;
