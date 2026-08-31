@@ -19,16 +19,15 @@ describe("Cursor A/B synthetic-event route contract", () => {
     expect(source).toContain('if (execution.route !== "synthetic_events")');
   });
 
-  it("records one oracle effect for the canvas right-click context menu event", async () => {
+  it("records one oracle effect only after a paired canvas right-button down and up", async () => {
     const source = await readFile(fixtureUrl, "utf8");
-    const listener = source.match(
-      /byId\("cursor-ab-target"\)\.addEventListener\("([^"]+)", \(event\) => \{([\s\S]*?)\n    \}\);/,
-    );
-    const body = listener?.[2] ?? "";
-
-    expect(listener?.[1]).toBe("contextmenu");
-    expect(body).toContain("event.preventDefault();");
-    expect(body.match(/record\("canvas_click"/g)).toHaveLength(1);
+    expect(source).toContain('addEventListener("mousedown", (event) => {');
+    expect(source).toContain('if (event.button === 2) cursorAbRightDown = true;');
+    expect(source).toContain('addEventListener("mouseup", (event) => {');
+    expect(source).toContain('if (event.button !== 2 || !cursorAbRightDown) return;');
+    expect(source).toContain('cursorAbRightDown = false;');
+    expect(source.match(/record\("canvas_click"/g)).toHaveLength(1);
+    expect(source).toContain('addEventListener("contextmenu", (event) => event.preventDefault())');
     expect(source).not.toContain('byId("cursor-ab-target").addEventListener("click"');
     expect(source).not.toContain('byId("cursor-ab-target").addEventListener("dblclick"');
     expect(source).not.toContain('byId("cursor-ab-target").addEventListener("auxclick"');
