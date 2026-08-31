@@ -6,6 +6,10 @@ import { z } from "zod";
 
 const hostDirectory = new URL("../e2e/host/", import.meta.url);
 const schemaUrl = new URL("../e2e/host/development-evidence.schema.json", import.meta.url);
+const syntheticExampleUrl = new URL(
+  "../fixtures/host-development-evidence-v2.synthetic.json",
+  import.meta.url,
+);
 const releaseEvidenceTestUrl = new URL("./host-evidence.test.ts", import.meta.url);
 const releaseVerifierUrl = new URL("../../scripts/verify-release.mjs", import.meta.url);
 
@@ -25,9 +29,18 @@ async function evidenceParser(): Promise<z.ZodType> {
   );
 }
 
+function parseExternalDevelopmentEvidence(parser: z.ZodType, value: JsonRecord): JsonRecord {
+  const parsed = parser.parse(value) as JsonRecord;
+  if (parsed.evidence_origin !== "external-run") {
+    throw new Error("synthetic_example_not_external_evidence");
+  }
+  return parsed;
+}
+
 function completeDevelopmentEvidence(): JsonRecord {
   return {
     schema_version: 2,
+    evidence_origin: "external-run",
     evidence_type: "computer-use-host-development-loop",
     status: "verified-development",
     build: {
@@ -99,6 +112,7 @@ function completeDevelopmentEvidence(): JsonRecord {
       tool_calls_after_goal: 0,
     },
     limitations: [],
+    non_pass_signal: "none",
     timestamp: "2026-08-31T12:34:56.000Z",
     reviewer: {
       id: "reviewer-01",
@@ -118,7 +132,11 @@ describe("named-host development evidence v2", () => {
       type: "object",
       additionalProperties: false,
     });
-    expect(parser.safeParse(completeDevelopmentEvidence()).success).toBe(true);
+    const completeResult = parser.safeParse(completeDevelopmentEvidence());
+    expect(
+      completeResult.success,
+      completeResult.success ? "complete v2 record" : completeResult.error.message,
+    ).toBe(true);
 
     for (const host of ["codex", "hanaagent", "workbuddy"]) {
       const candidate = completeDevelopmentEvidence();
@@ -137,6 +155,7 @@ describe("named-host development evidence v2", () => {
     const mutations: Array<[string, (value: JsonRecord) => void]> = [
       ["repository", (value) => { (value.build as JsonRecord).repository = "https://github.com/other/project"; }],
       ["branch", (value) => { (value.build as JsonRecord).git_commit = "main"; }],
+      ["synthetic zero commit", (value) => { (value.build as JsonRecord).git_commit = "0".repeat(40); }],
       ["uppercase commit", (value) => { (value.build as JsonRecord).git_commit = "A".repeat(40); }],
       ["short commit", (value) => { (value.build as JsonRecord).git_commit = "a".repeat(39); }],
       ["product", (value) => { (value.build as JsonRecord).product = "0.2.5"; }],
@@ -222,6 +241,7 @@ describe("named-host development evidence v2", () => {
       ["ref", (value) => { value.window_ref = "win-secret"; }],
       ["token", (value) => { value.element_token = "token-secret"; }],
       ["free limitation", (value) => { value.limitations = ["private details"]; }],
+      ["free non-pass signal", (value) => { value.non_pass_signal = "private prompt details"; }],
     ];
 
     for (const [label, inject] of injections) {
@@ -229,6 +249,86 @@ describe("named-host development evidence v2", () => {
       inject(candidate);
       expect(parser.safeParse(candidate).success, label).toBe(false);
     }
+  });
+
+  it("keeps host identity slots token-like instead of accepting prose or absolute paths", async () => {
+    const parser = await evidenceParser();
+    for (const modelId of [
+      "gpt-5.6-sol",
+      "openai/gpt-5.6-sol",
+      "openrouter/anthropic/claude-3.7-sonnet",
+    ]) {
+      const candidate = completeDevelopmentEvidence();
+      (candidate.host as JsonRecord).reported_model_id = modelId;
+      expect(parser.safeParse(candidate).success, modelId).toBe(true);
+    }
+
+    const mutations: Array<[string, (value: JsonRecord) => void]> = [
+      ["version sentence", (value) => { (value.host as JsonRecord).version = "paste this private prompt"; }],
+      ["version path", (value) => { (value.host as JsonRecord).version = "/Applications/HanaAgent.app"; }],
+      ["model sentence", (value) => { (value.host as JsonRecord).reported_model_id = "private prompt sentence"; }],
+      ["model clipboard", (value) => { (value.host as JsonRecord).reported_model_id = "clipboard content"; }],
+      ["model user content", (value) => { (value.host as JsonRecord).reported_model_id = "user content here"; }],
+      ["version prompt token", (value) => { (value.host as JsonRecord).version = "private-prompt"; }],
+      ["model clipboard token", (value) => { (value.host as JsonRecord).reported_model_id = "clipboard"; }],
+      ["model user-content token", (value) => { (value.host as JsonRecord).reported_model_id = "user-content"; }],
+      ["model POSIX path", (value) => { (value.host as JsonRecord).reported_model_id = "/Users/private/model"; }],
+      ["model Windows path", (value) => { (value.host as JsonRecord).reported_model_id = "C:\\Users\\private\\model"; }],
+    ];
+    for (const [label, mutate] of mutations) {
+      const candidate = completeDevelopmentEvidence();
+      mutate(candidate);
+      expect(parser.safeParse(candidate).success, label).toBe(false);
+    }
+  });
+
+  it("binds pass results to proof under every status and requires a structured non-pass signal", async () => {
+    const parser = await evidenceParser();
+
+    const allGreenBlocked = completeDevelopmentEvidence();
+    allGreenBlocked.status = "blocked";
+    expect(parser.safeParse(allGreenBlocked).success).toBe(false);
+
+    const contradictoryCalculator = completeDevelopmentEvidence();
+    contradictoryCalculator.status = "failed";
+    contradictoryCalculator.non_pass_signal = "task-failed";
+    const calculator = ((contradictoryCalculator.task_results as JsonRecord).calculator as JsonRecord);
+    calculator.visible_result = "not-observed";
+    expect(parser.safeParse(contradictoryCalculator).success).toBe(false);
+
+    const contradictoryInput = completeDevelopmentEvidence();
+    contradictoryInput.status = "failed";
+    contradictoryInput.non_pass_signal = "task-failed";
+    const input = ((contradictoryInput.task_results as JsonRecord).unique_input as JsonRecord);
+    input.write_count = 2;
+    expect(parser.safeParse(contradictoryInput).success).toBe(false);
+
+    const contradictoryCovered = completeDevelopmentEvidence();
+    contradictoryCovered.status = "failed";
+    contradictoryCovered.non_pass_signal = "task-failed";
+    const covered = ((contradictoryCovered.task_results as JsonRecord).covered_window as JsonRecord);
+    covered.foreground_fallback = "reported";
+    expect(parser.safeParse(contradictoryCovered).success).toBe(false);
+
+    const verifiedWithFallbackLimitation = completeDevelopmentEvidence();
+    verifiedWithFallbackLimitation.limitations = ["foreground-fallback-reported"];
+    expect(parser.safeParse(verifiedWithFallbackLimitation).success).toBe(false);
+
+    const verifiedWithFailureSignal = completeDevelopmentEvidence();
+    verifiedWithFailureSignal.non_pass_signal = "task-failed";
+    expect(parser.safeParse(verifiedWithFailureSignal).success).toBe(false);
+
+    const truthfulBlocked = completeDevelopmentEvidence();
+    truthfulBlocked.status = "blocked";
+    const blockedInput = ((truthfulBlocked.task_results as JsonRecord).unique_input as JsonRecord);
+    blockedInput.result = "not-run";
+    blockedInput.exact_value_confirmed = false;
+    blockedInput.write_count = 0;
+    blockedInput.naturally_stopped = false;
+    truthfulBlocked.natural_stop = { result: "not-run", tool_calls_after_goal: 0 };
+    truthfulBlocked.limitations = ["task-incomplete"];
+    truthfulBlocked.non_pass_signal = "task-not-run";
+    expect(parser.safeParse(truthfulBlocked).success).toBe(true);
   });
 
   it("keeps development evidence external and outside release promotion", async () => {
@@ -252,7 +352,44 @@ describe("named-host development evidence v2", () => {
     expect(evidencePaths.length).toBeGreaterThan(0);
     for (const evidencePath of evidencePaths) {
       expect(isAbsolute(evidencePath)).toBe(true);
-      parser.parse(await readJson(evidencePath));
+      parseExternalDevelopmentEvidence(parser, await readJson(evidencePath));
+    }
+  });
+
+  it("ships one inert synthetic v2 structure example that external validation refuses", async () => {
+    const parser = await evidenceParser();
+    const example = await readJson(syntheticExampleUrl);
+
+    expect(parser.safeParse(example).success).toBe(true);
+    expect(example).toMatchObject({
+      schema_version: 2,
+      evidence_origin: "synthetic-example",
+      status: "not-run",
+      build: {
+        git_commit: "0000000000000000000000000000000000000000",
+      },
+      non_pass_signal: "task-not-run",
+      reviewer: {
+        id: "synthetic-example",
+        method: "synthetic-schema-example",
+      },
+    });
+    expect(() => parseExternalDevelopmentEvidence(parser, example))
+      .toThrow("synthetic_example_not_external_evidence");
+    const disguisedAsExternal = structuredClone(example);
+    disguisedAsExternal.evidence_origin = "external-run";
+    expect(parser.safeParse(disguisedAsExternal).success).toBe(false);
+
+    const serialized = JSON.stringify(example);
+    for (const forbidden of [
+      "/Users/",
+      "C:\\\\Users\\\\",
+      "private prompt",
+      "clipboard content",
+      "raw image",
+      "data:image/",
+    ]) {
+      expect(serialized, forbidden).not.toContain(forbidden);
     }
   });
 
@@ -294,6 +431,9 @@ describe("named-host development evidence v2", () => {
       expect(runbook).toContain("schema_version: 2");
       expect(runbook).toContain("verified-development");
       expect(runbook).toContain("CUA_HOST_DEVELOPMENT_EVIDENCE_FILES");
+      expect(runbook).toContain("host-development-evidence-v2.synthetic.json");
+      expect(runbook).toContain("synthetic and inert");
+      expect(runbook).toContain("cannot be submitted as external evidence");
       expect(runbook).toContain("Return only");
       for (const forbiddenEvidence of [
         "screenshots",

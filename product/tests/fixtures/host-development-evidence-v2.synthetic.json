@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "evidence_origin": "synthetic-example",
+  "evidence_type": "computer-use-host-development-loop",
+  "status": "not-run",
+  "build": {
+    "repository": "https://github.com/Nico0713520/universal-computer-use",
+    "git_commit": "0000000000000000000000000000000000000000",
+    "product": "0.2.6",
+    "protocol": "1.2.0",
+    "engine": "0.22.2"
+  },
+  "host": {
+    "name": "codex",
+    "version": "0.0.0-example",
+    "reported_model_id": "example/model-token"
+  },
+  "system": {
+    "platform": "macos",
+    "os_version": "0.0.0",
+    "arch": "arm64"
+  },
+  "transport": {
+    "direct_stdio": false,
+    "shell_bridge": false,
+    "builtin_computer_use": false
+  },
+  "mcp": {
+    "server_name": "computer-use",
+    "tools": ["computer_observe", "computer_act"]
+  },
+  "image_delivery": {
+    "mime_type": "image/png",
+    "first_turn_png": false,
+    "second_turn_png": false,
+    "same_host_reported_model": false,
+    "same_direct_loop": false
+  },
+  "continuous_loop": {
+    "repeated_tool_calls": false,
+    "turns_observed": 0
+  },
+  "automatic_mode": {
+    "plugin_confirmation_count": 0,
+    "host_authorization": "host-policy-blocked"
+  },
+  "task_results": {
+    "calculator": {
+      "result": "not-run",
+      "visible_expression": "not-observed",
+      "visible_result": "not-observed",
+      "naturally_stopped": false
+    },
+    "unique_input": {
+      "result": "not-run",
+      "exact_value_confirmed": false,
+      "write_count": 0,
+      "nonce_recorded": false,
+      "naturally_stopped": false
+    },
+    "covered_window": {
+      "result": "not-run",
+      "semantic_background_effect": false,
+      "pixel_window_effect": false,
+      "target_remained_background": false,
+      "foreground_fallback": "not-needed",
+      "naturally_stopped": false
+    }
+  },
+  "natural_stop": {
+    "result": "not-run",
+    "tool_calls_after_goal": 0
+  },
+  "limitations": ["task-incomplete"],
+  "non_pass_signal": "task-not-run",
+  "timestamp": "2000-01-01T00:00:00.000Z",
+  "reviewer": {
+    "id": "synthetic-example",
+    "method": "synthetic-schema-example"
+  }
+}

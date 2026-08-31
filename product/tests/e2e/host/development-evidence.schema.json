@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
+    "evidence_origin",
     "evidence_type",
     "status",
     "build",
@@ -19,11 +20,13 @@
     "task_results",
     "natural_stop",
     "limitations",
+    "non_pass_signal",
     "timestamp",
     "reviewer"
   ],
   "properties": {
     "schema_version": { "const": 2 },
+    "evidence_origin": { "enum": ["external-run", "synthetic-example"] },
     "evidence_type": { "const": "computer-use-host-development-loop" },
     "status": {
       "enum": ["verified-development", "failed", "blocked", "not-run"]
@@ -55,13 +58,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "pattern": "^[A-Za-z0-9][^\\u0000-\\u001f\\u007f]*$"
+          "pattern": "^(?!.*(?:prompt|clipboard|user[-_]?content))[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$"
         },
         "reported_model_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256,
-          "pattern": "^[^\\s\\u0000-\\u001f\\u007f](?:[^\\u0000-\\u001f\\u007f]*[^\\s\\u0000-\\u001f\\u007f])?$"
+          "pattern": "^(?!.*(?:prompt|clipboard|user[-_]?content))[A-Za-z0-9][A-Za-z0-9._:+-]*(?:/[A-Za-z0-9][A-Za-z0-9._:+-]*){0,2}$"
         }
       }
     },
@@ -164,7 +167,26 @@
             "visible_expression": { "enum": ["37×19", "not-observed"] },
             "visible_result": { "enum": ["703", "not-observed"] },
             "naturally_stopped": { "type": "boolean" }
-          }
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["result", "visible_expression", "visible_result", "naturally_stopped"],
+              "properties": {
+                "result": { "const": "pass" },
+                "visible_expression": { "const": "37×19" },
+                "visible_result": { "const": "703" },
+                "naturally_stopped": { "const": true }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["result"],
+              "properties": {
+                "result": { "enum": ["fail", "not-run"] }
+              }
+            }
+          ]
         },
         "unique_input": {
           "type": "object",
@@ -182,7 +204,33 @@
             "write_count": { "type": "integer", "minimum": 0, "maximum": 1000 },
             "nonce_recorded": { "const": false },
             "naturally_stopped": { "type": "boolean" }
-          }
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "result",
+                "exact_value_confirmed",
+                "write_count",
+                "nonce_recorded",
+                "naturally_stopped"
+              ],
+              "properties": {
+                "result": { "const": "pass" },
+                "exact_value_confirmed": { "const": true },
+                "write_count": { "const": 1 },
+                "nonce_recorded": { "const": false },
+                "naturally_stopped": { "const": true }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["result"],
+              "properties": {
+                "result": { "enum": ["fail", "not-run"] }
+              }
+            }
+          ]
         },
         "covered_window": {
           "type": "object",
@@ -202,7 +250,35 @@
             "target_remained_background": { "type": "boolean" },
             "foreground_fallback": { "enum": ["not-needed", "reported"] },
             "naturally_stopped": { "type": "boolean" }
-          }
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "result",
+                "semantic_background_effect",
+                "pixel_window_effect",
+                "target_remained_background",
+                "foreground_fallback",
+                "naturally_stopped"
+              ],
+              "properties": {
+                "result": { "const": "pass" },
+                "semantic_background_effect": { "const": true },
+                "pixel_window_effect": { "const": true },
+                "target_remained_background": { "const": true },
+                "foreground_fallback": { "const": "not-needed" },
+                "naturally_stopped": { "const": true }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["result"],
+              "properties": {
+                "result": { "enum": ["fail", "not-run"] }
+              }
+            }
+          ]
         }
       }
     },
@@ -231,6 +307,19 @@
         ]
       }
     },
+    "non_pass_signal": {
+      "enum": [
+        "none",
+        "precondition-blocked",
+        "invalid-transport-observed",
+        "image-delivery-incomplete",
+        "loop-incomplete",
+        "host-policy-blocked",
+        "task-failed",
+        "task-not-run",
+        "natural-stop-failed"
+      ]
+    },
     "timestamp": {
       "type": "string",
       "format": "date-time",
@@ -248,7 +337,9 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]*$"
         },
-        "method": { "const": "manual-host-development-runbook" }
+        "method": {
+          "enum": ["manual-host-development-runbook", "synthetic-schema-example"]
+        }
       }
     }
   },
@@ -257,16 +348,30 @@
       "type": "object",
       "required": [
         "status",
+        "evidence_origin",
         "transport",
         "image_delivery",
         "continuous_loop",
         "automatic_mode",
         "task_results",
         "natural_stop",
-        "limitations"
+        "limitations",
+        "non_pass_signal",
+        "reviewer"
       ],
       "properties": {
+        "evidence_origin": { "const": "external-run" },
         "status": { "const": "verified-development" },
+        "build": {
+          "type": "object",
+          "required": ["git_commit"],
+          "properties": {
+            "git_commit": {
+              "type": "string",
+              "pattern": "^(?!0{40}$)[0-9a-f]{40}$"
+            }
+          }
+        },
         "transport": {
           "type": "object",
           "required": ["direct_stdio", "shell_bridge", "builtin_computer_use"],
@@ -372,16 +477,93 @@
         "limitations": {
           "type": "array",
           "items": {
-            "enum": ["host-approval-observed", "foreground-fallback-reported"]
+            "const": "host-approval-observed"
+          }
+        },
+        "non_pass_signal": { "const": "none" },
+        "reviewer": {
+          "type": "object",
+          "required": ["method"],
+          "properties": {
+            "method": { "const": "manual-host-development-runbook" }
           }
         }
       }
     },
     {
       "type": "object",
-      "required": ["status"],
+      "required": ["status", "evidence_origin", "non_pass_signal", "reviewer"],
       "properties": {
-        "status": { "enum": ["failed", "blocked", "not-run"] }
+        "evidence_origin": { "const": "external-run" },
+        "status": { "enum": ["failed", "blocked", "not-run"] },
+        "build": {
+          "type": "object",
+          "required": ["git_commit"],
+          "properties": {
+            "git_commit": {
+              "type": "string",
+              "pattern": "^(?!0{40}$)[0-9a-f]{40}$"
+            }
+          }
+        },
+        "non_pass_signal": {
+          "enum": [
+            "precondition-blocked",
+            "invalid-transport-observed",
+            "image-delivery-incomplete",
+            "loop-incomplete",
+            "host-policy-blocked",
+            "task-failed",
+            "task-not-run",
+            "natural-stop-failed"
+          ]
+        },
+        "reviewer": {
+          "type": "object",
+          "required": ["method"],
+          "properties": {
+            "method": { "const": "manual-host-development-runbook" }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "evidence_origin",
+        "status",
+        "build",
+        "natural_stop",
+        "non_pass_signal",
+        "reviewer"
+      ],
+      "properties": {
+        "evidence_origin": { "const": "synthetic-example" },
+        "status": { "const": "not-run" },
+        "build": {
+          "type": "object",
+          "required": ["git_commit"],
+          "properties": {
+            "git_commit": { "const": "0000000000000000000000000000000000000000" }
+          }
+        },
+        "natural_stop": {
+          "type": "object",
+          "required": ["result", "tool_calls_after_goal"],
+          "properties": {
+            "result": { "const": "not-run" },
+            "tool_calls_after_goal": { "const": 0 }
+          }
+        },
+        "non_pass_signal": { "const": "task-not-run" },
+        "reviewer": {
+          "type": "object",
+          "required": ["id", "method"],
+          "properties": {
+            "id": { "const": "synthetic-example" },
+            "method": { "const": "synthetic-schema-example" }
+          }
+        }
       }
     }
   ]
