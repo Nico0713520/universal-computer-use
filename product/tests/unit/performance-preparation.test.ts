@@ -16,6 +16,7 @@ const FIXTURE_STATE: HarnessState = {
   reset_ack_generation: 4,
   clicks: 9,
   pixel_clicks: 7,
+  canvas_clicks: 0,
   semantic_sequence: ["alpha"],
   text: "fixture",
   text_write_count: 2,

@@ -25,8 +25,10 @@ const CONTROL_CENTERS = Object.freeze({
   "semantic-gamma": Object.freeze({ x: 348, y: 596 }),
   "overlay-toggle": Object.freeze({ x: 472, y: 596 }),
   "overlay-target": Object.freeze({ x: 640, y: 600 }),
+  "cursor-ab-target": Object.freeze({ x: 640, y: 656 }),
   "state-view": Object.freeze({ x: 996, y: 400 }),
 });
+const CURSOR_AB_RECT = Object.freeze({ left: 560, top: 640, width: 160, height: 32 });
 
 let generation = 0;
 let state = freshState();
@@ -43,6 +45,7 @@ function freshState() {
     overlay_clicks: 0,
     clicks: 0,
     pixel_clicks: 0,
+    canvas_clicks: 0,
     double_clicks: 0,
     context_menus: 0,
     moves: 0,
@@ -146,6 +149,16 @@ function applyEvent(event) {
       requireExactKeys(event, ["kind"]);
       state.pixel_clicks += 1;
       break;
+    case "canvas_click": {
+      requireExactKeys(event, ["kind", "x", "y"]);
+      const x = finiteNumber(event.x, "canvas_x", { min: 0, max: 1280 });
+      const y = finiteNumber(event.y, "canvas_y", { min: 0, max: 800 });
+      if (
+        x >= CURSOR_AB_RECT.left && x < CURSOR_AB_RECT.left + CURSOR_AB_RECT.width &&
+        y >= CURSOR_AB_RECT.top && y < CURSOR_AB_RECT.top + CURSOR_AB_RECT.height
+      ) state.canvas_clicks += 1;
+      break;
+    }
     case "double_click":
       requireExactKeys(event, ["kind"]);
       state.double_clicks += 1;

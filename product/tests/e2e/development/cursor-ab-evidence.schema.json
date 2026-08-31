@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://universal-computer-use.invalid/schemas/macos-cursor-ab-v1.json",
+  "title": "Redacted macOS Cua Cursor A/B Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evidence_type", "status", "metadata", "cursor_readback", "invariants", "modes", "delta_ms", "cleanup_passed", "timestamp"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence_type": { "const": "computer-use-macos-cursor-ab" },
+    "status": { "const": "passed" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product_version", "engine_version", "macos_version", "architecture"],
+      "properties": {
+        "product_version": { "const": "0.2.4" },
+        "engine_version": { "const": "0.22.2" },
+        "macos_version": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){0,3}$", "maxLength": 32 },
+        "architecture": { "enum": ["arm64", "x86_64"] }
+      }
+    },
+    "cursor_readback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "disabled"],
+      "properties": { "enabled": { "const": true }, "disabled": { "const": true } }
+    },
+    "invariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["same_driver_process", "same_session", "same_target"],
+      "properties": {
+        "same_driver_process": { "const": true },
+        "same_session": { "const": true },
+        "same_target": { "const": true }
+      }
+    },
+    "modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "disabled"],
+      "properties": {
+        "enabled": { "$ref": "#/$defs/mode" },
+        "disabled": { "$ref": "#/$defs/mode" }
+      }
+    },
+    "delta_ms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50", "p95", "max"],
+      "properties": {
+        "p50": { "type": "number" },
+        "p95": { "type": "number" },
+        "max": { "type": "number" }
+      }
+    },
+    "cleanup_passed": { "const": true },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$", "maxLength": 40 }
+  },
+  "$defs": {
+    "mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample_count", "correct_count", "p50_ms", "p95_ms", "max_ms", "route_counts"],
+      "properties": {
+        "sample_count": { "const": 30 },
+        "correct_count": { "const": 30 },
+        "p50_ms": { "type": "number", "minimum": 0 },
+        "p95_ms": { "type": "number", "minimum": 0 },
+        "max_ms": { "type": "number", "minimum": 0 },
+        "route_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["synthetic_events"],
+          "properties": { "synthetic_events": { "const": 30 } }
+        }
+      }
+    }
+  }
+}

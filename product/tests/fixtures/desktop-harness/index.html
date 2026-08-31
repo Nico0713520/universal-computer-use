@@ -151,6 +151,15 @@
       background: #fde7d8;
     }
     #overlay-target.overlay-on { background: #ff9d5c; }
+    #cursor-ab-target {
+      position: fixed;
+      left: 560px;
+      top: 640px;
+      width: 160px;
+      height: 32px;
+      border: 0;
+      background: #2f6f56;
+    }
     #state-view {
       left: 768px;
       top: 80px;
@@ -201,6 +210,7 @@
     <label id="semantic-gamma" class="control semantic-choice"><input id="semantic-gamma-input" type="checkbox" aria-label="Semantic Gamma">Gamma</label>
     <label id="overlay-toggle" class="control semantic-choice"><input id="overlay-toggle-input" type="checkbox" aria-label="Toggle pixel overlay">Overlay</label>
     <canvas id="overlay-target" width="160" height="80" aria-label="Pixel overlay target"></canvas>
+    <canvas id="cursor-ab-target" width="160" height="32" aria-hidden="true"></canvas>
     <pre id="state-view" aria-label="External oracle mirror">loading</pre>
     <p id="fixture-label">Every visible control has a fixed CSS rectangle. The test reads results from the loopback server's external oracle, never from the action result or browser DOM automation.</p>
   </main>
@@ -259,6 +269,9 @@
     byId("semantic-gamma-input").addEventListener("click", () => pressAndRecord("semantic-gamma-input", "semantic", { value: "gamma" }));
     byId("overlay-toggle-input").addEventListener("click", () => pressAndRecord("overlay-toggle-input", "overlay_toggle"));
     byId("overlay-target").addEventListener("click", () => record("overlay_click"));
+    byId("cursor-ab-target").addEventListener("click", (event) => {
+      record("canvas_click", { x: event.clientX, y: event.clientY });
+    });
     byId("double-target").addEventListener("click", () => record("pixel_click"));
     byId("double-target").addEventListener("dblclick", () => record("double_click"));
     byId("context-target").addEventListener("contextmenu", (event) => {

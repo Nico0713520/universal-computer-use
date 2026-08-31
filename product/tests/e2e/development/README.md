@@ -41,6 +41,16 @@ npx --yes pnpm@9.0.4 acceptance:macos:profile -- \
 
 The accepted profile names are `window_visual_observe`, `window_semantic_observe`, `semantic_action_next_state`, and `pixel_action_next_state`. The focused lane still performs five warm-ups plus 30 measured calls and writes a separate `computer-use-macos-development-profile` artifact, so it cannot be confused with complete acceptance evidence. Observe and pixel profiles start only the isolated loopback fixture and Chrome; semantic action starts only the owned native focus sentinel. It never opens Calculator or TextEdit.
 
+To isolate the cost of Cua's visible Agent Cursor on the same pixel fallback, use the guarded A/B lane during an agreed idle window:
+
+```bash
+npx --yes pnpm@9.0.4 acceptance:macos:cursor-ab -- \
+  --exclusive-desktop \
+  --evidence /absolute/private/new/cursor-ab.json
+```
+
+This test connects once to the locked daemon, creates one private window session, locks one owned canvas point with no accessibility control at the hit location, and runs 5 warm-ups plus 30 measured `synthetic_events` clicks in each mode. It reads back Cursor state before each block and rejects the artifact unless all 60 actions affect the canvas exactly once while daemon PID, session and target remain unchanged. The evidence reports enabled/disabled p50, p95, max and arithmetic differences; it deliberately has no required percentage-improvement threshold. The lane never restarts Cua and never changes another session.
+
 After dependencies are installed, the acceptance launcher uses only the checkout-local build and Vitest binaries; it does not contact the package registry during the measured run. A fatal failure that prevents complete evidence writes `<evidence-path>.diagnostic.json` only after owned-resource cleanup. That sibling file contains a closed phase, scenario/sample position, stable error code, owned-process booleans and UTC time—never raw child output, stack traces, paths, application text or identifiers. The launcher prints its path and exits nonzero; it never treats the diagnostic as acceptance evidence or reruns the failed sample.
 
 Each performance profile performs five unrecorded warm-ups followed by exactly 30 measured calls. Reset, discovery, initial snapshot creation and external-oracle polling stay outside the timed interval. Durations use the external MCP wall clock and nearest-rank p50/p95; existing redacted runtime metadata also separates queue, engine execution, post-action observation, projection and transport overhead where applicable:

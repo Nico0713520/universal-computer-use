@@ -32,6 +32,7 @@ export type HarnessState = Readonly<{
   reset_ack_generation: number;
   clicks: number;
   pixel_clicks: number;
+  canvas_clicks: number;
   semantic_sequence: readonly string[];
   text: string;
   text_write_count: number;
