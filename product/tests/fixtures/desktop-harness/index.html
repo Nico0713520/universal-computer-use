@@ -269,16 +269,9 @@
     byId("semantic-gamma-input").addEventListener("click", () => pressAndRecord("semantic-gamma-input", "semantic", { value: "gamma" }));
     byId("overlay-toggle-input").addEventListener("click", () => pressAndRecord("overlay-toggle-input", "overlay_toggle"));
     byId("overlay-target").addEventListener("click", () => record("overlay_click"));
-    let cursorAbRightDown = false;
-    byId("cursor-ab-target").addEventListener("mousedown", (event) => {
-      if (event.button === 2) cursorAbRightDown = true;
-    });
-    byId("cursor-ab-target").addEventListener("mouseup", (event) => {
-      if (event.button !== 2 || !cursorAbRightDown) return;
-      cursorAbRightDown = false;
+    byId("cursor-ab-target").addEventListener("click", (event) => {
       record("canvas_click", { x: event.clientX, y: event.clientY });
     });
-    byId("cursor-ab-target").addEventListener("contextmenu", (event) => event.preventDefault());
     byId("double-target").addEventListener("click", () => record("pixel_click"));
     byId("double-target").addEventListener("dblclick", () => record("double_click"));
     byId("context-target").addEventListener("contextmenu", (event) => {

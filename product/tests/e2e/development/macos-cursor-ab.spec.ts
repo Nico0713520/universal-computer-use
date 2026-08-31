@@ -189,16 +189,13 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
         for (let index = 0; index < 35; index += 1) {
           const before = await fixtureJson<HarnessState>(fixture.url, "/state");
           const startedAt = performance.now();
-          // Cua 0.22.2 AX-hit-tests background left/count=1, while its middle path
-          // omits exact-window routing fields. One routed right-click is the narrow
-          // single-pair path that bypasses AX; the contextmenu oracle stays fail-closed.
           const result = await sdk.callTool("click", JSON.stringify({
             session,
             pid: native.pid,
             window_id: native.window_id,
             x: point.x,
             y: point.y,
-            button: "right",
+            button: "left",
             count: 1,
             delivery_mode: "background",
           }));
