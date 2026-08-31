@@ -195,7 +195,7 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
             window_id: native.window_id,
             x: point.x,
             y: point.y,
-            button: "middle",
+            button: "right",
             count: 1,
             delivery_mode: "background",
           }));
