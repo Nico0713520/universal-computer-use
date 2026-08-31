@@ -78,6 +78,8 @@ const healthyDoctor = {
   ok: true,
   product_version: "0.2.6",
   protocol_version: "1.2.0",
+  cursor_mode: "auto" as const,
+  cursor_ready: true,
   platform: "macos" as const,
   supported_platform: true,
   expected_engine_version: "0.22.2",

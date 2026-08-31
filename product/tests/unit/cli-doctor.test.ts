@@ -72,6 +72,8 @@ describe("doctor", () => {
       ok: true,
       product_version: "0.2.6",
       protocol_version: "1.2.0",
+      cursor_mode: "auto",
+      cursor_ready: true,
       platform: "macos",
       supported_platform: true,
       expected_engine_version: "0.22.2",
@@ -92,6 +94,30 @@ describe("doctor", () => {
     expect(engine.observations).toBe(1);
     expect(execute).not.toHaveBeenCalled();
     expect(engine.closes).toBe(1);
+  });
+
+  it("forwards the requested cursor mode into the diagnostic Runtime connection", async () => {
+    const lock = await loadEngineLock();
+    const engine = new FakeEngine({ platform: "macos" });
+    const connectEngine = vi.fn(async () => engine);
+
+    const report = await runDoctor(
+      { platform: "darwin", arch: "arm64", cursorMode: "hidden" },
+      {
+        lock,
+        connectEngine,
+        probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
+        probeMacPermissions: vi.fn(async () => ({
+          accessibility: "granted" as const,
+          screen_recording: "granted" as const,
+          source: "driver-daemon" as const,
+        })),
+      },
+    );
+
+    expect(connectEngine).toHaveBeenCalledWith(lock, { cursorMode: "hidden" });
+    expect(report).toMatchObject({ cursor_mode: "hidden", cursor_ready: true });
   });
 
   it("returns an exit-1 report when the Runtime cannot connect", async () => {
@@ -115,6 +141,8 @@ describe("doctor", () => {
 
     expect(report).toMatchObject({
       ok: false,
+      cursor_mode: "auto",
+      cursor_ready: false,
       platform: "windows",
       supported_platform: true,
       engine_connected: false,

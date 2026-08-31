@@ -162,11 +162,17 @@ describe("Cua action mapping", () => {
       route: "global_input",
       delivery: "foreground",
     });
-    expect(sdk.callToolCalls).toEqual([{
-      name: "click",
-      argumentsJson:
-        `{"session":"${engine.sessionId}","target":{"kind":"desktop","display_id":"primary"},"x":10,"y":20,"button":"left","count":1}`,
-    }]);
+    expect(sdk.callToolCalls).toEqual([
+      {
+        name: "set_agent_cursor_enabled",
+        argumentsJson: `{"session":"${engine.sessionId}","enabled":true}`,
+      },
+      {
+        name: "click",
+        argumentsJson:
+          `{"session":"${engine.sessionId}","target":{"kind":"desktop","display_id":"primary"},"x":10,"y":20,"button":"left","count":1}`,
+      },
+    ]);
   });
 
   it("executes wait locally and rejects cancellation with AbortError", async () => {

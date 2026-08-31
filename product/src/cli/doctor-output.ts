@@ -19,6 +19,7 @@ function diagnosticSummary(error: NonNullable<DoctorReport["error"]>): string {
     case "interactive_session_unknown": return "macOS 可交互登录会话无法确认";
     case "session_initialization_failed": return "desktop/window 会话初始化失败";
     case "cursor_initialization_failed": return "Agent Cursor 关闭或回读失败";
+    case "cursor_transition_failed": return "Adaptive Cursor 状态切换失败";
     case "desktop_permission_required":
     case "screen_recording_permission_required":
     case "accessibility_permission_required": return "CuaDriver 权限不完整";
@@ -56,6 +57,8 @@ function diagnosticNextAction(
       return "重新运行 computer-use setup --development；仍失败时报告 Cua session 初始化问题";
     case "cursor_initialization_failed":
       return "重新运行 computer-use setup --development；仍失败时报告 Agent Cursor 初始化问题";
+    case "cursor_transition_failed":
+      return "重新运行 computer-use doctor；仍失败时报告 Adaptive Cursor 状态切换问题";
     case "session_cleanup_failed":
       return "重新运行 computer-use doctor；仍失败时重启 CuaDriver 后再检查";
     default:
@@ -93,7 +96,7 @@ export function renderDoctorHuman(report: DoctorReport): string {
     `- 屏幕录制：${permissionLabel(report.permission_details.screen_recording)}`,
     `- 辅助功能：${permissionLabel(report.permission_details.accessibility)}`,
     `- 截图：${screenshot}`,
-    `- desktop/window 会话与 Agent Cursor：${sessions}`,
+    `- desktop/window 会话与 Adaptive Cursor：${sessions}（${report.cursor_mode}）`,
     `- 诊断会话清理：${cleanup}`,
   ];
   if (report.error !== undefined) {

@@ -1,6 +1,7 @@
 import process from "node:process";
 
 import type { EngineLock, EnginePlatform } from "../engine/lock.js";
+import type { CursorMode } from "../engine/cursor-mode.js";
 import type { EnginePort } from "../engine/port.js";
 import {
   ComputerUseError,
@@ -32,6 +33,8 @@ export type DoctorReport = Readonly<{
   ok: boolean;
   product_version: string;
   protocol_version: string;
+  cursor_mode: CursorMode;
+  cursor_ready: boolean;
   platform: EnginePlatform | null;
   supported_platform: boolean;
   expected_engine_version: string;
@@ -53,11 +56,15 @@ export type DoctorReport = Readonly<{
 export type DoctorOptions = Readonly<{
   platform?: NodeJS.Platform;
   arch?: string;
+  cursorMode?: CursorMode;
 }>;
 
 export type DoctorDependencies = Readonly<{
   lock: EngineLock;
-  connectEngine: (lock: EngineLock) => Promise<EnginePort>;
+  connectEngine: (
+    lock: EngineLock,
+    options: Readonly<{ cursorMode: CursorMode }>,
+  ) => Promise<EnginePort>;
   probeInteractiveSession: () => Promise<boolean | null>;
   verifyRuntimeIdentity: () => Promise<void>;
   probeMacPermissions: () => Promise<MacPermissionProbeResult>;
@@ -110,12 +117,15 @@ function serializedError(error: unknown): DoctorErrorReport {
 function failedBase(
   lock: EngineLock,
   platform: EnginePlatform | null,
+  cursorMode: CursorMode,
   error: NonNullable<DoctorReport["error"]>,
 ): DoctorReport {
   return {
     ok: false,
     product_version: PRODUCT_VERSION,
     protocol_version: PROTOCOL_VERSION,
+    cursor_mode: cursorMode,
+    cursor_ready: false,
     platform,
     supported_platform: platform !== null,
     expected_engine_version: lock.version,
@@ -136,6 +146,7 @@ export async function runDoctor(
   options: DoctorOptions,
   dependencies: DoctorDependencies,
 ): Promise<DoctorReport> {
+  const cursorMode = options.cursorMode ?? "auto";
   let platform: EnginePlatform;
   try {
     platform = resolveEnginePlatform(
@@ -143,7 +154,7 @@ export async function runDoctor(
       options.arch ?? process.arch,
     );
   } catch (error) {
-    return failedBase(dependencies.lock, null, serializedError(error));
+    return failedBase(dependencies.lock, null, cursorMode, serializedError(error));
   }
 
   let desktopUnlocked: boolean | null = null;
@@ -184,7 +195,7 @@ export async function runDoctor(
     } catch (error) {
       const failure = serializedError(error);
       return {
-        ...failedBase(dependencies.lock, platform, failure),
+        ...failedBase(dependencies.lock, platform, cursorMode, failure),
         desktop_unlocked:
           failure.code === "interactive_session_required" ? false : desktopUnlocked,
         permissions: failure.code === "permission_required"
@@ -197,10 +208,15 @@ export async function runDoctor(
 
   let engine: EnginePort;
   try {
-    engine = await dependencies.connectEngine(dependencies.lock);
+    engine = await dependencies.connectEngine(dependencies.lock, { cursorMode });
   } catch (error) {
     return {
-      ...failedBase(dependencies.lock, platform, serializedError(error)),
+      ...failedBase(
+        dependencies.lock,
+        platform,
+        cursorMode,
+        serializedError(error),
+      ),
       desktop_unlocked: desktopUnlocked,
       permissions: aggregatePermissions(permissionDetails),
       permission_details: permissionDetails,
@@ -234,6 +250,8 @@ export async function runDoctor(
       ok: true,
       product_version: PRODUCT_VERSION,
       protocol_version: PROTOCOL_VERSION,
+      cursor_mode: cursorMode,
+      cursor_ready: true,
       platform,
       supported_platform: true,
       expected_engine_version: dependencies.lock.version,
@@ -276,7 +294,8 @@ export async function runDoctor(
         ? observedPermissionDetails
         : permissionDetails;
     report = {
-      ...failedBase(dependencies.lock, platform, failure),
+      ...failedBase(dependencies.lock, platform, cursorMode, failure),
+      cursor_ready: true,
       reported_engine_version: engine.version,
       engine_connected: true,
       required_tools_present: requiredToolsPresent,

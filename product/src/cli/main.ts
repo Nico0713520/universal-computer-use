@@ -46,7 +46,10 @@ type CliDependencies = Readonly<{
   downloader: Downloader;
   runner: ProcessRunner;
   accessRuntimePath: (path: string) => Promise<void>;
-  connectEngine: (lock: EngineLock) => Promise<EnginePort>;
+  connectEngine: (
+    lock: EngineLock,
+    options?: Readonly<{ cursorMode: CursorMode }>,
+  ) => Promise<EnginePort>;
   connectMcpEngine?: (
     lock: EngineLock,
     options?: Readonly<{ cursorMode: CursorMode }>,
@@ -74,12 +77,15 @@ function defaultEnginePath(): string {
   );
 }
 
-function connectDiagnosticEngine(lock: EngineLock): Promise<CuaEngine> {
+function connectDiagnosticEngine(
+  lock: EngineLock,
+  options: Readonly<{ cursorMode: CursorMode }> = { cursorMode: "auto" },
+): Promise<CuaEngine> {
   // A CLI doctor invocation gets its own bounded startup attempt. Reusing the
   // MCP connector would reuse its cached promise and could report stale state.
   return createRuntimeConnector({
     platform: process.platform,
-    connect: (candidate) => CuaEngine.connect(candidate),
+    connect: (candidate) => CuaEngine.connect(candidate, options),
     access,
     runner: nodeProcessRunner,
     wait: boundedRuntimeStartupWait,
@@ -122,7 +128,7 @@ function usage(): string {
   return [
     "Usage:",
     "  computer-use setup [--development]",
-    "  computer-use doctor [--json]",
+    "  computer-use doctor [--json] [--cursor auto|visible|hidden]",
     "  computer-use config --client generic|codex|kimi|hanaagent|workbuddy [--cursor auto|visible|hidden]",
     "  computer-use uninstall [--engine]",
     "  computer-use mcp [--cursor auto|visible|hidden]",
@@ -133,6 +139,38 @@ function requireOnly(args: readonly string[], allowed: readonly string[]): void 
   if (args.some((arg) => !allowed.includes(arg)) || new Set(args).size !== args.length) {
     throw new Error(`invalid arguments\n${usage()}`);
   }
+}
+
+function parseDoctorArgs(args: readonly string[]): Readonly<{
+  json: boolean;
+  cursorMode: CursorMode;
+}> {
+  let json = false;
+  let cursorValue: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--json") {
+      if (json) throw new Error(`invalid arguments\n${usage()}`);
+      json = true;
+      continue;
+    }
+    if (argument === "--cursor") {
+      if (cursorValue !== undefined || index + 1 >= args.length) {
+        throw new Error(`invalid arguments\n${usage()}`);
+      }
+      cursorValue = args[index + 1];
+      index += 1;
+      continue;
+    }
+    throw new Error(`invalid arguments\n${usage()}`);
+  }
+  return {
+    json,
+    cursorMode: resolveCursorMode(
+      cursorValue === undefined ? [] : ["--cursor", cursorValue],
+      process.env,
+    ),
+  };
 }
 
 export async function runCli(
@@ -179,14 +217,17 @@ export async function runCli(
   }
 
   if (command === "doctor") {
-    requireOnly(args, ["--json"]);
+    const doctorArguments = parseDoctorArgs(args);
     const lock = await dependencies.loadLock();
     const report = await runDoctor(
-      dependencies.doctorOptions ?? {},
+      {
+        ...dependencies.doctorOptions,
+        cursorMode: doctorArguments.cursorMode,
+      },
       doctorDependencies(lock),
     );
     io.stdout.write(
-      args.includes("--json")
+      doctorArguments.json
         ? `${JSON.stringify(report)}\n`
         : `${renderDoctorHuman(report)}\n`,
     );

@@ -146,10 +146,10 @@ export async function runDefaultServer(
 }
 
 if (isDirectEntryPoint(process.argv[1], import.meta.url)) {
-  void runDefaultServer(
+  void (async () => runDefaultServer(
     undefined,
     { cursorMode: resolveCursorMode(process.argv.slice(2), process.env) },
-  ).catch((error: unknown) => {
+  ))().catch((error: unknown) => {
     const code =
       error instanceof ComputerUseError ? error.code : "runtime_unavailable";
     process.stderr.write(`computer-use-mcp: ${code}\n`);

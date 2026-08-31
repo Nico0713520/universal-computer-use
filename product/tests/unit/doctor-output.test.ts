@@ -11,6 +11,8 @@ const healthyReport: DoctorReport = {
   ok: true,
   product_version: "0.2.6",
   protocol_version: "1.2.0",
+  cursor_mode: "auto",
+  cursor_ready: true,
   platform: "macos",
   supported_platform: true,
   expected_engine_version: "0.22.2",
@@ -70,7 +72,7 @@ describe("human doctor output", () => {
     expect(output).toContain("屏幕录制：已授权");
     expect(output).toContain("辅助功能：已授权");
     expect(output).toContain("截图：可用（2560 × 1440）");
-    expect(output).toContain("desktop/window 会话与 Agent Cursor：初始化成功");
+    expect(output).toContain("desktop/window 会话与 Adaptive Cursor：初始化成功（auto）");
   });
 
   it("names the exact System Settings pages for each missing CuaDriver grant", () => {

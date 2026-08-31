@@ -192,6 +192,27 @@ describe("computer-use doctor command", () => {
     expect(fixture.stdout[0]).not.toContain("Computer Use 检查");
   });
 
+  it("accepts a cursor mode and reports the effective diagnostic mode", async () => {
+    const fixture = commandFixture();
+    const connectEngine = vi.fn(async () => new FakeEngine({ platform: "macos" }));
+    fixture.dependencies.connectEngine = connectEngine;
+
+    const exitCode = await runCli(
+      ["doctor", "--json", "--cursor", "hidden"],
+      fixture.io,
+      fixture.dependencies,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(fixture.stdout[0]!)).toMatchObject({
+      cursor_mode: "hidden",
+      cursor_ready: true,
+    });
+    expect(connectEngine).toHaveBeenCalledWith(expect.anything(), {
+      cursorMode: "hidden",
+    });
+  });
+
   it("rejects duplicate or unknown doctor flags", async () => {
     const fixture = commandFixture();
 

@@ -245,7 +245,10 @@ describe("host acceptance evidence", () => {
 
     expect(config).toEqual({
       mcpServers: {
-        "computer-use": { command: nodePath, args: [scriptPath] },
+        "computer-use": {
+          command: nodePath,
+          args: [scriptPath, "--cursor", "auto"],
+        },
       },
     });
     expect(serialized).not.toMatch(/model|token|api[_-]?key|endpoint/i);

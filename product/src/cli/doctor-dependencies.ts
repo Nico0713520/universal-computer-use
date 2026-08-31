@@ -1,4 +1,5 @@
 import type { EngineLock } from "../engine/lock.js";
+import type { CursorMode } from "../engine/cursor-mode.js";
 import type { EnginePort } from "../engine/port.js";
 import { verifyMacRuntimeSignature } from "../engine/runtime-startup.js";
 import { ComputerUseError } from "../errors.js";
@@ -8,7 +9,10 @@ import { probeMacPermissions } from "./macos-permissions.js";
 import type { ProcessRunner } from "./process-runner.js";
 
 export type DoctorDependencyAdapterInput = Readonly<{
-  connectEngine(lock: EngineLock): Promise<EnginePort>;
+  connectEngine(
+    lock: EngineLock,
+    options: Readonly<{ cursorMode: CursorMode }>,
+  ): Promise<EnginePort>;
   accessRuntimePath(path: string): Promise<void>;
   runner: ProcessRunner;
 }>;
