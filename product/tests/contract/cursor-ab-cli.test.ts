@@ -71,6 +71,7 @@ function diagnostic(): Record<string, unknown> {
     status: "failed",
     phase: "measurement",
     error_code: "route_mismatch",
+    observed_route: "accessibility",
     cleanup_passed: true,
     timestamp: "2026-08-31T00:00:00.000Z",
   };

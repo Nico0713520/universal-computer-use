@@ -26,6 +26,17 @@
         "internal_error"
       ]
     },
+    "observed_route": {
+      "enum": [
+        "accessibility",
+        "synthetic_events",
+        "global_input",
+        "system_api",
+        "dom",
+        "trusted_input",
+        "unknown"
+      ]
+    },
     "cleanup_passed": { "type": "boolean" },
     "timestamp": {
       "type": "string",
@@ -51,6 +62,14 @@
           ]
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "error_code": { "const": "route_mismatch" } },
+        "required": ["error_code"]
+      },
+      "then": { "required": ["observed_route"] },
+      "else": { "not": { "required": ["observed_route"] } }
     }
   ]
 }

@@ -19,7 +19,6 @@ afterEach(async () => {
 
 describe("CursorAbDiagnosticTracker", () => {
   it.each([
-    ["cursor_ab_route_mismatch", "measurement", "route_mismatch"],
     ["cursor_ab_state_invalid", "cursor_state", "cursor_state_failed"],
     ["cursor_ab_evidence_incomplete", "measurement", "effect_mismatch"],
     ["cursor_ab_target_lost", "invariants", "target_failed"],
@@ -40,6 +39,35 @@ describe("CursorAbDiagnosticTracker", () => {
       cleanup_passed: true,
       timestamp,
     });
+  });
+
+  it("records a closed observed route only for route_mismatch", async () => {
+    const schema = JSON.parse(await readFile(
+      new URL("../e2e/development/cursor-ab-diagnostic.schema.json", import.meta.url),
+      "utf8",
+    )) as Record<string, unknown>;
+    const validate = new Ajv2020({ allErrors: true, strict: false, validateFormats: false })
+      .compile(schema);
+    const tracker = new CursorAbDiagnosticTracker({ timestamp: () => timestamp });
+    tracker.setPhase("measurement");
+    tracker.recordObservedRoute("accessibility");
+
+    const routeMismatch = tracker.build(new Error("cursor_ab_route_mismatch"), true);
+    expect(routeMismatch).toMatchObject({
+      error_code: "route_mismatch",
+      observed_route: "accessibility",
+    });
+    expect(validate(routeMismatch), JSON.stringify(validate.errors)).toBe(true);
+
+    const unrelated = tracker.build(new Error("cursor_ab_target_lost"), true);
+    expect(unrelated).not.toHaveProperty("observed_route");
+    expect(validate(unrelated), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...routeMismatch, observed_route: "secret/path" })).toBe(false);
+    const { observed_route: _removed, ...missingRoute } = routeMismatch as typeof routeMismatch & {
+      observed_route: string;
+    };
+    expect(validate(missingRoute)).toBe(false);
+    expect(validate({ ...unrelated, observed_route: "unknown" })).toBe(false);
   });
 
   it("projects unknown raw failures to internal_error without retaining their content", () => {

@@ -205,7 +205,10 @@ describe.skipIf(!REAL_CURSOR_AB)("macOS Cua Cursor A/B on one pixel fallback", (
             fixture.url,
             (candidate) => candidate.canvas_clicks >= before.canvas_clicks + 1,
           ).catch(() => fixtureJson<HarnessState>(fixture!.url, "/state"));
-          if (execution.route !== "synthetic_events") throw new Error("cursor_ab_route_mismatch");
+          if (execution.route !== "synthetic_events") {
+            diagnostic.recordObservedRoute(execution.route);
+            throw new Error("cursor_ab_route_mismatch");
+          }
           const sample: CursorAbSample = {
             durationMs,
             correct: after.canvas_clicks === before.canvas_clicks + 1,

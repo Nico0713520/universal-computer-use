@@ -1,5 +1,7 @@
 import { writeFile } from "node:fs/promises";
 
+import type { EngineExecution } from "../../../src/engine/port.js";
+
 export type CursorAbDiagnosticPhase =
   | "setup"
   | "cursor_state"
@@ -26,6 +28,7 @@ export type CursorAbDiagnostic = Readonly<{
   status: "failed";
   phase: CursorAbDiagnosticPhase;
   error_code: CursorAbDiagnosticErrorCode;
+  observed_route?: EngineExecution["route"];
   cleanup_passed: boolean;
   timestamp: string;
 }>;
@@ -47,6 +50,16 @@ const ERROR_PROJECTIONS: readonly (readonly [string, CursorAbDiagnosticErrorCode
   ["cursor_ab_architecture_unsupported", "runtime_failed"],
 ];
 
+const OBSERVED_ROUTES: readonly EngineExecution["route"][] = [
+  "accessibility",
+  "synthetic_events",
+  "global_input",
+  "system_api",
+  "dom",
+  "trusted_input",
+  "unknown",
+];
+
 function projectErrorCode(error: unknown): CursorAbDiagnosticErrorCode {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   return ERROR_PROJECTIONS.find(([prefix]) => message === prefix || message.startsWith(prefix))?.[1]
@@ -56,6 +69,7 @@ function projectErrorCode(error: unknown): CursorAbDiagnosticErrorCode {
 export class CursorAbDiagnosticTracker {
   readonly #timestamp: () => string;
   #phase: CursorAbDiagnosticPhase = "setup";
+  #observedRoute: EngineExecution["route"] = "unknown";
 
   constructor(options: Readonly<{ timestamp?: () => string }> = {}) {
     this.#timestamp = options.timestamp ?? (() => new Date().toISOString());
@@ -65,13 +79,19 @@ export class CursorAbDiagnosticTracker {
     this.#phase = phase;
   }
 
+  recordObservedRoute(route: EngineExecution["route"]): void {
+    this.#observedRoute = OBSERVED_ROUTES.includes(route) ? route : "unknown";
+  }
+
   build(error: unknown, cleanupPassed: boolean): CursorAbDiagnostic {
+    const errorCode = cleanupPassed ? projectErrorCode(error) : "cleanup_failed";
     return {
       schema_version: 1,
       evidence_type: "computer-use-macos-cursor-ab-diagnostic",
       status: "failed",
       phase: cleanupPassed ? this.#phase : "cleanup",
-      error_code: cleanupPassed ? projectErrorCode(error) : "cleanup_failed",
+      error_code: errorCode,
+      ...(errorCode === "route_mismatch" ? { observed_route: this.#observedRoute } : {}),
       cleanup_passed: cleanupPassed,
       timestamp: this.#timestamp(),
     };
