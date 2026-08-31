@@ -58,13 +58,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "pattern": "^(?![A-Za-z]:[\\\\/])(?![A-Za-z][A-Za-z0-9+.-]*://)(?!.*(?:/Users/|/home/))(?!.+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$)[A-Za-z0-9](?:[A-Za-z0-9 ._:+/()@-]*[A-Za-z0-9)])?$"
+          "pattern": "^(?![A-Za-z]:[\\\\/])(?!(?:[Ff][Ii][Ll][Ee]|[Hh][Tt][Tt][Pp][Ss]?|[Ff][Tt][Pp][Ss]?|[Mm][Aa][Ii][Ll][Tt][Oo]|[Dd][Aa][Tt][Aa]):)(?![A-Za-z][A-Za-z0-9+.-]*://)(?!.*(?:/Users/|/home/))(?!.+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$)[A-Za-z0-9](?:[A-Za-z0-9 ._:+/()@-]*[A-Za-z0-9)])?$"
         },
         "reported_model_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256,
-          "pattern": "^(?![A-Za-z]:[\\\\/])(?![A-Za-z][A-Za-z0-9+.-]*://)(?!.*(?:/Users/|/home/))(?!.+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$)[A-Za-z0-9](?:[A-Za-z0-9 ._:+/()@-]*[A-Za-z0-9)])?$"
+          "pattern": "^(?![A-Za-z]:[\\\\/])(?!(?:[Ff][Ii][Ll][Ee]|[Hh][Tt][Tt][Pp][Ss]?|[Ff][Tt][Pp][Ss]?|[Mm][Aa][Ii][Ll][Tt][Oo]|[Dd][Aa][Tt][Aa]):)(?![A-Za-z][A-Za-z0-9+.-]*://)(?!.*(?:/Users/|/home/))(?!.+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$)[A-Za-z0-9](?:[A-Za-z0-9 ._:+/()@-]*[A-Za-z0-9)])?$"
         }
       }
     },

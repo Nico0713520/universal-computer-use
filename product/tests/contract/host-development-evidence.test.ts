@@ -270,6 +270,7 @@ describe("named-host development evidence v2", () => {
     expect(parser.safeParse(displayedVersion).success).toBe(true);
     for (const modelId of [
       "gpt-5.6-sol",
+      "host:model-vision-1",
       "openai/gpt-5.6-sol",
       "openrouter/anthropic/claude-3.7-sonnet",
       "Kimi K3",
@@ -291,6 +292,9 @@ describe("named-host development evidence v2", () => {
       ["trailing whitespace", (value) => { (value.host as JsonRecord).reported_model_id = "Kimi K3 "; }],
       ["embedded newline", (value) => { (value.host as JsonRecord).reported_model_id = "Kimi\nK3"; }],
       ["file URI", (value) => { (value.host as JsonRecord).reported_model_id = "file:///Users/name/model"; }],
+      ["file URI without slashes", (value) => { (value.host as JsonRecord).reported_model_id = "FiLe:/tmp/model"; }],
+      ["HTTP URI without slashes", (value) => { (value.host as JsonRecord).reported_model_id = "http:model"; }],
+      ["HTTPS URI without slashes", (value) => { (value.host as JsonRecord).reported_model_id = "HtTpS:model"; }],
       ["HTTP URI", (value) => { (value.host as JsonRecord).reported_model_id = "https://example.com/model"; }],
       ["email identity", (value) => { (value.host as JsonRecord).reported_model_id = "person@example.com"; }],
       ["home shortcut", (value) => { (value.host as JsonRecord).reported_model_id = "~/models/vision"; }],
@@ -485,6 +489,13 @@ describe("named-host development evidence v2", () => {
     naturalStopNotRun.limitations = ["natural-stop-failed"];
     naturalStopNotRun.natural_stop = { result: "not-run", tool_calls_after_goal: 0 };
     expect(parser.safeParse(naturalStopNotRun).success).toBe(false);
+
+    const naturalStopNotRunWithCalls = completeDevelopmentEvidence();
+    naturalStopNotRunWithCalls.status = "failed";
+    naturalStopNotRunWithCalls.non_pass_signal = "natural-stop-failed";
+    naturalStopNotRunWithCalls.limitations = ["natural-stop-failed"];
+    naturalStopNotRunWithCalls.natural_stop = { result: "not-run", tool_calls_after_goal: 1 };
+    expect(parser.safeParse(naturalStopNotRunWithCalls).success).toBe(false);
   });
 
   it("binds verified host authorization and limitations in both directions", async () => {

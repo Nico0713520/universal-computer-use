@@ -80,7 +80,11 @@ const signalContracts: Record<
     fact: (value) => {
       const stop = child(value, "natural_stop");
       return stop.result === "fail"
-        || (typeof stop.tool_calls_after_goal === "number" && stop.tool_calls_after_goal > 0);
+        || (
+          stop.result === "pass"
+          && typeof stop.tool_calls_after_goal === "number"
+          && stop.tool_calls_after_goal > 0
+        );
     },
   },
   "precondition-blocked": {
