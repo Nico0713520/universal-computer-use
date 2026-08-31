@@ -813,6 +813,9 @@ export class ComputerUseRuntime {
               ? {}
               : { errorCode: actionResult.error_code }),
           }),
+      ...("telemetry" in envelope && envelope.telemetry?.cursorVisual === "degraded"
+        ? { cursorVisual: "degraded" as const }
+        : {}),
     });
   }
 

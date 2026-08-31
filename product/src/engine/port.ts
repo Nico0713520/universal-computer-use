@@ -113,6 +113,7 @@ export type EngineExecution = Readonly<{
   errorCode?: string;
   evidence?: readonly string[];
   deliveredCount?: number;
+  cursorVisual?: "degraded";
   escalation?: Readonly<{
     reason: "background_unavailable" | "foreground_required" | "effect_unconfirmed" | "window_not_ready" | "window_target_ambiguous";
     suggestedDelivery?: "foreground";

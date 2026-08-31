@@ -329,23 +329,27 @@ export class CuaEngine implements EnginePort {
     const session = action.target.kind === "desktop"
       ? this.sessionId
       : this.windowSessionId;
-    await this.cursor.prepare(
+    const cursorPreparation = await this.cursor.prepare(
       session,
       desiredCursorVisibility(this.cursorMode, action),
       signal,
     );
+    const withCursorPresentation = (result: EngineExecution): EngineExecution =>
+      cursorPreparation === "degraded"
+        ? { ...result, cursorVisual: "degraded" }
+        : result;
     const mapped = mapAction(
       action,
       session,
     );
     if ("waitMs" in mapped) {
       await cancellableWait(mapped.waitMs, signal);
-      return {
+      return withCursorPresentation({
         status: "executed",
         effect: "confirmed",
         route: "system_api",
         delivery: "not_applicable",
-      };
+      });
     }
 
     const result = await this.sdk.callTool(
@@ -354,9 +358,9 @@ export class CuaEngine implements EnginePort {
       { signal },
     );
     if (action.target.kind === "app" && !result.isError) {
-      return parseLaunchResult(result, action.target.app);
+      return withCursorPresentation(parseLaunchResult(result, action.target.app));
     }
-    return mapCuaResult(result);
+    return withCursorPresentation(mapCuaResult(result));
   }
 
   async health(signal: AbortSignal): Promise<boolean> {

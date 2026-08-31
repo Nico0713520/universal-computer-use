@@ -78,6 +78,7 @@ export type MetadataLogEvent = Readonly<{
   effect?: Effect;
   route?: Route;
   delivery?: Delivery;
+  cursorVisual?: "degraded";
   errorCode?: ComputerUseErrorCode;
 }>;
 
@@ -92,6 +93,7 @@ export type MetadataLogRecord = Readonly<{
   effect?: Effect;
   route?: Route;
   delivery?: Delivery;
+  cursor_visual?: "degraded";
   error_code?: ComputerUseErrorCode;
 }>;
 
@@ -133,6 +135,7 @@ export function redactMetadataEvent(
     effect?: Effect;
     route?: Route;
     delivery?: Delivery;
+    cursor_visual?: "degraded";
     error_code?: ComputerUseErrorCode;
   } = { timestamp: timestamp.toISOString() };
 
@@ -180,6 +183,9 @@ export function redactMetadataEvent(
   }
   if (isMember(DELIVERIES, input.delivery)) {
     output.delivery = input.delivery;
+  }
+  if (input.cursorVisual === "degraded") {
+    output.cursor_visual = "degraded";
   }
   if (isMember(ERROR_CODES, input.errorCode)) {
     output.error_code = input.errorCode;

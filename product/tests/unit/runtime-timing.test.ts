@@ -177,6 +177,41 @@ describe("runtime timing metadata", () => {
     await runtime.close();
   });
 
+  it("logs a degraded Cursor presentation without exposing it in the MCP result", async () => {
+    const events: MetadataLogEvent[] = [];
+    const engine = new TimedWindowEngine(() => undefined);
+    engine.execution = {
+      status: "executed",
+      effect: "confirmed",
+      route: "synthetic_events",
+      delivery: "foreground",
+      cursorVisual: "degraded",
+    };
+    const runtime = new ComputerUseRuntime(
+      engine,
+      undefined,
+      undefined,
+      { logger: recordingLogger(events) },
+    );
+    const discovered = await runtime.observe({ discover: { windows: true } });
+    if (!("windows" in discovered.structured)) throw new Error("expected windows");
+    const observed = await runtime.observe({
+      target: { kind: "window", window_ref: discovered.structured.windows![0]!.window_ref },
+    });
+    if (!("elements" in observed.structured)) throw new Error("expected elements");
+    events.length = 0;
+
+    const acted = await runtime.act({
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "click", element_ref: observed.structured.elements[0]!.element_ref },
+      delivery: "foreground",
+    });
+
+    expect(events).toEqual([expect.objectContaining({ cursorVisual: "degraded" })]);
+    expect(JSON.stringify(acted)).not.toContain("cursor_visual");
+    await runtime.close();
+  });
+
   it("does not turn a successful tool call into a failure when the metadata sink throws", async () => {
     const runtime = new ComputerUseRuntime(
       new TimedWindowEngine(() => undefined),

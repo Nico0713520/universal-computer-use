@@ -791,6 +791,44 @@ describe("Cua daemon connection", () => {
     });
   });
 
+  it("dispatches exactly once and marks a failed foreground Cursor show as degraded", async () => {
+    const lock = await loadEngineLock();
+    const click = result({});
+    click.action = {
+      effect: ActionEffect.Confirmed,
+      route: ActionRoute.GlobalInput,
+      delivery: { mode: ActionDeliveryMode.Foreground, deliveredCount: 1 },
+    };
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: { click },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock, { cursorMode: "auto" });
+    sdk.callToolCalls.length = 0;
+    const originalCallTool = sdk.callTool.bind(sdk);
+    vi.spyOn(sdk, "callTool").mockImplementation(async (name, argumentsJson, options) => {
+      const input = JSON.parse(argumentsJson) as Record<string, unknown>;
+      if (name === "set_agent_cursor_enabled" && input.enabled === true) {
+        sdk.callToolCalls.push({ name, argumentsJson });
+        return { ...result({ code: "cursor_failed" }), isError: true };
+      }
+      return originalCallTool(name, argumentsJson, options);
+    });
+
+    await expect(engine.execute({
+      target: { kind: "desktop" },
+      action: { type: "click", x: 10, y: 20 },
+    }, new AbortController().signal)).resolves.toMatchObject({
+      status: "executed",
+      cursorVisual: "degraded",
+    });
+    expect(sdk.callToolCalls.map(({ name }) => name)).toEqual([
+      "set_agent_cursor_enabled",
+      "click",
+    ]);
+  });
+
   it("hides a presented Cursor before taking the next desktop screenshot", async () => {
     const lock = await loadEngineLock();
     const click = result({});

@@ -34,6 +34,7 @@ function poisonedEvent(): MetadataLogEvent {
     effect: "confirmed",
     route: "accessibility",
     delivery: "foreground",
+    cursorVisual: "degraded",
     errorCode: "action_failed",
     text: TYPE_SECRET,
     keys: [KEY_SECRET],
@@ -88,6 +89,7 @@ describe("metadata log redaction", () => {
       effect: "confirmed",
       route: "accessibility",
       delivery: "foreground",
+      cursor_visual: "degraded",
       error_code: "action_failed",
     });
 
@@ -115,6 +117,7 @@ describe("metadata log redaction", () => {
       "effect",
       "route",
       "delivery",
+      "cursor_visual",
       "error_code",
     ]);
   });

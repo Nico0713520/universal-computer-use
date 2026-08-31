@@ -502,4 +502,8 @@ export type ActOutput = z.infer<typeof ActOutputSchema>;
 export type ActionResult = z.infer<typeof ActionResultSchema>;
 export type ImagePayload = Readonly<{ mimeType: "image/png"; dataBase64: string }>;
 export type ObservationEnvelope = Readonly<{ structured: ObservationOutput; image?: ImagePayload }>;
-export type ActEnvelope = Readonly<{ structured: ActOutput; image?: ImagePayload }>;
+export type ActEnvelope = Readonly<{
+  structured: ActOutput;
+  image?: ImagePayload;
+  telemetry?: Readonly<{ cursorVisual: "degraded" }>;
+}>;

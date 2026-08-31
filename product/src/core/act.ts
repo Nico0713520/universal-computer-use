@@ -115,6 +115,14 @@ export function toActionResult(result: EngineExecution): ActionResult {
         };
 }
 
+function cursorTelemetry(
+  result: EngineExecution,
+): Readonly<{ telemetry: Readonly<{ cursorVisual: "degraded" }> }> | Record<string, never> {
+  return result.cursorVisual === "degraded"
+    ? { telemetry: { cursorVisual: "degraded" } }
+    : {};
+}
+
 export function toWindowActEnvelope(
   engine: EnginePort,
   consumedId: string,
@@ -151,6 +159,7 @@ export function toWindowActEnvelope(
   });
   return {
     structured,
+    ...cursorTelemetry(result),
     ...(value.visualStatus === "available" && value.image !== undefined
       ? { image: { mimeType: "image/png" as const, dataBase64: value.image.dataBase64 } }
       : {}),
@@ -186,6 +195,7 @@ export function toActEnvelope(
   });
   return {
     structured,
+    ...cursorTelemetry(result),
     image: { mimeType: "image/png", dataBase64: value.image.dataBase64 },
   };
 }
@@ -198,6 +208,7 @@ export function toUnavailableActEnvelope(
   verification: VerificationResult = { status: "not_requested" },
 ): ActEnvelope {
   return {
+    ...cursorTelemetry(result),
     structured: {
       next_state: "unavailable",
       protocol_version: PROTOCOL_VERSION,
