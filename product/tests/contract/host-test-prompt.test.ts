@@ -12,6 +12,16 @@ const REPOSITORY = "https://github.com/Nico0713520/universal-computer-use";
 const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 const temporaryDirectories: string[] = [];
 
+function pnpmInvocation(args: string[]) {
+  if (process.platform !== "win32") {
+    return { file: "pnpm", args: ["--silent", "host:test-prompt", ...args] };
+  }
+  return {
+    file: process.env.ComSpec || "cmd.exe",
+    args: ["/d", "/s", "/c", "pnpm.cmd", "--silent", "host:test-prompt", ...args],
+  };
+}
+
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, {
     recursive: true,
@@ -34,6 +44,23 @@ async function renderInvalid(args: string[]) {
       timeout: 5_000,
     });
     throw new Error("invalid renderer invocation unexpectedly succeeded");
+  } catch (error) {
+    return error as Error & { code?: number; stdout?: string; stderr?: string };
+  }
+}
+
+async function renderThroughPnpm(args: string[]) {
+  const invocation = pnpmInvocation(args);
+  return execFileAsync(invocation.file, invocation.args, {
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+}
+
+async function renderInvalidThroughPnpm(args: string[]) {
+  try {
+    await renderThroughPnpm(args);
+    throw new Error("invalid pnpm renderer invocation unexpectedly succeeded");
   } catch (error) {
     return error as Error & { code?: number; stdout?: string; stderr?: string };
   }
@@ -127,6 +154,31 @@ describe("commit-bound external host test prompt", () => {
     }
   });
 
+  it("keeps the public pnpm entrypoint free of lifecycle banners, machine paths, and wrapped errors", async () => {
+    const args = [
+      "--host", "workbuddy",
+      "--repo", REPOSITORY,
+      "--commit", COMMIT,
+    ];
+    const valid = await renderThroughPnpm(args);
+    expect(valid.stderr).toBe("");
+    expect(valid.stdout).toContain("exact-commit WorkBuddy acceptance");
+    expect(valid.stdout).not.toContain("> @universal-computer-use/plugin");
+    expect(valid.stdout).not.toContain("> node scripts/render-host-test-prompt.mjs");
+    expect(valid.stdout).not.toContain(resolve("."));
+
+    const invalid = await renderInvalidThroughPnpm([
+      "--host", "workbuddy",
+      "--repo", "https://user:secret@github.com/Nico0713520/universal-computer-use",
+      "--commit", COMMIT,
+    ]);
+    expect(invalid.code).not.toBe(0);
+    expect(invalid.stdout).toBe("");
+    expect(invalid.stderr).toBe("host_prompt_failed:invalid_arguments\n");
+    expect(invalid.stderr).not.toContain("secret");
+    expect(invalid.stderr).not.toContain(resolve("."));
+  });
+
   it("fails closed with one stable non-leaking diagnostic for every invalid argument shape", async () => {
     const invalidInvocations = [
       ["--host", "other", "--repo", REPOSITORY, "--commit", COMMIT],
@@ -135,6 +187,7 @@ describe("commit-bound external host test prompt", () => {
       ["--host", "hanaagent", "--repo", "https://github.com/other/project", "--commit", COMMIT],
       ["--host", "hanaagent", "--repo", REPOSITORY, "--commit", COMMIT.toUpperCase()],
       ["--host", "hanaagent", "--repo", REPOSITORY, "--commit", COMMIT.slice(1)],
+      ["--host", "hanaagent", "--repo", REPOSITORY, "--commit", "0".repeat(40)],
       ["--host", "hanaagent", "--host", "codex", "--repo", REPOSITORY, "--commit", COMMIT],
       ["--host", "hanaagent", "--repo", REPOSITORY],
       ["--host=hanaagent", "--repo", REPOSITORY, "--commit", COMMIT],

@@ -39,6 +39,7 @@ function parseArguments(argv) {
     !Object.hasOwn(HOSTS, host)
     || repository !== EXPECTED_REPOSITORY
     || !/^[0-9a-f]{40}$/.test(commit)
+    || commit === "0".repeat(40)
   ) {
     return undefined;
   }

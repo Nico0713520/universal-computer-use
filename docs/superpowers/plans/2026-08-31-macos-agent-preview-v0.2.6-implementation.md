@@ -200,7 +200,7 @@ git commit -m "test: require direct mac host preview loops"
 ### Command contract
 
 ```bash
-pnpm host:test-prompt --host hanaagent \
+pnpm --silent host:test-prompt --host hanaagent \
   --repo https://github.com/Nico0713520/universal-computer-use \
   --commit 0123456789abcdef0123456789abcdef01234567
 ```
@@ -291,7 +291,7 @@ Before this task, ask the user to confirm that the desktop is idle. Explain that
 - [ ] Fetch `origin` and verify `origin/main` is an ancestor of local `HEAD`. If not, stop and reconcile without force-push, reset, or history rewriting.
 - [ ] Push `main` normally with `git push origin main`.
 - [ ] Capture `git rev-parse HEAD` and compare it with `git ls-remote origin refs/heads/main`. They must be identical before any testing prompt is shared.
-- [ ] Render the Codex prompt using `pnpm host:test-prompt` with the exact public repository and pushed commit.
+- [ ] Render the Codex prompt using `pnpm --silent host:test-prompt` with the exact public repository and pushed commit.
 - [ ] Render the HanaAgent prompt with the same repository and commit.
 - [ ] Render the WorkBuddy prompt with the same repository and commit.
 - [ ] Give the user all three prompts, clearly instructing them to run one host at a time and to return only the v2 evidence report.
