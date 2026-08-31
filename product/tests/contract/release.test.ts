@@ -341,6 +341,7 @@ describe("release verification", () => {
       pretest: "npm run build",
       prepack: "npm run build",
       "prerelease:verify": "npm run build",
+      "host:test-prompt": "node scripts/render-host-test-prompt.mjs",
     });
   });
 
@@ -355,6 +356,7 @@ describe("release verification", () => {
       "dist/mcp/server.js",
       "dist/protocol.js",
       "scripts/run-development-acceptance.mjs",
+      "scripts/render-host-test-prompt.mjs",
       "skills/computer-use/SKILL.md",
       "integrations/generic/mcp.json",
       "integrations/codex/README.md",

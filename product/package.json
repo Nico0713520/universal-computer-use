@@ -8,6 +8,7 @@
     "scripts/run-development-acceptance.mjs",
     "scripts/run-development-profile.mjs",
     "scripts/run-cursor-ab.mjs",
+    "scripts/render-host-test-prompt.mjs",
     "skills",
     "integrations",
     "engine.lock.json",
@@ -29,6 +30,7 @@
     "acceptance:macos": "node scripts/run-development-acceptance.mjs",
     "acceptance:macos:profile": "node scripts/run-development-profile.mjs",
     "acceptance:macos:cursor-ab": "node scripts/run-cursor-ab.mjs",
+    "host:test-prompt": "node scripts/render-host-test-prompt.mjs",
     "prepack": "npm run build",
     "prerelease:verify": "npm run build",
     "release:verify": "node scripts/verify-release.mjs"

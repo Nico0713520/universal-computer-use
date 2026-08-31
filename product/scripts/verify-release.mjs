@@ -65,6 +65,7 @@ export async function inspectPackedArtifact(directory) {
     "integrations/generic/mcp.json",
     "integrations/codex/README.md",
     "integrations/kimi/README.md",
+    "scripts/render-host-test-prompt.mjs",
     "engine.lock.json",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
