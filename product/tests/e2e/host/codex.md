@@ -71,7 +71,7 @@ Write one external JSON file conforming to `development-evidence.schema.json`. I
 
 Return only the privacy-safe v2 JSON report. Do not return or store screenshots, prompts, nonces, tool arguments, clipboard contents, raw image payloads, typed content, paths, environment data, identities, native IDs, refs, or tokens. Limitations must use only the schema's allowlisted categories.
 
-For field structure only, see `tests/fixtures/host-development-evidence-v2.synthetic.json`. That file is synthetic and inert and cannot be submitted as external evidence. A real host report must set `evidence_origin: external-run`, remain outside this repository, and use `non_pass_signal: none` only for `verified-development`; a failed, blocked, or not-run report must select its truthful allowlisted non-pass signal.
+For field structure only, see `tests/fixtures/host-development-evidence-v2.synthetic.json`. That file is synthetic and inert and cannot be submitted as external evidence. A real host report must set `evidence_origin: external-run`, remain outside this repository, and use `non_pass_signal: none` only for `verified-development`; a failed, blocked, or not-run report must select its truthful allowlisted non-pass signal. The structured allowlist reduces accidental disclosure, but the schema is not a DLP system: the external reporter must still never put user content into an identity field or any other field.
 
 Validate the external file from the exact checkout:
 

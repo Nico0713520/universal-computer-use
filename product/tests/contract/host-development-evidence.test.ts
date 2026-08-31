@@ -4,6 +4,8 @@ import { delimiter, isAbsolute } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { hostDevelopmentEvidenceSemanticErrors } from "./support/host-development-evidence-semantics.js";
+
 const hostDirectory = new URL("../e2e/host/", import.meta.url);
 const schemaUrl = new URL("../e2e/host/development-evidence.schema.json", import.meta.url);
 const syntheticExampleUrl = new URL(
@@ -19,7 +21,7 @@ async function readJson(urlOrPath: URL | string): Promise<JsonRecord> {
   return JSON.parse(await readFile(urlOrPath, "utf8")) as JsonRecord;
 }
 
-async function evidenceParser(): Promise<z.ZodType> {
+async function structuralEvidenceParser(): Promise<z.ZodType> {
   const schema = await readJson(schemaUrl);
   const { oneOf, ...strictBase } = schema;
   if (!Array.isArray(oneOf)) throw new Error("host development status contract is missing");
@@ -27,6 +29,14 @@ async function evidenceParser(): Promise<z.ZodType> {
     z.fromJSONSchema(strictBase as never),
     z.fromJSONSchema(schema as never),
   );
+}
+
+async function evidenceParser(): Promise<z.ZodType> {
+  return (await structuralEvidenceParser()).superRefine((value, context) => {
+    for (const message of hostDevelopmentEvidenceSemanticErrors(value)) {
+      context.addIssue({ code: "custom", message });
+    }
+  });
 }
 
 function parseExternalDevelopmentEvidence(parser: z.ZodType, value: JsonRecord): JsonRecord {
@@ -251,12 +261,19 @@ describe("named-host development evidence v2", () => {
     }
   });
 
-  it("keeps host identity slots token-like instead of accepting prose or absolute paths", async () => {
+  it("supports exact host display identifiers while rejecting paths and privacy-shaped values", async () => {
     const parser = await evidenceParser();
+    const displayedVersion = completeDevelopmentEvidence();
+    (displayedVersion.host as JsonRecord).version = "HanaAgent 2026.8 (Preview)";
+    expect(parser.safeParse(displayedVersion).success).toBe(true);
     for (const modelId of [
       "gpt-5.6-sol",
       "openai/gpt-5.6-sol",
       "openrouter/anthropic/claude-3.7-sonnet",
+      "Kimi K3",
+      "Claude 3.7 Sonnet",
+      "GPT-5.6 (High)",
+      "projects/demo/locations/us/models/vision-1",
     ]) {
       const candidate = completeDevelopmentEvidence();
       (candidate.host as JsonRecord).reported_model_id = modelId;
@@ -266,12 +283,14 @@ describe("named-host development evidence v2", () => {
     const mutations: Array<[string, (value: JsonRecord) => void]> = [
       ["version sentence", (value) => { (value.host as JsonRecord).version = "paste this private prompt"; }],
       ["version path", (value) => { (value.host as JsonRecord).version = "/Applications/HanaAgent.app"; }],
-      ["model sentence", (value) => { (value.host as JsonRecord).reported_model_id = "private prompt sentence"; }],
-      ["model clipboard", (value) => { (value.host as JsonRecord).reported_model_id = "clipboard content"; }],
-      ["model user content", (value) => { (value.host as JsonRecord).reported_model_id = "user content here"; }],
-      ["version prompt token", (value) => { (value.host as JsonRecord).version = "private-prompt"; }],
-      ["model clipboard token", (value) => { (value.host as JsonRecord).reported_model_id = "clipboard"; }],
-      ["model user-content token", (value) => { (value.host as JsonRecord).reported_model_id = "user-content"; }],
+      ["model private marker", (value) => { (value.host as JsonRecord).reported_model_id = "OpenAI/Private/Model"; }],
+      ["model prompt marker", (value) => { (value.host as JsonRecord).reported_model_id = "vendor/PrOmPt/model"; }],
+      ["model clipboard marker", (value) => { (value.host as JsonRecord).reported_model_id = "CLIPBOARD"; }],
+      ["model user content marker", (value) => { (value.host as JsonRecord).reported_model_id = "vendor/User_Content/model"; }],
+      ["model spaced user content marker", (value) => { (value.host as JsonRecord).reported_model_id = "Vendor User Content Model"; }],
+      ["leading whitespace", (value) => { (value.host as JsonRecord).reported_model_id = " Kimi K3"; }],
+      ["trailing whitespace", (value) => { (value.host as JsonRecord).reported_model_id = "Kimi K3 "; }],
+      ["embedded newline", (value) => { (value.host as JsonRecord).reported_model_id = "Kimi\nK3"; }],
       ["model POSIX path", (value) => { (value.host as JsonRecord).reported_model_id = "/Users/private/model"; }],
       ["model Windows path", (value) => { (value.host as JsonRecord).reported_model_id = "C:\\Users\\private\\model"; }],
     ];
@@ -326,9 +345,141 @@ describe("named-host development evidence v2", () => {
     blockedInput.write_count = 0;
     blockedInput.naturally_stopped = false;
     truthfulBlocked.natural_stop = { result: "not-run", tool_calls_after_goal: 0 };
-    truthfulBlocked.limitations = ["task-incomplete"];
+    truthfulBlocked.limitations = ["task-not-run"];
     truthfulBlocked.non_pass_signal = "task-not-run";
     expect(parser.safeParse(truthfulBlocked).success).toBe(true);
+  });
+
+  it("binds every external non-pass signal to its status, limitation, and observed fact", async () => {
+    const parser = await evidenceParser();
+    const cases: Array<{
+      signal: string;
+      status: string;
+      limitation: string;
+      makeFactFail: (value: JsonRecord) => void;
+      makeDifferentFactFail: (value: JsonRecord) => void;
+    }> = [
+      {
+        signal: "invalid-transport-observed",
+        status: "failed",
+        limitation: "invalid-transport-observed",
+        makeFactFail: (value) => { (value.transport as JsonRecord).shell_bridge = true; },
+        makeDifferentFactFail: (value) => { (value.image_delivery as JsonRecord).first_turn_png = false; },
+      },
+      {
+        signal: "image-delivery-incomplete",
+        status: "failed",
+        limitation: "host-image-delivery-incomplete",
+        makeFactFail: (value) => { (value.image_delivery as JsonRecord).same_direct_loop = false; },
+        makeDifferentFactFail: (value) => { (value.continuous_loop as JsonRecord).repeated_tool_calls = false; },
+      },
+      {
+        signal: "loop-incomplete",
+        status: "failed",
+        limitation: "host-loop-incomplete",
+        makeFactFail: (value) => { (value.continuous_loop as JsonRecord).turns_observed = 1; },
+        makeDifferentFactFail: (value) => { (value.image_delivery as JsonRecord).second_turn_png = false; },
+      },
+      {
+        signal: "host-policy-blocked",
+        status: "blocked",
+        limitation: "host-policy-blocked",
+        makeFactFail: (value) => { (value.automatic_mode as JsonRecord).host_authorization = "host-policy-blocked"; },
+        makeDifferentFactFail: (value) => {
+          const task = ((value.task_results as JsonRecord).calculator as JsonRecord);
+          task.result = "fail";
+        },
+      },
+      {
+        signal: "task-failed",
+        status: "failed",
+        limitation: "task-failed",
+        makeFactFail: (value) => {
+          const task = ((value.task_results as JsonRecord).calculator as JsonRecord);
+          task.result = "fail";
+        },
+        makeDifferentFactFail: (value) => { (value.natural_stop as JsonRecord).result = "fail"; },
+      },
+      {
+        signal: "task-not-run",
+        status: "not-run",
+        limitation: "task-not-run",
+        makeFactFail: (value) => {
+          const task = ((value.task_results as JsonRecord).unique_input as JsonRecord);
+          task.result = "not-run";
+        },
+        makeDifferentFactFail: (value) => {
+          const task = ((value.task_results as JsonRecord).calculator as JsonRecord);
+          task.result = "fail";
+        },
+      },
+      {
+        signal: "natural-stop-failed",
+        status: "failed",
+        limitation: "natural-stop-failed",
+        makeFactFail: (value) => { (value.natural_stop as JsonRecord).tool_calls_after_goal = 1; },
+        makeDifferentFactFail: (value) => {
+          const task = ((value.task_results as JsonRecord).calculator as JsonRecord);
+          task.result = "fail";
+        },
+      },
+      {
+        signal: "precondition-blocked",
+        status: "blocked",
+        limitation: "precondition-blocked",
+        makeFactFail: () => {},
+        makeDifferentFactFail: () => {},
+      },
+    ];
+
+    for (const testCase of cases) {
+      const allGreen = completeDevelopmentEvidence();
+      allGreen.status = testCase.status;
+      allGreen.non_pass_signal = testCase.signal;
+      expect(parser.safeParse(allGreen).success, `${testCase.signal}: no limitation/fact`).toBe(false);
+
+      const matching = completeDevelopmentEvidence();
+      matching.status = testCase.status;
+      matching.non_pass_signal = testCase.signal;
+      matching.limitations = [testCase.limitation];
+      testCase.makeFactFail(matching);
+      expect(parser.safeParse(matching).success, `${testCase.signal}: matching`).toBe(true);
+
+      if (testCase.signal !== "precondition-blocked") {
+        const mismatched = completeDevelopmentEvidence();
+        mismatched.status = testCase.status;
+        mismatched.non_pass_signal = testCase.signal;
+        mismatched.limitations = [testCase.limitation];
+        testCase.makeDifferentFactFail(mismatched);
+        expect(parser.safeParse(mismatched).success, `${testCase.signal}: mismatched`).toBe(false);
+      }
+    }
+
+    const preconditionWithFailedStatus = completeDevelopmentEvidence();
+    preconditionWithFailedStatus.status = "failed";
+    preconditionWithFailedStatus.non_pass_signal = "precondition-blocked";
+    preconditionWithFailedStatus.limitations = ["precondition-blocked"];
+    expect(parser.safeParse(preconditionWithFailedStatus).success).toBe(false);
+  });
+
+  it("binds verified host authorization and limitations in both directions", async () => {
+    const parser = await evidenceParser();
+
+    const noPrompt = completeDevelopmentEvidence();
+    expect(parser.safeParse(noPrompt).success).toBe(true);
+
+    const approval = completeDevelopmentEvidence();
+    (approval.automatic_mode as JsonRecord).host_authorization = "host-approval-observed";
+    approval.limitations = ["host-approval-observed"];
+    expect(parser.safeParse(approval).success).toBe(true);
+
+    const unreportedApproval = completeDevelopmentEvidence();
+    (unreportedApproval.automatic_mode as JsonRecord).host_authorization = "host-approval-observed";
+    expect(parser.safeParse(unreportedApproval).success).toBe(false);
+
+    const inventedApproval = completeDevelopmentEvidence();
+    inventedApproval.limitations = ["host-approval-observed"];
+    expect(parser.safeParse(inventedApproval).success).toBe(false);
   });
 
   it("keeps development evidence external and outside release promotion", async () => {
@@ -358,9 +509,10 @@ describe("named-host development evidence v2", () => {
 
   it("ships one inert synthetic v2 structure example that external validation refuses", async () => {
     const parser = await evidenceParser();
+    const structuralParser = await structuralEvidenceParser();
     const example = await readJson(syntheticExampleUrl);
 
-    expect(parser.safeParse(example).success).toBe(true);
+    expect(structuralParser.safeParse(example).success).toBe(true);
     expect(example).toMatchObject({
       schema_version: 2,
       evidence_origin: "synthetic-example",
@@ -378,7 +530,17 @@ describe("named-host development evidence v2", () => {
       .toThrow("synthetic_example_not_external_evidence");
     const disguisedAsExternal = structuredClone(example);
     disguisedAsExternal.evidence_origin = "external-run";
+    (disguisedAsExternal.build as JsonRecord).git_commit = "1".repeat(40);
+    (disguisedAsExternal.reviewer as JsonRecord).method = "manual-host-development-runbook";
     expect(parser.safeParse(disguisedAsExternal).success).toBe(false);
+
+    const completedTemplate = structuredClone(disguisedAsExternal);
+    (completedTemplate.host as JsonRecord).version = "2026.8.31";
+    (completedTemplate.host as JsonRecord).reported_model_id = "Kimi K3";
+    (completedTemplate.system as JsonRecord).os_version = "15.6.1";
+    (completedTemplate.reviewer as JsonRecord).id = "reviewer-01";
+    completedTemplate.limitations = ["task-not-run"];
+    expect(parser.safeParse(completedTemplate).success).toBe(true);
 
     const serialized = JSON.stringify(example);
     for (const forbidden of [
@@ -434,6 +596,7 @@ describe("named-host development evidence v2", () => {
       expect(runbook).toContain("host-development-evidence-v2.synthetic.json");
       expect(runbook).toContain("synthetic and inert");
       expect(runbook).toContain("cannot be submitted as external evidence");
+      expect(runbook).toContain("not a DLP system");
       expect(runbook).toContain("Return only");
       for (const forbiddenEvidence of [
         "screenshots",

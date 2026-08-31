@@ -71,7 +71,7 @@
     "result": "not-run",
     "tool_calls_after_goal": 0
   },
-  "limitations": ["task-incomplete"],
+  "limitations": ["task-not-run"],
   "non_pass_signal": "task-not-run",
   "timestamp": "2000-01-01T00:00:00.000Z",
   "reviewer": {
