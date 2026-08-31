@@ -10,8 +10,10 @@ import {
 } from "@trycua/cua-driver";
 
 import { ComputerUseError } from "../errors.js";
-import { disableAndVerifyAgentCursor } from "./agent-cursor.js";
+import { AgentCursorController } from "./agent-cursor.js";
 import { mapAction } from "./action-mapper.js";
+import type { CursorMode } from "./cursor-mode.js";
+import { desiredCursorVisibility } from "./cursor-policy.js";
 import {
   parseAppList,
   parseDesktopObservation,
@@ -37,6 +39,10 @@ export type CuaSdkLike = Pick<
   CuaDriverLike,
   "metadata" | "listToolsJson" | "startSession" | "callTool" | "endSession"
 >;
+
+export type CuaEngineOptions = Readonly<{
+  cursorMode?: CursorMode;
+}>;
 
 function abortError(): DOMException {
   return new DOMException("The operation was aborted", "AbortError");
@@ -88,9 +94,14 @@ export class CuaEngine implements EnginePort {
     readonly version: string,
     readonly sessionId: string,
     private readonly windowSessionId: string,
+    private readonly cursor: AgentCursorController,
+    private readonly cursorMode: CursorMode,
   ) {}
 
-  static async connect(lock: EngineLock): Promise<CuaEngine> {
+  static async connect(
+    lock: EngineLock,
+    options: CuaEngineOptions = {},
+  ): Promise<CuaEngine> {
     let sdk: CuaSdkLike;
     try {
       sdk = CuaDriver.connect(undefined);
@@ -105,7 +116,7 @@ export class CuaEngine implements EnginePort {
     }
 
     try {
-      return await CuaEngine.fromSdk(sdk, lock);
+      return await CuaEngine.fromSdk(sdk, lock, options);
     } catch (error) {
       if (error instanceof ComputerUseError) throw error;
       if (!isCuaTransportError(error)) throw error;
@@ -119,7 +130,11 @@ export class CuaEngine implements EnginePort {
     }
   }
 
-  static async fromSdk(sdk: CuaSdkLike, lock: EngineLock): Promise<CuaEngine> {
+  static async fromSdk(
+    sdk: CuaSdkLike,
+    lock: EngineLock,
+    options: CuaEngineOptions = {},
+  ): Promise<CuaEngine> {
     const metadata = await sdk.metadata();
     if (metadata.driverVersion !== lock.version) {
       throw new ComputerUseError(
@@ -169,14 +184,16 @@ export class CuaEngine implements EnginePort {
       );
     }
 
-    const publicSession = `ucu_${randomUUID()}`;
+    const publicSessionSuffix = randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase();
+    const desktopSession = `UCU-D-${publicSessionSuffix}`;
+    const windowSession = `UCU-W-${publicSessionSuffix}`;
     const starts = await Promise.allSettled([
       sdk.startSession({
-        session: publicSession,
+        session: desktopSession,
         captureScope: CaptureScope.Desktop,
       }),
       sdk.startSession({
-        session: `${publicSession}_window`,
+        session: windowSession,
         captureScope: CaptureScope.Window,
       }),
     ]);
@@ -219,8 +236,9 @@ export class CuaEngine implements EnginePort {
       desktop.value.state.session,
       window.value.state.session,
     ] as const;
+    let cursor: AgentCursorController;
     try {
-      await disableAndVerifyAgentCursor(sdk, sessions);
+      cursor = await AgentCursorController.initialize(sdk, sessions);
     } catch (error) {
       await Promise.allSettled(
         [...sessions].reverse().map(async (session) => sdk.endSession({ session })),
@@ -228,7 +246,14 @@ export class CuaEngine implements EnginePort {
       throw error;
     }
 
-    return new CuaEngine(sdk, lock.version, sessions[0], sessions[1]);
+    return new CuaEngine(
+      sdk,
+      lock.version,
+      sessions[0],
+      sessions[1],
+      cursor,
+      options.cursorMode ?? "auto",
+    );
   }
 
   async discover(input: EngineDiscoverInput, signal: AbortSignal): Promise<EngineDiscovery> {
@@ -255,6 +280,7 @@ export class CuaEngine implements EnginePort {
     maybeSignal?: AbortSignal,
   ): Promise<EngineObservation> {
     if (inputOrSignal instanceof AbortSignal) {
+      await this.cursor.prepare(this.sessionId, "hide", inputOrSignal);
       const result = await this.sdk.callTool(
         "get_desktop_state",
         JSON.stringify({ session: this.sessionId }),
@@ -266,6 +292,7 @@ export class CuaEngine implements EnginePort {
     if (signal === undefined) throw new TypeError("observe signal is required");
     const input = inputOrSignal as EngineObserveInput;
     if (input.target.kind === "desktop") {
+      await this.cursor.prepare(this.sessionId, "hide", signal);
       const result = await this.sdk.callTool(
         "get_desktop_state",
         JSON.stringify({ session: this.sessionId }),
@@ -281,6 +308,7 @@ export class CuaEngine implements EnginePort {
     if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(windowId)) {
       throw new ComputerUseError("engine_contract_changed", "Window target has invalid native identifiers", "doctor", false);
     }
+    await this.cursor.prepare(this.windowSessionId, "hide", signal);
     const result = await this.sdk.callTool(
       "get_window_state",
       JSON.stringify({
@@ -298,9 +326,17 @@ export class CuaEngine implements EnginePort {
   }
 
   async execute(action: EngineAction, signal: AbortSignal): Promise<EngineExecution> {
+    const session = action.target.kind === "desktop"
+      ? this.sessionId
+      : this.windowSessionId;
+    await this.cursor.prepare(
+      session,
+      desiredCursorVisibility(this.cursorMode, action),
+      signal,
+    );
     const mapped = mapAction(
       action,
-      action.target.kind === "desktop" ? this.sessionId : this.windowSessionId,
+      session,
     );
     if ("waitMs" in mapped) {
       await cancellableWait(mapped.waitMs, signal);

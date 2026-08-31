@@ -10,22 +10,27 @@ describe("direct MCP Runtime startup", () => {
     const events: string[] = [];
     const engine = new FakeEngine();
 
+    const connectEngine = vi.fn(async () => {
+      events.push("connect");
+      return engine as unknown as CuaEngine;
+    });
     await runDefaultServer({
       async loadLock() {
         events.push("lock");
         return loadEngineLock();
       },
-      async connectEngine() {
-        events.push("connect");
-        return engine as unknown as CuaEngine;
-      },
+      connectEngine,
       async runServer(runtime) {
         events.push("server");
         await runtime.close();
       },
-    });
+    }, { cursorMode: "hidden" });
 
     expect(events).toEqual(["lock", "connect", "server"]);
+    expect(connectEngine).toHaveBeenCalledWith(
+      expect.any(Object),
+      { cursorMode: "hidden" },
+    );
   });
 
   it("does not expose tools when the startup connection fails", async () => {

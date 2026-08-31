@@ -211,13 +211,14 @@ describe("Cua daemon connection", () => {
 
     const engine = await CuaEngine.fromSdk(sdk, lock);
 
-    expect(engine.sessionId).toMatch(/^ucu_/);
+    expect(engine.sessionId).toMatch(/^UCU-D-[0-9A-F]{8}$/);
     expect(sdk.startSessionCalls).toHaveLength(2);
     expect(sdk.startSessionCalls[0]).toMatchObject({
       session: engine.sessionId,
       captureScope: CaptureScope.Desktop,
     });
     expect(sdk.startSessionCalls[1]).toMatchObject({
+      session: expect.stringMatching(/^UCU-W-[0-9A-F]{8}$/),
       captureScope: CaptureScope.Window,
     });
     expect(sdk.startSessionCalls[1]?.session).not.toBe(engine.sessionId);
@@ -733,6 +734,186 @@ describe("Cua daemon connection", () => {
         delivery_mode: "background",
       }),
     }]);
+  });
+
+  it("shows only foreground pointer work in auto mode", async () => {
+    const lock = await loadEngineLock();
+    const clickResults = [
+      ActionDeliveryMode.Foreground,
+      ActionDeliveryMode.Background,
+      ActionDeliveryMode.Foreground,
+    ].map((mode) => {
+      const click = result({});
+      click.action = {
+        effect: ActionEffect.Confirmed,
+        route: ActionRoute.SyntheticEvents,
+        delivery: { mode, deliveredCount: 1 },
+      };
+      return click;
+    });
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: { click: clickResults },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock, { cursorMode: "auto" });
+    sdk.callToolCalls.length = 0;
+
+    await engine.execute({
+      target: { kind: "desktop" },
+      action: { type: "click", x: 10, y: 20 },
+    }, new AbortController().signal);
+    await engine.execute({
+      target: { kind: "window", pid: 42, windowId: 7 },
+      action: { type: "click", address: { kind: "coordinate", x: 10, y: 20 } },
+      delivery: "background",
+    }, new AbortController().signal);
+    await engine.execute({
+      target: { kind: "window", pid: 42, windowId: 7 },
+      action: { type: "click", address: { kind: "coordinate", x: 10, y: 20 } },
+      delivery: "foreground",
+    }, new AbortController().signal);
+
+    expect(sdk.callToolCalls.map(({ name }) => name)).toEqual([
+      "set_agent_cursor_enabled",
+      "click",
+      "click",
+      "set_agent_cursor_enabled",
+      "click",
+    ]);
+    expect(JSON.parse(sdk.callToolCalls[0]!.argumentsJson)).toEqual({
+      session: sdk.startSessionCalls[0]?.session,
+      enabled: true,
+    });
+    expect(JSON.parse(sdk.callToolCalls[3]!.argumentsJson)).toEqual({
+      session: sdk.startSessionCalls[1]?.session,
+      enabled: true,
+    });
+  });
+
+  it("hides a presented Cursor before taking the next desktop screenshot", async () => {
+    const lock = await loadEngineLock();
+    const click = result({});
+    click.action = {
+      effect: ActionEffect.Confirmed,
+      route: ActionRoute.GlobalInput,
+      delivery: { mode: ActionDeliveryMode.Foreground, deliveredCount: 1 },
+    };
+    const desktopState = JSON.parse(
+      await readFile(new URL("../fixtures/cua/desktop-state.json", import.meta.url), "utf8"),
+    ) as ToolResult;
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: { click, get_desktop_state: desktopState },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock, { cursorMode: "auto" });
+    await engine.execute({
+      target: { kind: "desktop" },
+      action: { type: "click", x: 10, y: 20 },
+    }, new AbortController().signal);
+    sdk.callToolCalls.length = 0;
+
+    await engine.observe(new AbortController().signal);
+
+    expect(sdk.callToolCalls.map(({ name }) => name)).toEqual([
+      "set_agent_cursor_enabled",
+      "get_desktop_state",
+    ]);
+    expect(JSON.parse(sdk.callToolCalls[0]!.argumentsJson)).toEqual({
+      session: sdk.startSessionCalls[0]?.session,
+      enabled: false,
+    });
+  });
+
+  it("keeps desktop pointer work hidden in hidden mode", async () => {
+    const lock = await loadEngineLock();
+    const click = result({});
+    click.action = {
+      effect: ActionEffect.Confirmed,
+      route: ActionRoute.GlobalInput,
+      delivery: { mode: ActionDeliveryMode.Foreground, deliveredCount: 1 },
+    };
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: { click },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock, { cursorMode: "hidden" });
+    sdk.callToolCalls.length = 0;
+
+    await engine.execute({
+      target: { kind: "desktop" },
+      action: { type: "click", x: 10, y: 20 },
+    }, new AbortController().signal);
+
+    expect(sdk.callToolCalls.map(({ name }) => name)).toEqual(["click"]);
+  });
+
+  it("shows background pointer work in visible mode", async () => {
+    const lock = await loadEngineLock();
+    const click = result({});
+    click.action = {
+      effect: ActionEffect.Confirmed,
+      route: ActionRoute.SyntheticEvents,
+      delivery: { mode: ActionDeliveryMode.Background, deliveredCount: 1 },
+    };
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: { click },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock, { cursorMode: "visible" });
+    sdk.callToolCalls.length = 0;
+
+    await engine.execute({
+      target: { kind: "window", pid: 42, windowId: 7 },
+      action: { type: "click", address: { kind: "coordinate", x: 10, y: 20 } },
+      delivery: "background",
+    }, new AbortController().signal);
+
+    expect(sdk.callToolCalls.map(({ name }) => name)).toEqual([
+      "set_agent_cursor_enabled",
+      "click",
+    ]);
+  });
+
+  it("does not capture when a visible Cursor cannot be hidden", async () => {
+    const lock = await loadEngineLock();
+    const click = result({});
+    click.action = {
+      effect: ActionEffect.Confirmed,
+      route: ActionRoute.GlobalInput,
+      delivery: { mode: ActionDeliveryMode.Foreground, deliveredCount: 1 },
+    };
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: { click },
+    });
+    const engine = await CuaEngine.fromSdk(sdk, lock, { cursorMode: "auto" });
+    await engine.execute({
+      target: { kind: "desktop" },
+      action: { type: "click", x: 10, y: 20 },
+    }, new AbortController().signal);
+    sdk.callToolCalls.length = 0;
+    const originalCallTool = sdk.callTool.bind(sdk);
+    vi.spyOn(sdk, "callTool").mockImplementation(async (name, argumentsJson, options) => {
+      const input = JSON.parse(argumentsJson) as Record<string, unknown>;
+      if (name === "set_agent_cursor_enabled" && input.enabled === false) {
+        sdk.callToolCalls.push({ name, argumentsJson });
+        return { ...result({ code: "cursor_failed" }), isError: true };
+      }
+      return originalCallTool(name, argumentsJson, options);
+    });
+
+    await expect(engine.observe(new AbortController().signal)).rejects.toMatchObject({
+      code: "engine_contract_changed",
+      diagnosticReason: "cursor_transition_failed",
+    });
+    expect(sdk.callToolCalls.map(({ name }) => name)).toEqual([
+      "set_agent_cursor_enabled",
+    ]);
   });
 
   it("accepts health only when the version and core checks pass", async () => {

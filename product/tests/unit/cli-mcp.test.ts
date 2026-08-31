@@ -24,7 +24,7 @@ describe("computer-use mcp", () => {
 
     try {
       const exitCode = await runCli(
-        ["mcp"],
+        ["mcp", "--cursor", "visible"],
         {
           stdout: { write: (value) => { stdout.push(value); } },
           stderr: { write: (value) => { cliStderr.push(value); } },
@@ -49,6 +49,10 @@ describe("computer-use mcp", () => {
 
       expect(exitCode).toBe(0);
       expect(startupConnect).toHaveBeenCalledOnce();
+      expect(startupConnect).toHaveBeenCalledWith(
+        expect.any(Object),
+        { cursorMode: "visible" },
+      );
       expect(diagnosticConnect).not.toHaveBeenCalled();
       expect(stdout).toEqual([]);
       expect(cliStderr).toEqual([]);

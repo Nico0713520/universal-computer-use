@@ -8,6 +8,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { ComputerUseRuntime } from "../core/runtime.js";
 import { CuaEngine } from "../engine/cua.js";
+import {
+  resolveCursorMode,
+  type CursorMode,
+} from "../engine/cursor-mode.js";
 import { loadEngineLock } from "../engine/lock.js";
 import type { EnginePort } from "../engine/port.js";
 import {
@@ -33,14 +37,29 @@ export function createProductionRuntime(
   return new ComputerUseRuntime(engine, undefined, undefined, { logger });
 }
 
-export const connectProductionEngine = createRuntimeConnector({
-  platform: process.platform,
-  connect: (lock) => CuaEngine.connect(lock),
-  access,
-  runner: nodeProcessRunner,
-  wait: boundedRuntimeStartupWait,
-  now: Date.now,
-});
+const productionConnectors = new Map<
+  CursorMode,
+  ReturnType<typeof createRuntimeConnector<CuaEngine>>
+>();
+
+export function connectProductionEngine(
+  lock: Awaited<ReturnType<typeof loadEngineLock>>,
+  options: Readonly<{ cursorMode: CursorMode }> = { cursorMode: "auto" },
+): Promise<CuaEngine> {
+  let connector = productionConnectors.get(options.cursorMode);
+  if (connector === undefined) {
+    connector = createRuntimeConnector({
+      platform: process.platform,
+      connect: (candidate) => CuaEngine.connect(candidate, options),
+      access,
+      runner: nodeProcessRunner,
+      wait: boundedRuntimeStartupWait,
+      now: Date.now,
+    });
+    productionConnectors.set(options.cursorMode, connector);
+  }
+  return connector(lock);
+}
 
 export async function runStdioServer(
   runtime: ComputerUseRuntime,
@@ -119,14 +138,18 @@ export async function runDefaultServer(
     connectEngine: connectProductionEngine,
     runServer: runStdioServer,
   },
+  options: Readonly<{ cursorMode: CursorMode }> = { cursorMode: "auto" },
 ): Promise<void> {
   const lock = await dependencies.loadLock();
-  const engine = await dependencies.connectEngine(lock);
+  const engine = await dependencies.connectEngine(lock, options);
   await dependencies.runServer(createProductionRuntime(engine));
 }
 
 if (isDirectEntryPoint(process.argv[1], import.meta.url)) {
-  void runDefaultServer().catch((error: unknown) => {
+  void runDefaultServer(
+    undefined,
+    { cursorMode: resolveCursorMode(process.argv.slice(2), process.env) },
+  ).catch((error: unknown) => {
     const code =
       error instanceof ComputerUseError ? error.code : "runtime_unavailable";
     process.stderr.write(`computer-use-mcp: ${code}\n`);
