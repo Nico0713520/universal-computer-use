@@ -49,6 +49,11 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
     expect(macos).toContain("direct stdio");
     expect(macos).toContain("Canonical Computer Use Skill");
     expect(combined).toContain("visible CuaDriver attribution");
+    expect(combined).toContain("one bounded startup attempt");
+    expect(combined).toContain("before any diagnostic session or MCP request");
+    expect(combined).toContain("does not install or upgrade");
+    expect(combined).toContain("never restarts Cua after an MCP session starts");
+    expect(combined).not.toMatch(/doctor[^\n.]*(?:do not start the Runtime|no startup repair)/iu);
   });
 
   it("keeps named hosts unverified until exact-commit external reports pass", async () => {
@@ -85,7 +90,8 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
     expect(windows).toContain("@(\"status\", \"--porcelain\")");
     expect(windows).toContain("@(\"--yes\", \"pnpm@9.0.4\", \"build\")");
     expect(windows).toContain("@(\"pack\", \"--json\")");
-    expect(windows).toContain("ConvertFrom-Json");
+    expect(windows).toContain("$packJsonText = $packJson -join [Environment]::NewLine");
+    expect(windows).toContain("$packResult = @($packJsonText | ConvertFrom-Json)");
     expect(windows).toContain("$packagePath");
     expect(windows).toContain("Test-Path -LiteralPath $packagePath");
     expect(windows).not.toContain("npm install --global .\\universal-computer-use-plugin-0.2.6.tgz");

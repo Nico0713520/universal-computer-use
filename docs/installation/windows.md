@@ -49,7 +49,8 @@ Set-Location -LiteralPath (Join-Path $checkout "product")
 Invoke-NativeChecked -FilePath "npx" -ArgumentList @("--yes", "pnpm@9.0.4", "install", "--frozen-lockfile", "--ignore-scripts")
 Invoke-NativeChecked -FilePath "npx" -ArgumentList @("--yes", "pnpm@9.0.4", "build")
 $packJson = Invoke-NativeChecked -FilePath "npm" -ArgumentList @("pack", "--json")
-$packResult = $packJson | ConvertFrom-Json
+$packJsonText = $packJson -join [Environment]::NewLine
+$packResult = @($packJsonText | ConvertFrom-Json)
 if ($packResult.Count -ne 1 -or [string]::IsNullOrWhiteSpace($packResult[0].filename)) { throw "npm pack returned no unique package" }
 $packagePath = Join-Path (Get-Location) $packResult[0].filename
 if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) { throw "Packed artifact is missing" }
