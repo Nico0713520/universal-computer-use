@@ -24,7 +24,7 @@ Stop if build, setup, or doctor fails. macOS Screen Recording and Accessibility 
 
 Copy only the JSON printed by the named config command into WorkBuddy's local stdio MCP configuration. The generated `command` is the absolute Node executable and its only argument is the absolute MCP script. Those paths deliberately avoid dependence on the shell's executable search path.
 
-The committed `.mcp.json` is a fail-closed shape example: its `/replace/...` values are deliberately unusable. Do not copy it unchanged. The named config command is the source of the real absolute paths. Neither command nor example locates or edits WorkBuddy settings.
+The committed `mcp.example.json` is a structure reference only. Its `/replace/...` values are deliberately unusable, and its filename prevents WorkBuddy from treating it as a live `.mcp.json` configuration. Do not copy it unchanged. The named `computer-use config --client workbuddy` generator is the source of the real absolute paths. Neither command nor example locates or edits WorkBuddy settings.
 
 Use the configuration location documented by the installed WorkBuddy version. Then restart WorkBuddy and start a new conversation. Registration performed after a conversation starts may not update that conversation's frozen tool list.
 

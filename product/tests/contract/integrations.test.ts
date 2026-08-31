@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
@@ -8,7 +8,10 @@ const artifactUrls = {
   kimi: new URL("../../integrations/kimi/README.md", import.meta.url),
   hanaagent: new URL("../../integrations/hanaagent/README.md", import.meta.url),
   workbuddy: new URL("../../integrations/workbuddy/README.md", import.meta.url),
-  workbuddyMcp: new URL("../../integrations/workbuddy/.mcp.json", import.meta.url),
+  workbuddyMcpExample: new URL(
+    "../../integrations/workbuddy/mcp.example.json",
+    import.meta.url,
+  ),
   workbuddyManifest: new URL(
     "../../integrations/workbuddy/.codebuddy-plugin/plugin.json",
     import.meta.url,
@@ -72,9 +75,11 @@ describe("host integration artifacts", () => {
     },
   );
 
-  it("keeps the committed WorkBuddy MCP file as a fail-closed absolute-path example", async () => {
-    const { workbuddyMcp } = await readArtifacts();
-    const parsed = JSON.parse(workbuddyMcp) as {
+  it("keeps the WorkBuddy MCP example inert and directs real setup to the named generator", async () => {
+    const { workbuddy, workbuddyMcpExample } = await readArtifacts();
+    const workbuddyDirectory = new URL("../../integrations/workbuddy/", import.meta.url);
+    const entries = await readdir(workbuddyDirectory);
+    const parsed = JSON.parse(workbuddyMcpExample) as {
       mcpServers: Record<string, { command: string; args: string[] }>;
     };
     const server = parsed.mcpServers["computer-use"];
@@ -83,7 +88,12 @@ describe("host integration artifacts", () => {
       command: "/replace/with/absolute/path/to/node",
       args: ["/replace/with/absolute/path/to/universal-computer-use/product/dist/mcp/main.js"],
     });
-    expect(workbuddyMcp).not.toContain("computer-use-mcp");
+    expect(entries).toContain("mcp.example.json");
+    expect(entries).not.toContain(".mcp.json");
+    expect(workbuddy).toContain("`mcp.example.json`");
+    expect(workbuddy).toContain("structure reference only");
+    expect(workbuddy).toContain("computer-use config --client workbuddy");
+    expect(workbuddyMcpExample).not.toContain("computer-use-mcp");
   });
 
   it("keeps model-provider configuration out of every integration artifact", async () => {

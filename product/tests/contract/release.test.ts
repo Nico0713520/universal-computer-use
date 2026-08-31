@@ -359,11 +359,13 @@ describe("release verification", () => {
       "integrations/generic/mcp.json",
       "integrations/codex/README.md",
       "integrations/kimi/README.md",
+      "integrations/workbuddy/mcp.example.json",
       "engine.lock.json",
       "LICENSE",
       "THIRD_PARTY_NOTICES.md",
     ]));
     expect(inspected.files).not.toEqual(expect.arrayContaining([
+      "integrations/workbuddy/.mcp.json",
       expect.stringMatching(/(?:^|\/)\.env(?:\.|$)/i),
       expect.stringMatching(/\.(?:rs|dylib|dll|exe|app|png|jpe?g|trace|zip|tar\.gz)$/i),
     ]));

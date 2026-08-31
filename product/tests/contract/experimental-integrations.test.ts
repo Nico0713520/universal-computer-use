@@ -7,7 +7,10 @@ const artifactUrls = {
     "../../integrations/workbuddy/.codebuddy-plugin/plugin.json",
     import.meta.url,
   ),
-  workbuddyMcp: new URL("../../integrations/workbuddy/.mcp.json", import.meta.url),
+  workbuddyMcpExample: new URL(
+    "../../integrations/workbuddy/mcp.example.json",
+    import.meta.url,
+  ),
   deepseekPackage: new URL(
     "../../integrations/deepseek-harness/package.json",
     import.meta.url,
@@ -38,7 +41,7 @@ describe("experimental host adapters", () => {
   it("keeps WorkBuddy as a data-only wrapper around the canonical MCP and Skill", async () => {
     const artifacts = await readArtifacts();
     const manifest = JSON.parse(artifacts.workbuddyManifest) as Record<string, unknown>;
-    const mcp = JSON.parse(artifacts.workbuddyMcp) as Record<string, unknown>;
+    const mcp = JSON.parse(artifacts.workbuddyMcpExample) as Record<string, unknown>;
 
     expect(manifest).toMatchObject({
       name: "computer-use",
@@ -113,7 +116,7 @@ describe("experimental host adapters", () => {
     expect(artifacts.canonicalSkill).toContain("## Control loop");
     for (const content of [
       artifacts.workbuddyManifest,
-      artifacts.workbuddyMcp,
+      artifacts.workbuddyMcpExample,
       artifacts.deepseekPackage,
       artifacts.deepseekModule,
       artifacts.deepseekCordis,
@@ -130,7 +133,7 @@ describe("experimental host adapters", () => {
     const artifacts = await readArtifacts();
     const adapterContent = [
       artifacts.workbuddyManifest,
-      artifacts.workbuddyMcp,
+      artifacts.workbuddyMcpExample,
       artifacts.deepseekPackage,
       artifacts.deepseekModule,
       artifacts.deepseekCordis,
