@@ -438,6 +438,32 @@ describe("window observation runtime", () => {
     await runtime.close();
   });
 
+  it("uses a screenshot-only engine read for an explicitly requested visual next state", async () => {
+    const engine = new WindowFixtureEngine();
+    const runtime = new ComputerUseRuntime(engine);
+    const windowRef = await discoverCalculator(runtime);
+    const observed = await runtime.observe({ target: { kind: "window", window_ref: windowRef } });
+    if (!("elements" in observed.structured)) throw new Error("expected window elements");
+
+    const acted = await runtime.act({
+      snapshot_id: observed.structured.snapshot_id,
+      action: { type: "click", element_ref: observed.structured.elements[0]!.element_ref },
+      next_observation: { mode: "visual" },
+    });
+
+    expect(engine.observeInputs.at(-1)).toMatchObject({
+      includeScreenshot: true,
+      maxElements: 0,
+      maxDepth: 0,
+    });
+    expect(acted.structured).toMatchObject({
+      observation_mode: "visual",
+      visual_status: "available",
+      elements: [],
+    });
+    await runtime.close();
+  });
+
   it("rejects every coordinate keyboard form on a semantic snapshot before execution", async () => {
     const engine = new WindowFixtureEngine();
     engine.observations[0] = semanticObservation(engine.observations[0]!);
