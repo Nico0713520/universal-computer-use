@@ -218,48 +218,53 @@ export class PerformanceRecorder {
     this.#measured.set(name, samples);
   }
 
+  profile(name: PerformanceScenarioName): CorrectnessAwarePerformanceProfile {
+    const samples = this.#measured.get(name) ?? [];
+    const summary = summarizeSamples(samples.map((sample) => sample.durationMs));
+    const slo = PERFORMANCE_SLOS[name];
+    const correctCount = samples.filter((sample) => sample.outcome === "passed").length;
+    const failedCount = samples.length - correctCount;
+    const latencyStatus = summary.p50_ms <= slo.p50_ms && summary.p95_ms <= slo.p95_ms
+      ? "passed"
+      : "failed";
+    const correctnessStatus = correctCount === 30 ? "passed" : "failed";
+    const failureCounts: Partial<Record<PerformanceFailureKind, number>> = {};
+    const routeCounts: Partial<Record<PerformanceActionRoute, number>> = {};
+    for (const sample of samples) {
+      if (sample.outcome !== "passed") {
+        failureCounts[sample.outcome] = (failureCounts[sample.outcome] ?? 0) + 1;
+      }
+      if (sample.route !== undefined) {
+        routeCounts[sample.route] = (routeCounts[sample.route] ?? 0) + 1;
+      }
+    }
+    const stages: Partial<Record<PerformanceStageName, PerformanceStageAggregate>> = {};
+    for (const stageName of PERFORMANCE_STAGE_NAMES) {
+      const stageSamples = samples.flatMap((sample) => {
+        const timing = sample.stages[stageName];
+        return timing === undefined ? [] : [timing];
+      });
+      if (stageSamples.length > 0) stages[stageName] = summarizeStage(stageSamples);
+    }
+    return {
+      ...summary,
+      correct_count: correctCount,
+      failed_count: failedCount,
+      success_rate: correctCount / 30,
+      slo: { ...slo },
+      latency_status: latencyStatus,
+      correctness_status: correctnessStatus,
+      failure_counts: failureCounts,
+      route_counts: routeCounts,
+      stages,
+      status: latencyStatus === "passed" && correctnessStatus === "passed" ? "passed" : "failed",
+    };
+  }
+
   performance(): CorrectnessAwarePerformanceEvidence {
-    return Object.fromEntries(PERFORMANCE_SCENARIO_NAMES.map((name) => {
-      const samples = this.#measured.get(name) ?? [];
-      const summary = summarizeSamples(samples.map((sample) => sample.durationMs));
-      const slo = PERFORMANCE_SLOS[name];
-      const correctCount = samples.filter((sample) => sample.outcome === "passed").length;
-      const failedCount = samples.length - correctCount;
-      const latencyStatus = summary.p50_ms <= slo.p50_ms && summary.p95_ms <= slo.p95_ms
-        ? "passed"
-        : "failed";
-      const correctnessStatus = correctCount === 30 ? "passed" : "failed";
-      const failureCounts: Partial<Record<PerformanceFailureKind, number>> = {};
-      const routeCounts: Partial<Record<PerformanceActionRoute, number>> = {};
-      for (const sample of samples) {
-        if (sample.outcome !== "passed") {
-          failureCounts[sample.outcome] = (failureCounts[sample.outcome] ?? 0) + 1;
-        }
-        if (sample.route !== undefined) {
-          routeCounts[sample.route] = (routeCounts[sample.route] ?? 0) + 1;
-        }
-      }
-      const stages: Partial<Record<PerformanceStageName, PerformanceStageAggregate>> = {};
-      for (const stageName of PERFORMANCE_STAGE_NAMES) {
-        const stageSamples = samples.flatMap((sample) => {
-          const timing = sample.stages[stageName];
-          return timing === undefined ? [] : [timing];
-        });
-        if (stageSamples.length > 0) stages[stageName] = summarizeStage(stageSamples);
-      }
-      return [name, {
-        ...summary,
-        correct_count: correctCount,
-        failed_count: failedCount,
-        success_rate: correctCount / 30,
-        slo: { ...slo },
-        latency_status: latencyStatus,
-        correctness_status: correctnessStatus,
-        failure_counts: failureCounts,
-        route_counts: routeCounts,
-        stages,
-        status: latencyStatus === "passed" && correctnessStatus === "passed" ? "passed" : "failed",
-      } satisfies CorrectnessAwarePerformanceProfile];
-    })) as Record<PerformanceScenarioName, CorrectnessAwarePerformanceProfile>;
+    return Object.fromEntries(PERFORMANCE_SCENARIO_NAMES.map((name) => [
+      name,
+      this.profile(name),
+    ])) as Record<PerformanceScenarioName, CorrectnessAwarePerformanceProfile>;
   }
 }

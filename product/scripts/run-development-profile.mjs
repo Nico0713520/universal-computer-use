@@ -1,0 +1,332 @@
+#!/usr/bin/env node
+
+import { spawn } from "node:child_process";
+import { access, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const PRODUCT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const DEFAULT_BROWSER = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const PROFILES = [
+  "window_visual_observe",
+  "window_semantic_observe",
+  "semantic_action_next_state",
+  "pixel_action_next_state",
+];
+const SLOS = {
+  window_visual_observe: [700, 1500, false],
+  window_semantic_observe: [400, 1000, false],
+  semantic_action_next_state: [1500, 2000, true],
+  pixel_action_next_state: [1500, 3000, true],
+};
+const ACTION_ROUTES = new Set([
+  "accessibility",
+  "synthetic_events",
+  "global_input",
+  "system_api",
+  "dom",
+  "trusted_input",
+  "unknown",
+]);
+const SOURCE_FILES = [
+  "tests/e2e/development/macos-single-profile.spec.ts",
+  "tests/e2e/development/macos-performance-profile.ts",
+  "tests/e2e/development/single-profile-recorder.ts",
+  "tests/e2e/development/single-profile-evidence.schema.json",
+  "tests/e2e/development/performance-recorder.ts",
+  "tests/fixtures/desktop-harness/server.mjs",
+  "tests/fixtures/focus-sentinel/main.swift",
+  "engine.lock.json",
+];
+const TEST_KEYS = [
+  "CUA_PROFILE_TEST_PLATFORM",
+  "CUA_PROFILE_TEST_MACOS_VERSION",
+  "CUA_PROFILE_TEST_DOCTOR_JSON",
+  "CUA_PROFILE_TEST_BROWSER",
+  "CUA_PROFILE_TEST_CHILD_RESULT",
+  "CUA_PROFILE_TEST_CHILD_EXIT_CODE",
+];
+
+class ProfileFailure extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
+}
+
+async function exists(path) {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function runProcess(command, args, options = {}) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, args, {
+      cwd: PRODUCT_DIR,
+      env: options.env ?? process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolvePromise({ code, signal, stdout, stderr }));
+  });
+}
+
+function parseArguments(argv) {
+  const normalized = argv[0] === "--" ? argv.slice(1) : argv;
+  const confirmations = normalized.filter((value) => value === "--exclusive-desktop");
+  if (confirmations.length === 0) {
+    throw new ProfileFailure("profile_preflight_failed:exclusive_desktop_confirmation_required");
+  }
+  if (confirmations.length !== 1) throw new ProfileFailure("profile_preflight_failed:invalid_arguments");
+
+  const profileFlags = normalized.flatMap((value, index) => value === "--profile" ? [index] : []);
+  const evidenceFlags = normalized.flatMap((value, index) => value === "--evidence" ? [index] : []);
+  if (profileFlags.length !== 1 || evidenceFlags.length > 1) {
+    throw new ProfileFailure("profile_preflight_failed:invalid_arguments");
+  }
+  const profileIndex = profileFlags[0];
+  const profile = normalized[profileIndex + 1];
+  const evidenceIndex = evidenceFlags[0];
+  const evidencePath = evidenceIndex === undefined ? undefined : normalized[evidenceIndex + 1];
+  const expectedLength = evidenceIndex === undefined ? 3 : 5;
+  if (
+    normalized.length !== expectedLength ||
+    !PROFILES.includes(profile) ||
+    profile === "--exclusive-desktop" ||
+    (evidenceIndex !== undefined && (evidencePath === undefined || evidencePath === ""))
+  ) throw new ProfileFailure("profile_preflight_failed:invalid_arguments");
+  return { profile, evidencePath };
+}
+
+function validDoctor(value, lockedVersion) {
+  return value?.ok === true &&
+    value.platform === "macos" &&
+    value.expected_engine_version === lockedVersion &&
+    value.reported_engine_version === lockedVersion &&
+    value.engine_connected === true &&
+    value.required_tools_present === true &&
+    value.desktop_unlocked === true &&
+    value.observation_succeeded === true &&
+    Number.isInteger(value.screenshot?.width) && value.screenshot.width > 0 &&
+    Number.isInteger(value.screenshot?.height) && value.screenshot.height > 0;
+}
+
+function plainRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validProfileSemantics(value, profileName) {
+  const profile = value?.performance;
+  const [p50Slo, p95Slo, action] = SLOS[profileName];
+  if (!plainRecord(profile) || !plainRecord(profile.failure_counts) ||
+      !plainRecord(profile.route_counts) || !plainRecord(profile.stages)) return false;
+  const correct = profile.correct_count;
+  const failed = profile.failed_count;
+  const latencyStatus = profile.p50_ms <= p50Slo && profile.p95_ms <= p95Slo ? "passed" : "failed";
+  const correctnessStatus = correct === 30 ? "passed" : "failed";
+  const status = latencyStatus === "passed" && correctnessStatus === "passed" ? "passed" : "failed";
+  const routeEntries = Object.entries(profile.route_counts);
+  const routeTotal = routeEntries.reduce((sum, [, count]) => sum + count, 0);
+  const failureTotal = Object.values(profile.failure_counts).reduce((sum, count) => sum + count, 0);
+  if (
+    profile.sample_count !== 30 || !Number.isInteger(correct) || !Number.isInteger(failed) ||
+    correct + failed !== 30 || profile.success_rate !== correct / 30 ||
+    profile.slo?.p50_ms !== p50Slo || profile.slo?.p95_ms !== p95Slo ||
+    profile.p50_ms > profile.p95_ms || profile.p95_ms > profile.max_ms ||
+    profile.latency_status !== latencyStatus || profile.correctness_status !== correctnessStatus ||
+    profile.status !== status || value.status !== status || failureTotal !== failed ||
+    routeEntries.some(([route, count]) => !ACTION_ROUTES.has(route) ||
+      !Number.isInteger(count) || count < 1 || count > 30) ||
+    (!action && routeTotal !== 0) || (action && status === "passed" && routeTotal !== 30) ||
+    routeTotal > 30
+  ) return false;
+  const requiredStages = [
+    "queue_wait",
+    ...(action ? ["engine_execute"] : []),
+    "post_action_observe",
+    "projection",
+    "tool_total",
+    "transport_overhead",
+  ];
+  for (const stage of Object.values(profile.stages)) {
+    if (!plainRecord(stage) || stage.p50_ms > stage.p95_ms || stage.p95_ms > stage.max_ms) return false;
+  }
+  return status !== "passed" || requiredStages.every(
+    (stageName) => profile.stages[stageName]?.sample_count === 30,
+  );
+}
+
+async function validEvidence(value, lockedVersion, productVersion, profileName) {
+  if (
+    value?.schema_version !== 1 ||
+    value.evidence_type !== "computer-use-macos-development-profile" ||
+    value.profile_name !== profileName ||
+    value.metadata?.product_version !== productVersion ||
+    value.metadata?.protocol_version !== "1.2.0" ||
+    value.metadata?.engine_version !== lockedVersion ||
+    value.cleanup_passed !== true
+  ) return false;
+  const { default: Ajv2020 } = await import("ajv/dist/2020.js");
+  const schema = JSON.parse(await readFile(
+    join(PRODUCT_DIR, "tests/e2e/development/single-profile-evidence.schema.json"),
+    "utf8",
+  ));
+  const validate = new Ajv2020({ allErrors: true, strict: false, validateFormats: false })
+    .compile(schema);
+  return validate(value) && validProfileSemantics(value, profileName);
+}
+
+async function selectEvidencePath(configured) {
+  if (configured !== undefined) {
+    if (!isAbsolute(configured)) throw new ProfileFailure("profile_preflight_failed:evidence_path_must_be_absolute");
+    if (await exists(configured)) throw new ProfileFailure("profile_preflight_failed:evidence_path_exists");
+    try {
+      await access(dirname(configured));
+    } catch {
+      throw new ProfileFailure("profile_preflight_failed:evidence_parent_missing");
+    }
+    return { path: configured, temporaryRoot: undefined };
+  }
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "ucu-profile-"));
+  return { path: join(temporaryRoot, "macos-development-profile.json"), temporaryRoot };
+}
+
+async function main() {
+  const sourceCheckout = await Promise.all(SOURCE_FILES.map((path) => exists(join(PRODUCT_DIR, path))));
+  if (sourceCheckout.some((present) => !present)) {
+    throw new ProfileFailure("profile_preflight_failed:source_checkout_required");
+  }
+  const { profile, evidencePath } = parseArguments(process.argv.slice(2));
+  const testModeRequested = process.env.CUA_PROFILE_TEST_MODE === "1" ||
+    TEST_KEYS.some((key) => process.env[key] !== undefined);
+  if (testModeRequested && process.env.NODE_ENV !== "test") {
+    throw new ProfileFailure("profile_preflight_failed:test_injection_forbidden");
+  }
+  const testMode = process.env.CUA_PROFILE_TEST_MODE === "1";
+  const platform = testMode ? process.env.CUA_PROFILE_TEST_PLATFORM : process.platform;
+  if (platform !== "darwin") throw new ProfileFailure("profile_preflight_failed:darwin_required");
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  if (major < 22 || (major === 22 && minor < 19)) {
+    throw new ProfileFailure("profile_preflight_failed:node_version");
+  }
+  const hostVersion = testMode
+    ? process.env.CUA_PROFILE_TEST_MACOS_VERSION ?? ""
+    : (await runProcess("/usr/bin/sw_vers", ["-productVersion"])).stdout.trim();
+  const versionMatch = /^(\d+)(?:\.\d+){1,3}$/.exec(hostVersion);
+  if (versionMatch === null || Number(versionMatch[1]) < 14) {
+    throw new ProfileFailure("profile_preflight_failed:macos_version");
+  }
+
+  const selected = await selectEvidencePath(evidencePath);
+  let preserve = false;
+  try {
+    const lock = JSON.parse(await readFile(join(PRODUCT_DIR, "engine.lock.json"), "utf8"));
+    const productVersion = JSON.parse(await readFile(join(PRODUCT_DIR, "package.json"), "utf8")).version;
+    if (typeof lock.version !== "string") throw new ProfileFailure("profile_preflight_failed:engine_lock_invalid");
+    let doctor;
+    if (testMode) {
+      try {
+        doctor = JSON.parse(process.env.CUA_PROFILE_TEST_DOCTOR_JSON ?? "");
+      } catch {
+        throw new ProfileFailure("profile_preflight_failed:doctor_failed");
+      }
+    } else {
+      const build = await runProcess("npm", ["run", "build"]);
+      if (build.code !== 0) throw new ProfileFailure("profile_preflight_failed:build_failed");
+      const checked = await runProcess(process.execPath, ["dist/cli/main.js", "doctor", "--json"]);
+      try {
+        doctor = checked.code === 0 ? JSON.parse(checked.stdout) : undefined;
+      } catch {
+        doctor = undefined;
+      }
+    }
+    if (!validDoctor(doctor, lock.version)) throw new ProfileFailure("profile_preflight_failed:doctor_failed");
+
+    if (profile !== "semantic_action_next_state") {
+      const browser = testMode ? process.env.CUA_PROFILE_TEST_BROWSER : process.env.CUA_E2E_BROWSER ?? DEFAULT_BROWSER;
+      if (browser === undefined || !isAbsolute(browser)) {
+        throw new ProfileFailure("profile_preflight_failed:browser_missing");
+      }
+      try {
+        await access(browser);
+      } catch {
+        throw new ProfileFailure("profile_preflight_failed:browser_missing");
+      }
+    }
+
+    let childFailed = false;
+    if (testMode) {
+      let simulated;
+      try {
+        simulated = JSON.parse(process.env.CUA_PROFILE_TEST_CHILD_RESULT ?? "");
+      } catch {
+        throw new ProfileFailure("profile_failed:profile_lane_failed");
+      }
+      await writeFile(selected.path, `${JSON.stringify(simulated, null, 2)}\n`, { flag: "wx" });
+      childFailed = (process.env.CUA_PROFILE_TEST_CHILD_EXIT_CODE ?? "0") !== "0";
+    } else {
+      const child = await runProcess(process.execPath, [
+        join(PRODUCT_DIR, "node_modules/vitest/vitest.mjs"),
+        "run",
+        "tests/e2e/development/macos-single-profile.spec.ts",
+        "--sequence.concurrent=false",
+        "--reporter=basic",
+      ], {
+        env: {
+          ...process.env,
+          CUA_DEVELOPMENT_PROFILE: profile,
+          CUA_DEVELOPMENT_PROFILE_EVIDENCE_PATH: selected.path,
+          ...(process.env.CUA_E2E_BROWSER === undefined ? {} : { CUA_E2E_BROWSER: process.env.CUA_E2E_BROWSER }),
+        },
+      });
+      childFailed = child.code !== 0;
+    }
+
+    let evidence;
+    try {
+      evidence = JSON.parse(await readFile(selected.path, "utf8"));
+    } catch {
+      throw new ProfileFailure("profile_failed:evidence_missing_or_invalid");
+    }
+    if (!(await validEvidence(evidence, lock.version, productVersion, profile))) {
+      throw new ProfileFailure("profile_failed:evidence_missing_or_invalid");
+    }
+    preserve = true;
+    if (childFailed || evidence.status !== "passed") {
+      process.stderr.write(`${JSON.stringify({
+        status: "failed",
+        profile,
+        evidence_path: selected.path,
+      })}\n`);
+      throw new ProfileFailure("profile_failed:gate_failed");
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: "passed",
+      profile,
+      evidence_path: selected.path,
+    })}\n`);
+  } finally {
+    if (!preserve && selected.temporaryRoot !== undefined) {
+      await rm(selected.temporaryRoot, { recursive: true, force: true });
+    }
+  }
+}
+
+main().catch((error) => {
+  const code = error instanceof ProfileFailure ? error.code : "profile_failed:internal_error";
+  process.stderr.write(`${code}\n`);
+  process.exitCode = 1;
+});

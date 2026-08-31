@@ -151,6 +151,7 @@ describe("Cua action mapping", () => {
       toolResult,
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
+    sdk.callToolCalls.length = 0;
 
     await expect(engine.execute(
       { target: { kind: "desktop" }, action: { type: "click", x: 10, y: 20 } },
@@ -175,6 +176,7 @@ describe("Cua action mapping", () => {
       tools: [...lock.required_tools],
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
+    sdk.callToolCalls.length = 0;
 
     await expect(engine.execute(
       { target: { kind: "desktop" }, action: { type: "wait", ms: 0 } },

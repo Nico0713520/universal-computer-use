@@ -100,6 +100,23 @@ describe("summarizeSamples", () => {
 });
 
 describe("PerformanceRecorder", () => {
+  it("summarizes one complete focused profile without requiring the other three", () => {
+    const recorder = new PerformanceRecorder();
+    recordCompleteScenario(recorder, "pixel_action_next_state", {}, (index) => (
+      index < 20 ? "synthetic_events" : "accessibility"
+    ));
+
+    expect(recorder.profile("pixel_action_next_state")).toEqual(expect.objectContaining({
+      sample_count: 30,
+      correct_count: 30,
+      route_counts: { synthetic_events: 20, accessibility: 10 },
+      status: "passed",
+    }));
+    expect(() => recorder.profile("window_visual_observe")).toThrow(
+      "invalid_performance_samples",
+    );
+  });
+
   it("uses the measured Cua 0.22.2 semantic-action baseline without hiding its latency", () => {
     expect(PERFORMANCE_SLOS.semantic_action_next_state).toEqual({
       p50_ms: 1_500,

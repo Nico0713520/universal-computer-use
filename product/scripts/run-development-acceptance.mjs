@@ -19,6 +19,7 @@ const SOURCE_ACCEPTANCE_FILES = [
   "tests/e2e/development/macos-visual-text-oracle.ts",
   "tests/e2e/development/macos-acceptance-telemetry.ts",
   "tests/e2e/development/performance-classification.ts",
+  "tests/e2e/development/macos-performance-profile.ts",
   "tests/e2e/development/performance-preparation.ts",
   "tests/e2e/development/performance-recorder.ts",
   "tests/e2e/development/evidence.schema.json",
@@ -88,11 +89,21 @@ async function runProcess(command, args, options = {}) {
 
 function parseArguments(argv) {
   const normalized = argv[0] === "--" ? argv.slice(1) : argv;
-  if (normalized.length === 0) return { evidencePath: undefined };
-  if (normalized.length !== 2 || normalized[0] !== "--evidence" || normalized[1] === "") {
+  const confirmations = normalized.filter((argument) => argument === "--exclusive-desktop");
+  if (confirmations.length === 0) {
+    throw new AcceptanceFailure(
+      "acceptance_preflight_failed:exclusive_desktop_confirmation_required",
+    );
+  }
+  if (confirmations.length !== 1) {
     throw new AcceptanceFailure("acceptance_preflight_failed:invalid_arguments");
   }
-  return { evidencePath: normalized[1] };
+  const remaining = normalized.filter((argument) => argument !== "--exclusive-desktop");
+  if (remaining.length === 0) return { evidencePath: undefined };
+  if (remaining.length !== 2 || remaining[0] !== "--evidence" || remaining[1] === "") {
+    throw new AcceptanceFailure("acceptance_preflight_failed:invalid_arguments");
+  }
+  return { evidencePath: remaining[1] };
 }
 
 function validDoctor(value, lockedVersion) {
@@ -234,6 +245,7 @@ async function main() {
   if (sourceCheckout.some((present) => !present)) {
     throw new AcceptanceFailure("acceptance_preflight_failed:source_checkout_required");
   }
+  const { evidencePath: configuredPath } = parseArguments(process.argv.slice(2));
   const productVersion = JSON.parse(
     await readFile(join(PRODUCT_DIR, "package.json"), "utf8"),
   ).version;
@@ -269,7 +281,6 @@ async function main() {
     throw new AcceptanceFailure("acceptance_preflight_failed:macos_version");
   }
 
-  const { evidencePath: configuredPath } = parseArguments(process.argv.slice(2));
   const selected = await selectEvidencePath(configuredPath);
   let completed = false;
   try {

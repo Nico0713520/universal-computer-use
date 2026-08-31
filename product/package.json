@@ -6,6 +6,7 @@
   "files": [
     "dist",
     "scripts/run-development-acceptance.mjs",
+    "scripts/run-development-profile.mjs",
     "skills",
     "integrations",
     "engine.lock.json",
@@ -25,6 +26,7 @@
     "test": "vitest run tests/unit tests/contract",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "acceptance:macos": "node scripts/run-development-acceptance.mjs",
+    "acceptance:macos:profile": "node scripts/run-development-profile.mjs",
     "prepack": "npm run build",
     "prerelease:verify": "npm run build",
     "release:verify": "node scripts/verify-release.mjs"

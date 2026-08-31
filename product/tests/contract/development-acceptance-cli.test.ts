@@ -158,14 +158,14 @@ function failedEvidence(
 async function run(
   evidencePath: string | undefined,
   overrides: NodeJS.ProcessEnv = {},
-  extraArgs: readonly string[] = [],
+  extraArgs: readonly string[] = ["--exclusive-desktop"],
   packageManagerSeparator = false,
 ): Promise<RunResult> {
   const child = spawn(process.execPath, [
     SCRIPT,
     ...(packageManagerSeparator ? ["--"] : []),
-    ...(evidencePath === undefined ? [] : ["--evidence", evidencePath]),
     ...extraArgs,
+    ...(evidencePath === undefined ? [] : ["--evidence", evidencePath]),
   ], {
     cwd: process.cwd(),
     env: {
@@ -244,6 +244,31 @@ describe("macOS development acceptance launcher", () => {
     await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("requires an explicit exclusive-desktop acknowledgement before doctor or GUI setup", async () => {
+    const path = await fixturePath("evidence.json");
+    const result = await run(path, {
+      CUA_ACCEPTANCE_TEST_DOCTOR_JSON: "not-json-and-must-not-be-read",
+    }, []);
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "acceptance_preflight_failed:exclusive_desktop_confirmation_required\n",
+    });
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects duplicate exclusive-desktop acknowledgements", async () => {
+    const path = await fixturePath("evidence.json");
+    const result = await run(path, {}, ["--exclusive-desktop", "--exclusive-desktop"]);
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "acceptance_preflight_failed:invalid_arguments\n",
+    });
+  });
+
   it("stops on a failed doctor before the child lane can write evidence", async () => {
     const path = await fixturePath("evidence.json");
     const result = await run(path, {
@@ -288,7 +313,7 @@ describe("macOS development acceptance launcher", () => {
 
   it("accepts the package-manager argument separator used by the documented command", async () => {
     const path = await fixturePath("evidence.json");
-    const result = await run(path, {}, [], true);
+    const result = await run(path, {}, ["--exclusive-desktop"], true);
 
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "passed", evidence_path: path });

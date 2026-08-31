@@ -16,17 +16,30 @@ The command never restarts or stops a shared Cua daemon. It starts only an isola
 
 ```bash
 cd product
-npx --yes pnpm@9.0.4 acceptance:macos
+npx --yes pnpm@9.0.4 acceptance:macos -- --exclusive-desktop
 ```
+
+The acknowledgement is mandatory because this development lane may activate its owned Chrome window, focus sentinel, Calculator and TextEdit. It does not mean ordinary MCP background delivery always takes focus. Without the flag the launcher refuses before doctor, build, or GUI setup.
 
 By default the command creates a new private temporary directory and prints the absolute evidence path in its one-line JSON summary. To select a new external path explicitly:
 
 ```bash
 npx --yes pnpm@9.0.4 acceptance:macos -- \
+  --exclusive-desktop \
   --evidence /absolute/private/path/macos-development.json
 ```
 
-The runner refuses relative paths and existing evidence or diagnostic files. Schema-version-3 evidence contains only versions, nine legacy correctness booleans, six explicit adaptive-correctness booleans, seven bounded legacy timings, four fixed correctness-aware performance aggregates, three real-application smoke booleans, cleanup state, architecture and UTC time. Each profile records exact correct/failed counts, a closed failure classification, latency and correctness status, and redacted per-stage aggregates; it never records raw samples. The adaptive block records the production-and-Canonical-Skill fixed-delay scan, semantic sequence, exactly-once pixel/input effects, visual recovery and native focus preservation as separate proofs. It contains no screenshot, title, typed text, raw samples, path, user/host identity, environment dump, PID, window ID, snapshot, ref, or native token.
+The runner refuses relative paths and existing evidence or diagnostic files. Schema-version-4 evidence contains only versions, nine legacy correctness booleans, six explicit adaptive-correctness booleans, seven bounded legacy timings, four fixed correctness-aware performance aggregates, three real-application smoke booleans, cleanup state, architecture and UTC time. Each profile records exact correct/failed counts, a closed failure classification, latency and correctness status, redacted per-stage aggregates, and closed aggregate action-route counts; it never records raw samples. Observe profiles must record no action routes, while a passing action profile must account for all 30 measured calls. The adaptive block records the production-and-Canonical-Skill fixed-delay scan, semantic sequence, exactly-once pixel/input effects, visual recovery and native focus preservation as separate proofs. It contains no screenshot, title, typed text, raw samples, path, user/host identity, environment dump, PID, window ID, snapshot, ref, or native token.
+
+For a fast diagnosis of one profile without reconnect, Calculator, TextEdit, or the independent correctness phases:
+
+```bash
+npx --yes pnpm@9.0.4 acceptance:macos:profile -- \
+  --profile pixel_action_next_state \
+  --exclusive-desktop
+```
+
+The accepted profile names are `window_visual_observe`, `window_semantic_observe`, `semantic_action_next_state`, and `pixel_action_next_state`. The focused lane still performs five warm-ups plus 30 measured calls and writes a separate `computer-use-macos-development-profile` artifact, so it cannot be confused with complete acceptance evidence. Observe and pixel profiles start only the isolated loopback fixture and Chrome; semantic action starts only the owned native focus sentinel. It never opens Calculator or TextEdit.
 
 After dependencies are installed, the acceptance launcher uses only the checkout-local build and Vitest binaries; it does not contact the package registry during the measured run. A fatal failure that prevents complete evidence writes `<evidence-path>.diagnostic.json` only after owned-resource cleanup. That sibling file contains a closed phase, scenario/sample position, stable error code, owned-process booleans and UTC time—never raw child output, stack traces, paths, application text or identifiers. The launcher prints its path and exits nonzero; it never treats the diagnostic as acceptance evidence or reruns the failed sample.
 
