@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PERFORMANCE_SLOS,
   PerformanceRecorder,
+  type PerformanceActionRoute,
   type PerformanceOutcome,
   type PerformanceScenarioName,
   type PerformanceStageName,
@@ -17,22 +18,32 @@ const SCENARIO_NAMES: readonly PerformanceScenarioName[] = [
   "pixel_action_next_state",
 ];
 
+function actionRoute(name: PerformanceScenarioName): Readonly<{ route: "accessibility" }> | {} {
+  return name === "semantic_action_next_state" || name === "pixel_action_next_state"
+    ? { route: "accessibility" }
+    : {};
+}
+
 function recordCompleteScenario(
   recorder: PerformanceRecorder,
   name: PerformanceScenarioName,
   outcomeAtIndex: Readonly<Partial<Record<number, PerformanceOutcome>>> = {},
+  routeAtIndex?: (index: number) => PerformanceActionRoute,
 ): void {
+  const actionScenario = name === "semantic_action_next_state" || name === "pixel_action_next_state";
   for (let index = 0; index < 5; index += 1) {
     recorder.recordWarmup(name, {
       durationMs: 99_999,
       outcome: "telemetry_missing",
       stages: { tool_total: 99_999 },
+      ...(actionScenario ? { route: "accessibility" as const } : {}),
     });
   }
   for (let durationMs = 30; durationMs >= 1; durationMs -= 1) {
+    const index = 30 - durationMs;
     recorder.recordMeasured(name, {
       durationMs,
-      outcome: outcomeAtIndex[30 - durationMs] ?? "passed",
+      outcome: outcomeAtIndex[index] ?? "passed",
       stages: {
         queue_wait: 1,
         post_action_observe: 20,
@@ -40,6 +51,9 @@ function recordCompleteScenario(
         tool_total: durationMs,
         transport_overhead: 7,
       },
+      ...(actionScenario
+        ? { route: routeAtIndex?.(index) ?? "accessibility" as const }
+        : {}),
     });
   }
 }
@@ -112,11 +126,64 @@ describe("PerformanceRecorder", () => {
       latency_status: "passed",
       correctness_status: "passed",
       failure_counts: {},
+      route_counts: {},
       stages: expect.objectContaining({
         tool_total: { sample_count: 30, p50_ms: 15, p95_ms: 29, max_ms: 30 },
       }),
       status: "passed",
     });
+  });
+
+  it("aggregates measured action routes without retaining raw samples", () => {
+    const recorder = new PerformanceRecorder();
+
+    for (const name of SCENARIO_NAMES) {
+      recordCompleteScenario(
+        recorder,
+        name,
+        {},
+        name === "pixel_action_next_state"
+          ? (index) => index < 12 ? "accessibility" : "synthetic_events"
+          : undefined,
+      );
+    }
+
+    const evidence = recorder.performance();
+    expect(evidence.window_visual_observe.route_counts).toEqual({});
+    expect(evidence.window_semantic_observe.route_counts).toEqual({});
+    expect(evidence.semantic_action_next_state.route_counts).toEqual({ accessibility: 30 });
+    expect(evidence.pixel_action_next_state.route_counts).toEqual({
+      accessibility: 12,
+      synthetic_events: 18,
+    });
+    expect(JSON.stringify(evidence)).not.toContain("samples");
+  });
+
+  it("enforces the closed route contract at the scenario seam", () => {
+    const recorder = new PerformanceRecorder();
+
+    expect(() => recorder.recordWarmup("semantic_action_next_state", {
+      durationMs: 1,
+      outcome: "passed",
+      stages: {},
+    })).toThrow("invalid_performance_sample");
+    expect(() => recorder.recordWarmup("window_visual_observe", {
+      durationMs: 1,
+      outcome: "passed",
+      stages: {},
+      route: "accessibility",
+    })).toThrow("invalid_performance_sample");
+    expect(() => recorder.recordWarmup("pixel_action_next_state", {
+      durationMs: 1,
+      outcome: "passed",
+      stages: {},
+      route: "private_route" as PerformanceActionRoute,
+    })).toThrow("invalid_performance_sample");
+    expect(() => recorder.recordWarmup("pixel_action_next_state", {
+      durationMs: 1,
+      outcome: "tool_error",
+      stages: {},
+    })).not.toThrow();
   });
 
   it("keeps failed-call durations while separating correctness from latency", () => {
@@ -142,6 +209,7 @@ describe("PerformanceRecorder", () => {
       latency_status: "passed",
       correctness_status: "failed",
       failure_counts: { oracle_mismatch: 1 },
+      route_counts: {},
       stages: expect.any(Object),
       status: "failed",
     });
@@ -156,6 +224,7 @@ describe("PerformanceRecorder", () => {
           durationMs: 0,
           outcome: "passed",
           stages: { tool_total: 999 },
+          ...actionRoute(name),
         });
       }
       for (let index = 0; index < 30; index += 1) {
@@ -165,6 +234,7 @@ describe("PerformanceRecorder", () => {
             ? "telemetry_missing"
             : "passed",
           stages: index === 29 ? {} : { tool_total: index + 1 },
+          ...actionRoute(name),
         });
       }
     }
@@ -204,10 +274,16 @@ describe("PerformanceRecorder", () => {
           durationMs: 1,
           outcome: "passed",
           stages: { engine_execute: 999 },
+          ...actionRoute(name),
         });
       }
       for (let index = 0; index < 30; index += 1) {
-        recorder.recordMeasured(name, { durationMs: 1, outcome: "passed", stages: {} });
+        recorder.recordMeasured(name, {
+          durationMs: 1,
+          outcome: "passed",
+          stages: {},
+          ...actionRoute(name),
+        });
       }
     }
 
@@ -219,13 +295,19 @@ describe("PerformanceRecorder", () => {
 
     for (const name of SCENARIO_NAMES) {
       for (let index = 0; index < 5; index += 1) {
-        recorder.recordWarmup(name, { durationMs: 1, outcome: "passed", stages: {} });
+        recorder.recordWarmup(name, {
+          durationMs: 1,
+          outcome: "passed",
+          stages: {},
+          ...actionRoute(name),
+        });
       }
       for (let index = 0; index < 30; index += 1) {
         recorder.recordMeasured(name, {
           durationMs: name === "window_visual_observe" ? 1_501 : 1,
           outcome: "passed",
           stages: {},
+          ...actionRoute(name),
         });
       }
     }
@@ -284,15 +366,21 @@ describe("PerformanceRecorder", () => {
 
   it("rejects 29 measured samples and a 31st measured sample", () => {
     const recorder = new PerformanceRecorder();
-    const sample = { durationMs: 1, outcome: "passed", stages: {} } as const;
 
     for (const name of SCENARIO_NAMES) {
+      const sample = {
+        durationMs: 1,
+        outcome: "passed",
+        stages: {},
+        ...actionRoute(name),
+      } as const;
       for (let index = 0; index < 5; index += 1) recorder.recordWarmup(name, sample);
       const count = name === "window_visual_observe" ? 29 : 30;
       for (let index = 0; index < count; index += 1) recorder.recordMeasured(name, sample);
     }
 
     expect(() => recorder.performance()).toThrow("invalid_performance_samples");
+    const sample = { durationMs: 1, outcome: "passed", stages: {} } as const;
     recorder.recordMeasured("window_visual_observe", sample);
     expect(() => recorder.recordMeasured("window_visual_observe", sample))
       .toThrow("performance_sample_limit:window_visual_observe");

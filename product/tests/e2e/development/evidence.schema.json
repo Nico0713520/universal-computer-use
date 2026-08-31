@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://universal-computer-use.invalid/schemas/macos-development-acceptance-v3.json",
+  "$id": "https://universal-computer-use.invalid/schemas/macos-development-acceptance-v4.json",
   "title": "Redacted macOS Development Acceptance Evidence",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "evidence_type", "status", "metadata", "scenarios", "timings", "performance", "adaptive_correctness", "real_app_smoke", "cleanup_passed", "timestamp"],
   "properties": {
-    "schema_version": { "const": 3 },
+    "schema_version": { "const": 4 },
     "evidence_type": { "const": "computer-use-macos-development-acceptance" },
     "status": { "enum": ["passed", "degraded", "failed"] },
     "metadata": {
@@ -235,10 +235,23 @@
         "telemetry_missing": { "type": "integer", "minimum": 1, "maximum": 30 }
       }
     },
+    "routeCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accessibility": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "synthetic_events": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "global_input": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "system_api": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "dom": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "trusted_input": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "unknown": { "type": "integer", "minimum": 1, "maximum": 30 }
+      }
+    },
     "performanceProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sample_count", "correct_count", "failed_count", "success_rate", "p50_ms", "p95_ms", "max_ms", "slo", "latency_status", "correctness_status", "failure_counts", "stages", "status"],
+      "required": ["sample_count", "correct_count", "failed_count", "success_rate", "p50_ms", "p95_ms", "max_ms", "slo", "latency_status", "correctness_status", "failure_counts", "route_counts", "stages", "status"],
       "properties": {
         "sample_count": { "const": 30 },
         "correct_count": { "type": "integer", "minimum": 0, "maximum": 30 },
@@ -251,6 +264,7 @@
         "latency_status": { "enum": ["passed", "failed"] },
         "correctness_status": { "enum": ["passed", "failed"] },
         "failure_counts": { "$ref": "#/$defs/failureCounts" },
+        "route_counts": { "$ref": "#/$defs/routeCounts" },
         "stages": { "$ref": "#/$defs/stages" },
         "status": { "enum": ["passed", "failed"] }
       }
@@ -312,13 +326,13 @@
     },
     "passedObserveOrFailed": {
       "oneOf": [
-        { "type": "object", "required": ["status", "correct_count", "failed_count", "success_rate", "latency_status", "correctness_status", "failure_counts", "stages"], "properties": { "status": { "const": "passed" }, "correct_count": { "const": 30 }, "failed_count": { "const": 0 }, "success_rate": { "const": 1 }, "latency_status": { "const": "passed" }, "correctness_status": { "const": "passed" }, "failure_counts": { "type": "object", "additionalProperties": false, "properties": {} }, "stages": { "$ref": "#/$defs/completeObserveStages" } } },
+        { "type": "object", "required": ["status", "correct_count", "failed_count", "success_rate", "latency_status", "correctness_status", "failure_counts", "route_counts", "stages"], "properties": { "status": { "const": "passed" }, "correct_count": { "const": 30 }, "failed_count": { "const": 0 }, "success_rate": { "const": 1 }, "latency_status": { "const": "passed" }, "correctness_status": { "const": "passed" }, "failure_counts": { "type": "object", "additionalProperties": false, "properties": {} }, "route_counts": { "type": "object", "additionalProperties": false, "properties": {} }, "stages": { "$ref": "#/$defs/completeObserveStages" } } },
         { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } }
       ]
     },
     "passedActionOrFailed": {
       "oneOf": [
-        { "type": "object", "required": ["status", "correct_count", "failed_count", "success_rate", "latency_status", "correctness_status", "failure_counts", "stages"], "properties": { "status": { "const": "passed" }, "correct_count": { "const": 30 }, "failed_count": { "const": 0 }, "success_rate": { "const": 1 }, "latency_status": { "const": "passed" }, "correctness_status": { "const": "passed" }, "failure_counts": { "type": "object", "additionalProperties": false, "properties": {} }, "stages": { "$ref": "#/$defs/completeActionStages" } } },
+        { "type": "object", "required": ["status", "correct_count", "failed_count", "success_rate", "latency_status", "correctness_status", "failure_counts", "route_counts", "stages"], "properties": { "status": { "const": "passed" }, "correct_count": { "const": 30 }, "failed_count": { "const": 0 }, "success_rate": { "const": 1 }, "latency_status": { "const": "passed" }, "correctness_status": { "const": "passed" }, "failure_counts": { "type": "object", "additionalProperties": false, "properties": {} }, "route_counts": { "allOf": [{ "$ref": "#/$defs/routeCounts" }, { "minProperties": 1 }] }, "stages": { "$ref": "#/$defs/completeActionStages" } } },
         { "type": "object", "required": ["status"], "properties": { "status": { "const": "failed" } } }
       ]
     },

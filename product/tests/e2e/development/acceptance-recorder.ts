@@ -1,8 +1,10 @@
 import {
   PERFORMANCE_SCENARIO_NAMES,
   PERFORMANCE_SLOS,
+  PERFORMANCE_ACTION_ROUTES,
   type CorrectnessAwarePerformanceEvidence,
   type CorrectnessAwarePerformanceProfile,
+  type PerformanceActionRoute,
   type PerformanceFailureKind,
   type PerformanceStageAggregate,
   type PerformanceStageName,
@@ -45,7 +47,7 @@ export type AcceptanceTiming = Readonly<{
 }>;
 
 export type DevelopmentEvidence = Readonly<{
-  schema_version: 3;
+  schema_version: 4;
   evidence_type: "computer-use-macos-development-acceptance";
   status: "passed" | "degraded" | "failed";
   metadata: AcceptanceMetadata;
@@ -165,6 +167,10 @@ function requiredStages(name: (typeof PERFORMANCE_SCENARIO_NAMES)[number]): read
     : OBSERVE_STAGE_NAMES;
 }
 
+function actionScenario(name: (typeof PERFORMANCE_SCENARIO_NAMES)[number]): boolean {
+  return name === "semantic_action_next_state" || name === "pixel_action_next_state";
+}
+
 function validateStageAggregate(value: unknown, requireComplete: boolean): asserts value is PerformanceStageAggregate {
   if (!isRecord(value)) incomplete();
   const sampleCount = value.sample_count;
@@ -234,7 +240,22 @@ function validatePerformanceProfile(
     || value.correctness_status !== expectedCorrectnessStatus
     || value.status !== expectedStatus
     || !isRecord(value.failure_counts)
+    || !isRecord(value.route_counts)
     || !isRecord(value.stages)
+  ) incomplete();
+
+  const routeEntries = Object.entries(value.route_counts);
+  const routeCount = routeEntries.reduce((sum, [, count]) => sum + (count as number), 0);
+  if (
+    routeEntries.some(([route, count]) => (
+      !PERFORMANCE_ACTION_ROUTES.includes(route as PerformanceActionRoute)
+      || !Number.isInteger(count)
+      || (count as number) < 1
+      || (count as number) > 30
+    ))
+    || (!actionScenario(name) && routeEntries.length > 0)
+    || (actionScenario(name) && value.status === "passed" && routeCount !== 30)
+    || routeCount > 30
   ) incomplete();
 
   const failureEntries = Object.entries(value.failure_counts);
@@ -277,6 +298,10 @@ function projectPerformance(
       const stage = profile.stages[stageName];
       return stage === undefined ? [] : [[stageName, { ...stage }]];
     }));
+    const routeCounts = Object.fromEntries(PERFORMANCE_ACTION_ROUTES.flatMap((route) => {
+      const count = profile.route_counts[route];
+      return count === undefined ? [] : [[route, count]];
+    }));
     return [name, {
       sample_count: 30,
       correct_count: profile.correct_count,
@@ -289,6 +314,7 @@ function projectPerformance(
       latency_status: profile.latency_status,
       correctness_status: profile.correctness_status,
       failure_counts: failureCounts,
+      route_counts: routeCounts,
       stages,
       status: profile.status,
     } satisfies CorrectnessAwarePerformanceProfile];
@@ -438,7 +464,7 @@ export class AcceptanceRecorder {
         : "passed";
 
     const result: DevelopmentEvidence = {
-      schema_version: 3,
+      schema_version: 4,
       evidence_type: "computer-use-macos-development-acceptance",
       status,
       metadata: { ...metadata },

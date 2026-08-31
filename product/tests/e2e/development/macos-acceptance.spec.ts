@@ -21,7 +21,9 @@ import {
 } from "./fatal-diagnostic.js";
 import {
   PerformanceRecorder,
+  PERFORMANCE_ACTION_ROUTES,
   PERFORMANCE_SCENARIO_NAMES,
+  type PerformanceActionRoute,
   type PerformanceOutcome,
   type PerformanceSample,
   type PerformanceScenarioName,
@@ -206,10 +208,17 @@ function measuredSample(
   stages: PerformanceSample["stages"] | undefined,
   outcome?: PerformanceOutcome,
 ): IterationResult {
+  const route = "result" in measured
+    ? structuredIfPresent(measured.result)?.action_result?.route
+    : undefined;
+  const measuredRoute = PERFORMANCE_ACTION_ROUTES.includes(route as PerformanceActionRoute)
+    ? route as PerformanceActionRoute
+    : undefined;
   return {
     durationMs: measured.durationMs,
     outcome: outcome ?? (stages === undefined ? "telemetry_missing" : "passed"),
     stages: stages ?? {},
+    ...(measuredRoute === undefined ? {} : { route: measuredRoute }),
   };
 }
 
@@ -246,12 +255,14 @@ function validSemanticPerformanceContract(
   nonce: string,
 ): boolean {
   const state = structuredIfPresent(result);
+  const route = state?.action_result?.route;
   const matchingValues = state?.elements?.filter((element) => element.value === nonce) ?? [];
   return state !== undefined &&
     typeof state.snapshot_id === "string" &&
     state.snapshot_id !== groundingSnapshot &&
     state.consumed_snapshot_id === groundingSnapshot &&
     state.action_result?.status === "executed" &&
+    PERFORMANCE_ACTION_ROUTES.includes(route as PerformanceActionRoute) &&
     state.action_result.effect === "confirmed" &&
     state.action_result.delivery === "background" &&
     state.verification?.status === "satisfied" &&
@@ -266,11 +277,13 @@ function validPixelPerformanceContract(
   groundingSnapshot: string,
 ): boolean {
   const state = structuredIfPresent(result);
+  const route = state?.action_result?.route;
   return state !== undefined &&
     typeof state.snapshot_id === "string" &&
     state.snapshot_id !== groundingSnapshot &&
     state.consumed_snapshot_id === groundingSnapshot &&
     state.action_result?.status === "executed" &&
+    PERFORMANCE_ACTION_ROUTES.includes(route as PerformanceActionRoute) &&
     state.action_result.delivery === "background" &&
     state.observation_mode === "visual" &&
     state.visual_status === "available" &&
@@ -926,7 +939,7 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
           browser.pid,
         );
       } catch {
-        // Correctness failures belong in complete schema-v3 evidence. The subsequent
+        // Correctness failures belong in complete schema-v4 evidence. The subsequent
         // 140-call performance run remains the target-health check; if the
         // fixture or window is truly dead it fails there as a fatal no-evidence
         // condition instead of being mislabeled as a boolean regression.
@@ -1025,7 +1038,7 @@ describe.skipIf(!REAL_ACCEPTANCE)("macOS development acceptance through public M
               structured(oldElement).code === "stale_element_ref",
           );
         } catch {
-          // A reconnect correctness failure remains false in schema-v3 evidence.
+          // A reconnect correctness failure remains false in schema-v4 evidence.
         }
       }
       if (performanceEvidence === undefined) throw new Error("acceptance_profiles_missing");

@@ -87,6 +87,7 @@ export type StructuredResult = Readonly<{
   action_result?: {
     status?: unknown;
     effect?: unknown;
+    route?: unknown;
     delivery?: unknown;
     evidence?: readonly unknown[];
     error_code?: unknown;

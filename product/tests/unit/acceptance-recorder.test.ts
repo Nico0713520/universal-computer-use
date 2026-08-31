@@ -64,6 +64,7 @@ const PASSING_PERFORMANCE: CorrectnessAwarePerformanceEvidence = {
     latency_status: "passed",
     correctness_status: "passed",
     failure_counts: {},
+    route_counts: {},
     stages: OBSERVE_STAGES,
     status: "passed",
   },
@@ -79,6 +80,7 @@ const PASSING_PERFORMANCE: CorrectnessAwarePerformanceEvidence = {
     latency_status: "passed",
     correctness_status: "passed",
     failure_counts: {},
+    route_counts: {},
     stages: OBSERVE_STAGES,
     status: "passed",
   },
@@ -94,6 +96,7 @@ const PASSING_PERFORMANCE: CorrectnessAwarePerformanceEvidence = {
     latency_status: "passed",
     correctness_status: "passed",
     failure_counts: {},
+    route_counts: { accessibility: 30 },
     stages: ACTION_STAGES,
     status: "passed",
   },
@@ -109,6 +112,7 @@ const PASSING_PERFORMANCE: CorrectnessAwarePerformanceEvidence = {
     latency_status: "passed",
     correctness_status: "passed",
     failure_counts: {},
+    route_counts: { synthetic_events: 30 },
     stages: ACTION_STAGES,
     status: "passed",
   },
@@ -261,7 +265,7 @@ describe("AcceptanceRecorder", () => {
     expect(() => evidence(dirty, false)).toThrow("acceptance_cleanup_failed");
   });
 
-  it("emits only the fixed schema-v3 aggregate, smoke and legacy acceptance fields", async () => {
+  it("emits only the fixed schema-v4 aggregate, smoke and legacy acceptance fields", async () => {
     const result = evidence(await passingRecorder());
 
     expect(Object.keys(result).sort()).toEqual([
@@ -278,7 +282,7 @@ describe("AcceptanceRecorder", () => {
       "timings",
     ]);
     expect(result).toMatchObject({
-      schema_version: 3,
+      schema_version: 4,
       evidence_type: "computer-use-macos-development-acceptance",
       status: "passed",
       metadata: METADATA,
@@ -382,6 +386,24 @@ describe("AcceptanceRecorder", () => {
     expect(() => evidence(recorder, true, partialStage)).toThrow("acceptance_evidence_incomplete");
   });
 
+  it("requires complete closed route counts for passed action profiles", async () => {
+    const recorder = await passingRecorder();
+    const missingRoutes = structuredClone(PASSING_PERFORMANCE) as CorrectnessAwarePerformanceEvidence;
+    (missingRoutes.pixel_action_next_state as { route_counts: Record<string, number> }).route_counts = {};
+    expect(() => evidence(recorder, true, missingRoutes))
+      .toThrow("acceptance_evidence_incomplete");
+
+    const privateRoute = structuredClone(PASSING_PERFORMANCE) as CorrectnessAwarePerformanceEvidence;
+    (privateRoute.semantic_action_next_state.route_counts as Record<string, number>).private_route = 30;
+    expect(() => evidence(recorder, true, privateRoute))
+      .toThrow("acceptance_evidence_incomplete");
+
+    const observeRoute = structuredClone(PASSING_PERFORMANCE) as CorrectnessAwarePerformanceEvidence;
+    (observeRoute.window_visual_observe.route_counts as Record<string, number>).accessibility = 30;
+    expect(() => evidence(recorder, true, observeRoute))
+      .toThrow("acceptance_evidence_incomplete");
+  });
+
   it("preserves a complete failed artifact when telemetry is missing for one measured call", async () => {
     const failed = structuredClone(PASSING_PERFORMANCE) as CorrectnessAwarePerformanceEvidence;
     const profile = failed.window_visual_observe as {
@@ -411,7 +433,7 @@ describe("AcceptanceRecorder", () => {
     });
   });
 
-  it("copies the schema-v3 profile without retaining raw samples or unknown fields", async () => {
+  it("copies the schema-v4 profile without retaining raw samples or unknown fields", async () => {
     const recorder = await passingRecorder();
     const withPrivateFields = structuredClone(PASSING_PERFORMANCE) as unknown as Record<string, Record<string, unknown>>;
     withPrivateFields.window_visual_observe.samples = [{ screenshot: "private" }];

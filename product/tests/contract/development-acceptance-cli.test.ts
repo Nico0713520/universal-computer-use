@@ -66,6 +66,7 @@ function performanceProfile(
     latency_status: "passed",
     correctness_status: "passed",
     failure_counts: {},
+    route_counts: action ? { accessibility: 30 } : {},
     stages: performanceStages(action),
     status: "passed",
   };
@@ -73,7 +74,7 @@ function performanceProfile(
 
 function simulatedEvidence(cleanupPassed = true): Record<string, unknown> {
   return {
-    schema_version: 3,
+    schema_version: 4,
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
     metadata: {

@@ -75,6 +75,7 @@ function performanceProfile(
     latency_status: "passed",
     correctness_status: "passed",
     failure_counts: {},
+    route_counts: action ? { accessibility: 30 } : {},
     stages: performanceStages(action),
     status: "passed",
   };
@@ -82,7 +83,7 @@ function performanceProfile(
 
 function completeEvidence(): JsonRecord {
   return {
-    schema_version: 3,
+    schema_version: 4,
     evidence_type: "computer-use-macos-development-acceptance",
     status: "passed",
     metadata: {
@@ -145,7 +146,7 @@ describe("macOS development acceptance evidence", () => {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       additionalProperties: false,
-      properties: { schema_version: { const: 3 } },
+      properties: { schema_version: { const: 4 } },
     });
     expect(await accepts(completeEvidence())).toBe(true);
 
@@ -215,7 +216,7 @@ describe("macOS development acceptance evidence", () => {
     expect(parser.safeParse(missingSmoke).success).toBe(false);
   });
 
-  it("enforces schema-v3 correctness arithmetic, failure counts, and status relationships", async () => {
+  it("enforces schema-v4 correctness arithmetic, failure counts, routes, and status relationships", async () => {
     const mutations: Array<[string, (profile: JsonRecord) => void]> = [
       ["incorrect sum", (profile) => { profile.correct_count = 29; }],
       ["incorrect success rate", (profile) => {
@@ -247,13 +248,33 @@ describe("macOS development acceptance evidence", () => {
     }
   });
 
-  it("rejects unknown failures, incomplete required stages, and non-v3 product metadata", async () => {
+  it("rejects unknown failures, incomplete required stages, and non-v4 product metadata", async () => {
     const parser = await evidenceParser();
 
     const unknownFailure = completeEvidence();
     (((unknownFailure.performance as JsonRecord).window_visual_observe as JsonRecord)
       .failure_counts as JsonRecord).private_failure = 1;
     expect(parser.safeParse(unknownFailure).success).toBe(false);
+
+    const missingRoutes = completeEvidence();
+    delete (((missingRoutes.performance as JsonRecord).semantic_action_next_state as JsonRecord).route_counts);
+    expect(parser.safeParse(missingRoutes).success).toBe(false);
+
+    const privateRoute = completeEvidence();
+    (((privateRoute.performance as JsonRecord).semantic_action_next_state as JsonRecord)
+      .route_counts as JsonRecord).private_route = 1;
+    expect(parser.safeParse(privateRoute).success).toBe(false);
+
+    const observeRoute = completeEvidence();
+    ((observeRoute.performance as JsonRecord).window_visual_observe as JsonRecord).route_counts = {
+      accessibility: 30,
+    };
+    expect(await accepts(observeRoute)).toBe(false);
+
+    const incompleteActionRoutes = completeEvidence();
+    ((incompleteActionRoutes.performance as JsonRecord).semantic_action_next_state as JsonRecord)
+      .route_counts = { accessibility: 29 };
+    expect(await accepts(incompleteActionRoutes)).toBe(false);
 
     const missingStage = completeEvidence();
     delete ((((missingStage.performance as JsonRecord).semantic_action_next_state as JsonRecord)

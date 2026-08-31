@@ -26,10 +26,23 @@ export type PerformanceStageTimings = Readonly<
   Partial<Record<PerformanceStageName, number>>
 >;
 
+export const PERFORMANCE_ACTION_ROUTES = [
+  "accessibility",
+  "synthetic_events",
+  "global_input",
+  "system_api",
+  "dom",
+  "trusted_input",
+  "unknown",
+] as const;
+
+export type PerformanceActionRoute = typeof PERFORMANCE_ACTION_ROUTES[number];
+
 export type PerformanceSample = Readonly<{
   durationMs: number;
   outcome: PerformanceOutcome;
   stages: PerformanceStageTimings;
+  route?: PerformanceActionRoute;
 }>;
 
 export type PerformanceStageAggregate = Readonly<{
@@ -55,6 +68,7 @@ export type CorrectnessAwarePerformanceProfile = PerformanceLatencyProfile & Rea
   latency_status: "passed" | "failed";
   correctness_status: "passed" | "failed";
   failure_counts: Readonly<Partial<Record<PerformanceFailureKind, number>>>;
+  route_counts: Readonly<Partial<Record<PerformanceActionRoute, number>>>;
   stages: Readonly<Partial<Record<PerformanceStageName, PerformanceStageAggregate>>>;
 }>;
 
@@ -62,7 +76,7 @@ export type CorrectnessAwarePerformanceEvidence = Readonly<
   Record<PerformanceScenarioName, CorrectnessAwarePerformanceProfile>
 >;
 
-// Schema-v3 has one performance boundary. Keep these compatibility names as
+// Schema-v4 has one performance boundary. Keep these compatibility names as
 // strict aliases so callers cannot silently fall back to the latency-only v2
 // shape and lose correctness or stage evidence during projection.
 export type PerformanceProfile = CorrectnessAwarePerformanceProfile;
@@ -104,6 +118,11 @@ const PERFORMANCE_STAGE_NAMES: readonly PerformanceStageName[] = [
 ];
 
 const PERFORMANCE_STAGE_NAME_SET = new Set<PerformanceStageName>(PERFORMANCE_STAGE_NAMES);
+const PERFORMANCE_ACTION_ROUTE_SET = new Set<PerformanceActionRoute>(PERFORMANCE_ACTION_ROUTES);
+
+function isActionScenario(name: PerformanceScenarioName): boolean {
+  return name === "semantic_action_next_state" || name === "pixel_action_next_state";
+}
 
 export function nearestRank(samples: readonly number[], percentile: number): number {
   if (samples.length === 0 || percentile <= 0 || percentile > 1) {
@@ -113,7 +132,7 @@ export function nearestRank(samples: readonly number[], percentile: number): num
   return sorted[Math.ceil(percentile * sorted.length) - 1]!;
 }
 
-function validateSample(sample: PerformanceSample): void {
+function validateSample(name: PerformanceScenarioName, sample: PerformanceSample): void {
   const stageEntries = typeof sample.stages === "object" && sample.stages !== null
     && !Array.isArray(sample.stages)
     ? Object.entries(sample.stages)
@@ -122,6 +141,10 @@ function validateSample(sample: PerformanceSample): void {
     !Number.isFinite(sample.durationMs)
     || sample.durationMs < 0
     || !PERFORMANCE_OUTCOMES.has(sample.outcome)
+    || (isActionScenario(name)
+      ? (sample.outcome === "passed" && sample.route === undefined) ||
+        (sample.route !== undefined && !PERFORMANCE_ACTION_ROUTE_SET.has(sample.route))
+      : sample.route !== undefined)
     || stageEntries === undefined
     || stageEntries.some(([name, timing]) => (
       !PERFORMANCE_STAGE_NAME_SET.has(name as PerformanceStageName)
@@ -174,7 +197,7 @@ export class PerformanceRecorder {
   readonly #measured = new Map<PerformanceScenarioName, PerformanceSample[]>();
 
   recordWarmup(name: PerformanceScenarioName, sample: PerformanceSample): void {
-    validateSample(sample);
+    validateSample(name, sample);
     const count = this.#warmups.get(name) ?? 0;
     if (count >= 5 || (this.#measured.get(name)?.length ?? 0) > 0) {
       throw new Error(`performance_warmup_limit:${name}`);
@@ -183,7 +206,7 @@ export class PerformanceRecorder {
   }
 
   recordMeasured(name: PerformanceScenarioName, sample: PerformanceSample): void {
-    validateSample(sample);
+    validateSample(name, sample);
     if (this.#warmups.get(name) !== 5) {
       throw new Error(`performance_warmups_incomplete:${name}`);
     }
@@ -207,9 +230,13 @@ export class PerformanceRecorder {
         : "failed";
       const correctnessStatus = correctCount === 30 ? "passed" : "failed";
       const failureCounts: Partial<Record<PerformanceFailureKind, number>> = {};
+      const routeCounts: Partial<Record<PerformanceActionRoute, number>> = {};
       for (const sample of samples) {
         if (sample.outcome !== "passed") {
           failureCounts[sample.outcome] = (failureCounts[sample.outcome] ?? 0) + 1;
+        }
+        if (sample.route !== undefined) {
+          routeCounts[sample.route] = (routeCounts[sample.route] ?? 0) + 1;
         }
       }
       const stages: Partial<Record<PerformanceStageName, PerformanceStageAggregate>> = {};
@@ -229,6 +256,7 @@ export class PerformanceRecorder {
         latency_status: latencyStatus,
         correctness_status: correctnessStatus,
         failure_counts: failureCounts,
+        route_counts: routeCounts,
         stages,
         status: latencyStatus === "passed" && correctnessStatus === "passed" ? "passed" : "failed",
       } satisfies CorrectnessAwarePerformanceProfile];

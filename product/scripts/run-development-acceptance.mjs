@@ -109,7 +109,7 @@ function validDoctor(value, lockedVersion) {
 }
 
 async function validEvidence(value, lockedVersion, productVersion) {
-  if (!(value?.schema_version === 3 &&
+  if (!(value?.schema_version === 4 &&
     value.evidence_type === "computer-use-macos-development-acceptance" &&
     (value.status === "passed" || value.status === "degraded" || value.status === "failed") &&
     value.metadata?.product_version === productVersion &&
@@ -125,6 +125,15 @@ async function validEvidence(value, lockedVersion, productVersion) {
 }
 
 function validEvidenceSemantics(value) {
+  const actionRoutes = new Set([
+    "accessibility",
+    "synthetic_events",
+    "global_input",
+    "system_api",
+    "dom",
+    "trusted_input",
+    "unknown",
+  ]);
   const slo = {
     window_visual_observe: [700, 1500, false],
     window_semantic_observe: [400, 1000, false],
@@ -142,10 +151,21 @@ function validEvidenceSemantics(value) {
     const status = latencyStatus === "passed" && correctnessStatus === "passed"
       ? "passed"
       : "failed";
+    const routeEntries = profile?.route_counts !== null &&
+      typeof profile?.route_counts === "object" &&
+      !Array.isArray(profile.route_counts)
+      ? Object.entries(profile.route_counts)
+      : [];
+    const routeTotal = routeEntries.reduce((sum, [, count]) => sum + count, 0);
     if (!Number.isInteger(correct) || !Number.isInteger(failed) || correct + failed !== 30 ||
       profile.success_rate !== correct / 30 || profile.latency_status !== latencyStatus ||
       profile.correctness_status !== correctnessStatus || profile.status !== status ||
       Object.values(profile.failure_counts ?? {}).reduce((sum, count) => sum + count, 0) !== failed ||
+      routeEntries.some(([route, count]) => !actionRoutes.has(route) ||
+        !Number.isInteger(count) || count < 1 || count > 30) ||
+      (!action && routeEntries.length !== 0) ||
+      (action && status === "passed" && routeTotal !== 30) ||
+      routeTotal > 30 ||
       profile.p50_ms > profile.p95_ms || profile.p95_ms > profile.max_ms) return false;
     const requiredStages = [
       "queue_wait", ...(action ? ["engine_execute"] : []), "post_action_observe",
