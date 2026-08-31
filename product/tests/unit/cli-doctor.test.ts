@@ -12,6 +12,42 @@ const unknownMacPermissions = {
 };
 
 describe("doctor", () => {
+  it("verifies macOS Runtime identity and permissions before opening any Cua connection", async () => {
+    const lock = await loadEngineLock();
+    const engine = new FakeEngine({ platform: "macos" });
+    const events: string[] = [];
+    const dependencies = {
+      lock,
+      probeInteractiveSession: vi.fn(async () => {
+        events.push("interactive");
+        return true;
+      }),
+      verifyRuntimeIdentity: vi.fn(async () => {
+        events.push("identity");
+      }),
+      probeMacPermissions: vi.fn(async () => {
+        events.push("permissions");
+        return {
+          accessibility: "granted" as const,
+          screen_recording: "granted" as const,
+          source: "driver-daemon" as const,
+        };
+      }),
+      connectEngine: vi.fn(async () => {
+        events.push("connect");
+        return engine;
+      }),
+    };
+
+    const report = await runDoctor(
+      { platform: "darwin", arch: "arm64" },
+      dependencies,
+    );
+
+    expect(report.ok).toBe(true);
+    expect(events).toEqual(["interactive", "identity", "permissions", "connect"]);
+  });
+
   it("reports every required field after exactly one side-effect-free observation", async () => {
     const lock = await loadEngineLock();
     const engine = new FakeEngine({ width: 2560, height: 1440, platform: "macos" });
@@ -23,6 +59,7 @@ describe("doctor", () => {
         lock,
         connectEngine: vi.fn(async () => engine),
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => ({
           accessibility: "granted" as const,
           screen_recording: "granted" as const,
@@ -71,6 +108,7 @@ describe("doctor", () => {
           );
         }),
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => unknownMacPermissions),
       },
     );
@@ -90,6 +128,43 @@ describe("doctor", () => {
     expect(report.reported_engine_version).toBeNull();
   });
 
+  it("does not connect or query permissions when macOS Runtime identity is rejected", async () => {
+    const connectEngine = vi.fn(async () => new FakeEngine({ platform: "macos" }));
+    const probeMacPermissions = vi.fn(async () => unknownMacPermissions);
+
+    const report = await runDoctor(
+      { platform: "darwin", arch: "arm64" },
+      {
+        lock: await loadEngineLock(),
+        connectEngine,
+        probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {
+          throw new ComputerUseError(
+            "engine_version_mismatch",
+            "signature rejected",
+            "setup",
+            false,
+            { diagnosticReason: "runtime_signature_mismatch" },
+          );
+        }),
+        probeMacPermissions,
+      },
+    );
+
+    expect(report).toMatchObject({
+      ok: false,
+      engine_connected: false,
+      required_tools_present: false,
+      desktop_unlocked: true,
+      error: {
+        code: "engine_version_mismatch",
+        diagnostic_reason: "runtime_signature_mismatch",
+      },
+    });
+    expect(connectEngine).not.toHaveBeenCalled();
+    expect(probeMacPermissions).not.toHaveBeenCalled();
+  });
+
   it("fails before observation when an injected Runtime version differs from the lock", async () => {
     const engine = new FakeEngine();
     Object.defineProperty(engine, "version", { value: "0.22.0" });
@@ -100,6 +175,7 @@ describe("doctor", () => {
         lock: await loadEngineLock(),
         connectEngine: vi.fn(async () => engine),
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => unknownMacPermissions),
       },
     );
@@ -135,6 +211,7 @@ describe("doctor", () => {
         lock: await loadEngineLock(),
         connectEngine: vi.fn(async () => engine),
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => unknownMacPermissions),
       },
     );
@@ -169,6 +246,7 @@ describe("doctor", () => {
         lock: await loadEngineLock(),
         connectEngine: vi.fn(async () => engine),
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => ({
           accessibility: "unknown" as const,
           screen_recording: "unknown" as const,
@@ -216,6 +294,7 @@ describe("doctor", () => {
           lock: await loadEngineLock(),
           connectEngine: vi.fn(async () => engine),
           probeInteractiveSession: vi.fn(async () => true),
+          verifyRuntimeIdentity: vi.fn(async () => {}),
           probeMacPermissions: vi.fn(async () => unknownMacPermissions),
         },
       );
@@ -230,13 +309,15 @@ describe("doctor", () => {
 
   it("stops before capture when the signed daemon reports one missing macOS grant", async () => {
     const engine = new FakeEngine({ platform: "macos" });
+    const connectEngine = vi.fn(async () => engine);
 
     const report = await runDoctor(
       { platform: "darwin", arch: "arm64" },
       {
         lock: await loadEngineLock(),
-        connectEngine: vi.fn(async () => engine),
+        connectEngine,
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => ({
           accessibility: "granted" as const,
           screen_recording: "required" as const,
@@ -247,8 +328,8 @@ describe("doctor", () => {
 
     expect(report).toMatchObject({
       ok: false,
-      engine_connected: true,
-      required_tools_present: true,
+      engine_connected: false,
+      required_tools_present: false,
       desktop_unlocked: true,
       permissions: "required",
       permission_details: {
@@ -264,8 +345,9 @@ describe("doctor", () => {
         retryable: false,
       },
     });
+    expect(connectEngine).not.toHaveBeenCalled();
     expect(engine.observations).toBe(0);
-    expect(engine.closes).toBe(1);
+    expect(engine.closes).toBe(0);
   });
 
   it("turns a successful diagnosis into a structural failure when session cleanup fails", async () => {
@@ -280,6 +362,7 @@ describe("doctor", () => {
         lock: await loadEngineLock(),
         connectEngine: vi.fn(async () => engine),
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => ({
           accessibility: "granted" as const,
           screen_recording: "granted" as const,
@@ -310,6 +393,7 @@ describe("doctor", () => {
 
   it("preserves the primary diagnosis while separately reporting cleanup failure", async () => {
     const engine = new FakeEngine({ platform: "macos" });
+    Object.defineProperty(engine, "version", { value: "0.22.0" });
     vi.spyOn(engine, "close").mockRejectedValueOnce(
       new Error("cleanup failed at /private/sensitive/session.sock"),
     );
@@ -320,8 +404,9 @@ describe("doctor", () => {
         lock: await loadEngineLock(),
         connectEngine: vi.fn(async () => engine),
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => ({
-          accessibility: "required" as const,
+          accessibility: "granted" as const,
           screen_recording: "granted" as const,
           source: "driver-daemon" as const,
         })),
@@ -331,8 +416,8 @@ describe("doctor", () => {
     expect(report).toMatchObject({
       ok: false,
       error: {
-        code: "permission_required",
-        diagnostic_reason: "desktop_permission_required",
+        code: "engine_version_mismatch",
+        diagnostic_reason: "runtime_version_mismatch",
       },
       cleanup: {
         status: "failed",
@@ -356,6 +441,7 @@ describe("doctor", () => {
         lock: await loadEngineLock(),
         connectEngine: vi.fn(async () => engine),
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => unknownMacPermissions),
       },
     );
@@ -372,6 +458,7 @@ describe("doctor", () => {
   it("does not run macOS probes on a supported Windows host", async () => {
     const engine = new FakeEngine({ platform: "windows" });
     const probeInteractiveSession = vi.fn(async () => true);
+    const verifyRuntimeIdentity = vi.fn(async () => {});
     const probeMacPermissions = vi.fn(async () => unknownMacPermissions);
 
     const report = await runDoctor(
@@ -380,6 +467,7 @@ describe("doctor", () => {
         lock: await loadEngineLock(),
         connectEngine: vi.fn(async () => engine),
         probeInteractiveSession,
+        verifyRuntimeIdentity,
         probeMacPermissions,
       },
     );
@@ -391,6 +479,7 @@ describe("doctor", () => {
       permission_details: unknownMacPermissions,
     });
     expect(probeInteractiveSession).not.toHaveBeenCalled();
+    expect(verifyRuntimeIdentity).not.toHaveBeenCalled();
     expect(probeMacPermissions).not.toHaveBeenCalled();
   });
 
@@ -402,6 +491,7 @@ describe("doctor", () => {
         lock: await loadEngineLock(),
         connectEngine,
         probeInteractiveSession: vi.fn(async () => true),
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => unknownMacPermissions),
       },
     );
@@ -417,51 +507,59 @@ describe("doctor", () => {
 
   it("refuses loginwindow before capture", async () => {
     const engine = new FakeEngine({ platform: "macos" });
+    const connectEngine = vi.fn(async () => engine);
 
     const report = await runDoctor(
       { platform: "darwin", arch: "arm64" },
       {
         lock: await loadEngineLock(),
-        connectEngine: async () => engine,
+        connectEngine,
         probeInteractiveSession: async () => false,
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => unknownMacPermissions),
       },
     );
 
     expect(report).toMatchObject({
       ok: false,
-      engine_connected: true,
-      required_tools_present: true,
+      engine_connected: false,
+      required_tools_present: false,
       desktop_unlocked: false,
       observation_succeeded: false,
       screenshot: null,
       error: { code: "interactive_session_required" },
     });
+    expect(connectEngine).not.toHaveBeenCalled();
     expect(engine.observations).toBe(0);
+    expect(engine.closes).toBe(0);
   });
 
   it("fails closed before capture when the interactive session is unavailable", async () => {
     const engine = new FakeEngine({ platform: "macos" });
+    const connectEngine = vi.fn(async () => engine);
 
     const report = await runDoctor(
       { platform: "darwin", arch: "arm64" },
       {
         lock: await loadEngineLock(),
-        connectEngine: async () => engine,
+        connectEngine,
         probeInteractiveSession: async () => null,
+        verifyRuntimeIdentity: vi.fn(async () => {}),
         probeMacPermissions: vi.fn(async () => unknownMacPermissions),
       },
     );
 
     expect(report).toMatchObject({
       ok: false,
-      engine_connected: true,
-      required_tools_present: true,
+      engine_connected: false,
+      required_tools_present: false,
       desktop_unlocked: null,
       observation_succeeded: false,
       screenshot: null,
       error: { code: "runtime_unavailable" },
     });
+    expect(connectEngine).not.toHaveBeenCalled();
     expect(engine.observations).toBe(0);
+    expect(engine.closes).toBe(0);
   });
 });

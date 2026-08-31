@@ -37,8 +37,10 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
     const combined = `${macos}\n${troubleshooting}`;
 
     expect(combined).toContain("permissions status --json");
-    expect(combined).toContain("local app signature verification");
+    expect(combined).toContain("local app verification");
     expect(combined).toContain("driver-daemon attribution");
+    expect(combined).toContain("before any Cua connection, session, tool, cursor operation");
+    expect(combined).toContain("runtime_missing");
     expect(combined).toContain("computer-use doctor\n");
     expect(combined).toContain("computer-use doctor --json");
     expect(macos).toContain("computer-use config --client hanaagent");
@@ -74,13 +76,21 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
   it("documents an executable exact-source Windows development install instead of a registry release", async () => {
     const windows = await read("../../../docs/installation/windows.md");
 
-    expect(windows).toContain("git checkout --detach <40-lowercase-hex-commit>");
-    expect(windows).toContain("git rev-parse HEAD");
-    expect(windows).toContain("pnpm@9.0.4 build");
-    expect(windows).toContain("npm pack");
-    expect(windows).toContain("npm install --global .\\universal-computer-use-plugin-0.2.6.tgz");
-    expect(windows).toContain("computer-use setup --development");
-    expect(windows).toContain("computer-use doctor --json");
+    expect(windows).toContain("$commit = \"<40-lowercase-hex-commit>\"");
+    expect(windows).toContain("@(\"checkout\", \"--detach\", $commit)");
+    expect(windows).toContain("@(\"rev-parse\", \"HEAD\")");
+    expect(windows).toContain("$ErrorActionPreference = \"Stop\"");
+    expect(windows).toContain("function Invoke-NativeChecked");
+    expect(windows).toContain("if ($LASTEXITCODE -ne 0)");
+    expect(windows).toContain("@(\"status\", \"--porcelain\")");
+    expect(windows).toContain("@(\"--yes\", \"pnpm@9.0.4\", \"build\")");
+    expect(windows).toContain("@(\"pack\", \"--json\")");
+    expect(windows).toContain("ConvertFrom-Json");
+    expect(windows).toContain("$packagePath");
+    expect(windows).toContain("Test-Path -LiteralPath $packagePath");
+    expect(windows).not.toContain("npm install --global .\\universal-computer-use-plugin-0.2.6.tgz");
+    expect(windows).toContain("@(\"setup\", \"--development\")");
+    expect(windows).toContain("@(\"doctor\", \"--json\")");
     expect(windows).not.toContain("npm install --global @universal-computer-use/plugin");
     expect(windows).not.toMatch(/^computer-use setup$/m);
     expect(windows).not.toContain("npm update --global @universal-computer-use/plugin");

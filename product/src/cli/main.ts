@@ -41,6 +41,7 @@ type CliDependencies = Readonly<{
   loadLock: () => Promise<EngineLock>;
   downloader: Downloader;
   runner: ProcessRunner;
+  accessRuntimePath: (path: string) => Promise<void>;
   connectEngine: (lock: EngineLock) => Promise<EnginePort>;
   connectMcpEngine?: (lock: EngineLock) => Promise<EnginePort>;
   nodeExecutablePath: string;
@@ -83,6 +84,7 @@ const defaultDependencies: CliDependencies = {
   loadLock: loadEngineLock,
   downloader: fetchDownloader,
   runner: nodeProcessRunner,
+  accessRuntimePath: access,
   connectEngine: connectDiagnosticEngine,
   connectMcpEngine: connectProductionEngine,
   nodeExecutablePath: process.execPath,
@@ -134,6 +136,7 @@ export async function runCli(
   const [command, ...args] = argv;
   const doctorDependencies = createDoctorDependencyAdapter({
     connectEngine: dependencies.connectEngine,
+    accessRuntimePath: dependencies.accessRuntimePath,
     runner: dependencies.runner,
   });
   if (command === undefined) throw new Error(usage());

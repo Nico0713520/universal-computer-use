@@ -59,6 +59,7 @@ export type DoctorDependencies = Readonly<{
   lock: EngineLock;
   connectEngine: (lock: EngineLock) => Promise<EnginePort>;
   probeInteractiveSession: () => Promise<boolean | null>;
+  verifyRuntimeIdentity: () => Promise<void>;
   probeMacPermissions: () => Promise<MacPermissionProbeResult>;
 }>;
 
@@ -145,29 +146,10 @@ export async function runDoctor(
     return failedBase(dependencies.lock, null, serializedError(error));
   }
 
-  let engine: EnginePort;
-  try {
-    engine = await dependencies.connectEngine(dependencies.lock);
-  } catch (error) {
-    return failedBase(dependencies.lock, platform, serializedError(error));
-  }
-
-  let requiredToolsPresent = false;
   let desktopUnlocked: boolean | null = null;
   let permissionDetails: DoctorPermissionReport = UNKNOWN_PERMISSIONS;
-  let report: DoctorReport;
-  try {
-    if (engine.version !== dependencies.lock.version) {
-      throw new ComputerUseError(
-        "engine_version_mismatch",
-        "Installed Cua version differs from engine.lock.json",
-        "setup",
-        false,
-        { diagnosticReason: "runtime_version_mismatch" },
-      );
-    }
-    requiredToolsPresent = true;
-    if (platform === "macos") {
+  if (platform === "macos") {
+    try {
       const interactiveSession = await dependencies.probeInteractiveSession();
       if (interactiveSession === false) {
         throw new ComputerUseError(
@@ -188,19 +170,56 @@ export async function runDoctor(
         );
       }
       desktopUnlocked = true;
+      await dependencies.verifyRuntimeIdentity();
+      permissionDetails = await dependencies.probeMacPermissions();
+      if (aggregatePermissions(permissionDetails) === "required") {
+        throw new ComputerUseError(
+          "permission_required",
+          "CuaDriver is missing one or more required desktop permissions",
+          "grant_permission",
+          false,
+          { diagnosticReason: "desktop_permission_required" },
+        );
+      }
+    } catch (error) {
+      const failure = serializedError(error);
+      return {
+        ...failedBase(dependencies.lock, platform, failure),
+        desktop_unlocked:
+          failure.code === "interactive_session_required" ? false : desktopUnlocked,
+        permissions: failure.code === "permission_required"
+          ? "required"
+          : aggregatePermissions(permissionDetails),
+        permission_details: permissionDetails,
+      };
     }
-    permissionDetails = platform === "macos"
-      ? await dependencies.probeMacPermissions()
-      : UNKNOWN_PERMISSIONS;
-    if (aggregatePermissions(permissionDetails) === "required") {
+  }
+
+  let engine: EnginePort;
+  try {
+    engine = await dependencies.connectEngine(dependencies.lock);
+  } catch (error) {
+    return {
+      ...failedBase(dependencies.lock, platform, serializedError(error)),
+      desktop_unlocked: desktopUnlocked,
+      permissions: aggregatePermissions(permissionDetails),
+      permission_details: permissionDetails,
+    };
+  }
+
+  let requiredToolsPresent = false;
+  let report: DoctorReport;
+  try {
+    if (engine.version !== dependencies.lock.version) {
       throw new ComputerUseError(
-        "permission_required",
-        "CuaDriver is missing one or more required desktop permissions",
-        "grant_permission",
+        "engine_version_mismatch",
+        "Installed Cua version differs from engine.lock.json",
+        "setup",
         false,
-        { diagnosticReason: "desktop_permission_required" },
+        { diagnosticReason: "runtime_version_mismatch" },
       );
     }
+    requiredToolsPresent = true;
     const observed = await engine.observe(new AbortController().signal);
     if (observed.platform !== platform) {
       throw new ComputerUseError(

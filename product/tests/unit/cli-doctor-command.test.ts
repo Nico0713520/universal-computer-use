@@ -51,6 +51,7 @@ function commandFixture() {
     nodeExecutablePath: process.execPath,
     mcpScriptPath: "/fixture/dist/mcp/main.js",
     productOwnedPaths: [],
+    async accessRuntimePath() {},
     async isEngineInstalled() { return true; },
     async runMcpServer() {},
     doctorOptions: { platform: "darwin" as const, arch: "arm64" },
@@ -67,6 +68,42 @@ function commandFixture() {
 }
 
 describe("computer-use doctor command", () => {
+  it("reports a missing fixed macOS app before signature, permission, or Runtime connection", async () => {
+    const fixture = commandFixture();
+    const engine = new FakeEngine({ platform: "macos" });
+    const runs: string[] = [];
+    fixture.dependencies.connectEngine = vi.fn(async () => engine);
+    fixture.dependencies.runner = {
+      async run(command, args) {
+        runs.push(`${command} ${args.join(" ")}`);
+        return {
+          code: 0,
+          stdout: JSON.stringify({ bundleIdentifier: "com.apple.Finder" }),
+          stderr: "",
+        };
+      },
+    };
+    fixture.dependencies.accessRuntimePath = vi.fn(async () => {
+      throw new Error("ENOENT");
+    });
+
+    const exitCode = await runCli(["doctor", "--json"], fixture.io, fixture.dependencies);
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(fixture.stdout[0]!)).toMatchObject({
+      ok: false,
+      engine_connected: false,
+      error: {
+        code: "runtime_missing",
+        diagnostic_reason: "runtime_missing",
+      },
+    });
+    expect(fixture.dependencies.connectEngine).not.toHaveBeenCalled();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatch(/^\/usr\/bin\/osascript /u);
+    expect(engine.observations).toBe(0);
+  });
+
   it("short-circuits permission and observation when the local CuaDriver signature fails", async () => {
     const fixture = commandFixture();
     const engine = new FakeEngine({ platform: "macos" });
@@ -111,6 +148,7 @@ describe("computer-use doctor command", () => {
       },
     });
     expect(runs.some((value) => value.includes("permissions status --json"))).toBe(false);
+    expect(fixture.dependencies.connectEngine).not.toHaveBeenCalled();
     expect(engine.observations).toBe(0);
   });
 

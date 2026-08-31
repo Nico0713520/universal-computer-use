@@ -33,6 +33,7 @@ describe("computer-use mcp", () => {
           loadLock: loadEngineLock,
           downloader: { async download() {} },
           runner: { async run() { return { code: 0, stdout: "", stderr: "" }; } },
+          async accessRuntimePath() {},
           connectEngine: diagnosticConnect,
           connectMcpEngine: startupConnect,
           nodeExecutablePath: process.execPath,

@@ -15,6 +15,7 @@ function commandFixture(mcpScriptBuilt = true) {
     loadLock: loadEngineLock,
     downloader: { async download() {} },
     runner,
+    async accessRuntimePath() {},
     connectEngine: vi.fn(async () => new FakeEngine()),
     nodeExecutablePath,
     mcpScriptPath,

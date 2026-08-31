@@ -16,19 +16,49 @@ Model rule: this plugin uses the host Agent's current multimodal model. It does 
 The npm registry package is not published. Start from the reviewed public repository and an explicitly selected 40-character lowercase commit. In PowerShell:
 
 ```powershell
-git clone --no-checkout https://github.com/Nico0713520/universal-computer-use
-cd universal-computer-use
-git fetch origin <40-lowercase-hex-commit>
-git checkout --detach <40-lowercase-hex-commit>
-if ((git rev-parse HEAD) -ne "<40-lowercase-hex-commit>") { throw "commit mismatch" }
-cd product
-npx --yes pnpm@9.0.4 install --frozen-lockfile --ignore-scripts
-npx --yes pnpm@9.0.4 build
-npm pack
-npm install --global .\universal-computer-use-plugin-0.2.6.tgz
-computer-use setup --development
-computer-use doctor
-computer-use doctor --json
+$ErrorActionPreference = "Stop"
+
+function Invoke-NativeChecked {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$ArgumentList
+    )
+    & $FilePath @ArgumentList
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native command failed: $FilePath (exit $LASTEXITCODE)"
+    }
+}
+
+$repository = "https://github.com/Nico0713520/universal-computer-use"
+$commit = "<40-lowercase-hex-commit>"
+if ($commit -cnotmatch "^[0-9a-f]{40}$") { throw "Commit must be 40 lowercase hex characters" }
+
+$checkout = Join-Path (Get-Location) "universal-computer-use"
+if (Test-Path -LiteralPath $checkout) { throw "Fresh clone target already exists: $checkout" }
+Invoke-NativeChecked -FilePath "git" -ArgumentList @("clone", "--no-checkout", $repository, $checkout)
+Set-Location -LiteralPath $checkout
+Invoke-NativeChecked -FilePath "git" -ArgumentList @("fetch", "origin", $commit)
+Invoke-NativeChecked -FilePath "git" -ArgumentList @("checkout", "--detach", $commit)
+
+$actualCommit = (Invoke-NativeChecked -FilePath "git" -ArgumentList @("rev-parse", "HEAD") | Out-String).Trim()
+if ($actualCommit -cne $commit) { throw "Detached HEAD does not match the reviewed commit" }
+$workingTree = (Invoke-NativeChecked -FilePath "git" -ArgumentList @("status", "--porcelain") | Out-String).Trim()
+if ($workingTree.Length -ne 0) { throw "Reviewed checkout is not clean" }
+
+Set-Location -LiteralPath (Join-Path $checkout "product")
+Invoke-NativeChecked -FilePath "npx" -ArgumentList @("--yes", "pnpm@9.0.4", "install", "--frozen-lockfile", "--ignore-scripts")
+Invoke-NativeChecked -FilePath "npx" -ArgumentList @("--yes", "pnpm@9.0.4", "build")
+$packJson = Invoke-NativeChecked -FilePath "npm" -ArgumentList @("pack", "--json")
+$packResult = $packJson | ConvertFrom-Json
+if ($packResult.Count -ne 1 -or [string]::IsNullOrWhiteSpace($packResult[0].filename)) { throw "npm pack returned no unique package" }
+$packagePath = Join-Path (Get-Location) $packResult[0].filename
+if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) { throw "Packed artifact is missing" }
+$packagePath = (Resolve-Path -LiteralPath $packagePath).Path
+
+Invoke-NativeChecked -FilePath "npm" -ArgumentList @("install", "--global", $packagePath)
+Invoke-NativeChecked -FilePath "computer-use" -ArgumentList @("setup", "--development")
+Invoke-NativeChecked -FilePath "computer-use" -ArgumentList @("doctor")
+Invoke-NativeChecked -FilePath "computer-use" -ArgumentList @("doctor", "--json")
 ```
 
 The checkout must be clean and detached at the reviewed commit before build. Normal `computer-use setup` remains reserved for a future promoted package and currently fails closed with `engine_not_release_eligible`; it is not an installation step for this development path.

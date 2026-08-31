@@ -87,6 +87,7 @@ describe("computer-use setup command diagnostic wiring", () => {
           },
         },
         runner,
+        async accessRuntimePath() {},
         connectEngine,
         connectMcpEngine,
         nodeExecutablePath: process.execPath,

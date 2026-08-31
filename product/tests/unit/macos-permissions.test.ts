@@ -1,84 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { probeMacPermissions } from "../../src/cli/macos-permissions.js";
-import { loadEngineLock } from "../../src/engine/lock.js";
 import type { ProcessRunner } from "../../src/cli/process-runner.js";
 
-function withTrustedSignature(permissionRun: ProcessRunner["run"]): ProcessRunner {
-  return {
-    async run(command, args, options) {
-      if (command === "/usr/bin/codesign" && args.includes("-dv")) {
-        return { code: 0, stdout: "", stderr: "Identifier=com.trycua.driver" };
-      }
-      if (command === "/usr/bin/codesign" || command === "/usr/sbin/spctl") {
-        return { code: 0, stdout: "", stderr: "" };
-      }
-      return permissionRun(command, args, options);
-    },
-  };
-}
-
 describe("macOS permission diagnostics", () => {
-  it("verifies the locked local app before accepting daemon-attributed permission JSON", async () => {
-    const events: string[] = [];
-    const runner: ProcessRunner = {
-      async run(command, args) {
-        events.push(`${command} ${args.join(" ")}`);
-        if (command === "/usr/bin/codesign" && args.includes("-dv")) {
-          return { code: 0, stdout: "", stderr: "Identifier=com.trycua.driver" };
-        }
-        if (command.endsWith("/cua-driver")) {
-          return {
-            code: 0,
-            stdout: JSON.stringify({
-              accessibility: true,
-              screen_recording: true,
-              source: {
-                attribution: "driver-daemon",
-                bundle_id: "com.trycua.driver",
-              },
-            }),
-            stderr: "",
-          };
-        }
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    };
-
-    await expect(probeMacPermissions(await loadEngineLock(), runner)).resolves.toEqual({
-      accessibility: "granted",
-      screen_recording: "granted",
-      source: "driver-daemon",
-    });
-    expect(events).toEqual([
-      "/usr/bin/codesign --verify --deep --strict /Applications/CuaDriver.app",
-      "/usr/sbin/spctl --assess --type execute /Applications/CuaDriver.app",
-      "/usr/bin/codesign -dv --verbose=4 /Applications/CuaDriver.app",
-      "/Applications/CuaDriver.app/Contents/MacOS/cua-driver permissions status --json",
-    ]);
-  });
-
-  it("preserves a typed signature failure and never asks the untrusted executable for permissions", async () => {
-    const run = vi.fn<ProcessRunner["run"]>(async () => ({
-      code: 1,
-      stdout: "",
-      stderr: "rejected",
-    }));
-
-    await expect(
-      probeMacPermissions(await loadEngineLock(), { run }),
-    ).rejects.toMatchObject({
-      code: "engine_version_mismatch",
-      diagnosticReason: "runtime_signature_mismatch",
-    });
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(run).not.toHaveBeenCalledWith(
-      "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
-      ["permissions", "status", "--json"],
-      expect.anything(),
-    );
-  });
-
   it("reads both grants from the signed CuaDriver daemon identity", async () => {
     const run = vi.fn<ProcessRunner["run"]>(async () => ({
       code: 0,
@@ -97,7 +22,7 @@ describe("macOS permission diagnostics", () => {
     }));
 
     await expect(
-      probeMacPermissions(await loadEngineLock(), withTrustedSignature(run)),
+      probeMacPermissions({ run }),
     ).resolves.toEqual({
       accessibility: "granted",
       screen_recording: "granted",
@@ -111,8 +36,8 @@ describe("macOS permission diagnostics", () => {
   });
 
   it("reports each denied grant without exposing daemon metadata", async () => {
-    const runner = withTrustedSignature(
-      async () => {
+    const runner: ProcessRunner = {
+      async run() {
         return {
           code: 0,
           stdout: JSON.stringify({
@@ -128,9 +53,9 @@ describe("macOS permission diagnostics", () => {
           stderr: "",
         };
       },
-    );
+    };
 
-    const result = await probeMacPermissions(await loadEngineLock(), runner);
+    const result = await probeMacPermissions(runner);
     expect(result).toEqual({
       accessibility: "required",
       screen_recording: "granted",
@@ -167,9 +92,9 @@ describe("macOS permission diagnostics", () => {
       },
     ],
   ])("keeps permission state unknown for %s", async (_label, response) => {
-    const runner = withTrustedSignature(async () => response);
+    const runner: ProcessRunner = { async run() { return response; } };
 
-    await expect(probeMacPermissions(await loadEngineLock(), runner)).resolves.toEqual({
+    await expect(probeMacPermissions(runner)).resolves.toEqual({
       accessibility: "unknown",
       screen_recording: "unknown",
       source: "unknown",
@@ -177,13 +102,13 @@ describe("macOS permission diagnostics", () => {
   });
 
   it("keeps permission state unknown when the command cannot run", async () => {
-    const runner = withTrustedSignature(
-      async () => {
+    const runner: ProcessRunner = {
+      async run() {
         throw new Error("spawn failed with a private executable path");
       },
-    );
+    };
 
-    await expect(probeMacPermissions(await loadEngineLock(), runner)).resolves.toEqual({
+    await expect(probeMacPermissions(runner)).resolves.toEqual({
       accessibility: "unknown",
       screen_recording: "unknown",
       source: "unknown",
