@@ -34,31 +34,6 @@ CUA_HOST_EVIDENCE_FILES=/absolute/private/evidence/kimi.json \
 
 This validation does not itself promote the compatibility table; Task 15 must also validate the same external file during release verification.
 
-## Development-preview acceptance (macOS only)
+## Development Preview scope
 
-This lane checks the current development runtime without claiming release eligibility. From the `product` directory, install dependencies as documented, then run:
-
-```bash
-npx --yes pnpm@9.0.4 build
-node dist/cli/main.js setup --development
-node dist/cli/main.js doctor --json
-node dist/cli/main.js config --client kimi
-```
-
-Stop if build, setup, or doctor fails. Register the absolute Node and MCP script paths printed by the config command, then restart Kimi; registering during an active conversation is insufficient. In the restarted host, record the exact Kimi version and host-reported model ID, and confirm the complete tool inventory is exactly `computer_observe` and `computer_act`.
-
-Run both tasks with the same host-reported model:
-
-1. Ask the Agent to discover and lock the Calculator exact window, use exact-window mode, calculate `37 × 19`, visibly confirm `703`, and stop.
-2. Generate a one-use sentence at run time. Ask the Agent to open TextEdit and enter it through visible GUI interaction, visually confirm it, and stop. Never store the sentence in evidence.
-
-For the two tasks, confirm the first PNG and a later PNG reached the same host-reported model, repeated tool calls occurred, and the Agent made a natural stop with no tool calls after the visible goal. The plugin confirmation count is zero. Record any Kimi host approval, prompt, or policy block truthfully; do not weaken host policy to force a pass.
-
-Write the redacted result outside the repository using `development-evidence.schema.json`, then validate it with:
-
-```bash
-CUA_HOST_DEVELOPMENT_EVIDENCE_FILES=/absolute/private/evidence/kimi-development.json \
-  npx --yes pnpm@9.0.4 exec vitest run tests/contract/host-development-evidence.test.ts
-```
-
-`development-passed` is not `verified` and cannot satisfy release verification. It must not update release evidence, engine eligibility, or the production compatibility table.
+Kimi is not part of the v0.2.6 Mac Agent Preview host set. Its older development lane is retired rather than silently emitting records that no longer match the shared strict contract. This does not change the separate release-evidence runbook above, does not claim incompatibility, and does not claim that Kimi has been tested for v0.2.6.

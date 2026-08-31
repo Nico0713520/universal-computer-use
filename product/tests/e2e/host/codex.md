@@ -34,33 +34,48 @@ CUA_HOST_EVIDENCE_FILES=/absolute/private/evidence/codex.json \
 
 This validation does not itself promote the compatibility table; Task 15 must also validate the same external file during release verification.
 
-## Development-preview acceptance (macOS only)
+## v0.2.6 Mac Agent Preview acceptance (macOS only)
 
-This lane checks the current development runtime without claiming release eligibility. From the `product` directory, install dependencies as documented, then run:
+This development lane is separate from the release lane above. It is privacy-safe external evidence and cannot establish release eligibility.
+
+Run this host alone. Testing is serial: no other Agent may execute UCU actions on the same desktop until this run ends.
+
+Set `UCU_TEST_COMMIT` to the 40-character lowercase commit supplied by the external test prompt. A branch, tag, short SHA, uppercase SHA, or moving `main` reference is invalid. Use a fresh checkout:
 
 ```bash
+git clone https://github.com/Nico0713520/universal-computer-use ucu-codex-preview
+cd ucu-codex-preview
+git checkout --detach "$UCU_TEST_COMMIT"
+test "$(git rev-parse HEAD)" = "$UCU_TEST_COMMIT"
+cd product
+npx --yes pnpm@9.0.4 install --frozen-lockfile
 npx --yes pnpm@9.0.4 build
 node dist/cli/main.js setup --development
 node dist/cli/main.js doctor --json
 node dist/cli/main.js config --client codex
 ```
 
-Stop if build, setup, or doctor fails. Register the absolute Node and MCP script paths printed by the config command, then restart Codex; registering during an active conversation is insufficient. In the restarted host, record the exact Codex version and host-reported model ID, and confirm the complete tool inventory is exactly `computer_observe` and `computer_act`.
+Stop on any failure. macOS Screen Recording and Accessibility authorization must be granted manually. Execute the generated Codex registration command, which pins the absolute Node and MCP entrypoint for direct stdio. Restart Codex and start a new conversation. Confirm the server name is `computer-use` and the complete public tool inventory is exactly `computer_observe` and `computer_act`.
 
-Before the two GUI tasks, quit only the installed CuaDriver through the normal macOS app lifecycle, then start a new Codex conversation. Confirm that MCP startup makes the same signed CuaDriver ready without rerunning setup and without a fixed sleep. Stop this check if macOS asks for missing Screen Recording or Accessibility permission; grant the permission manually, restart CuaDriver and Codex, and record the interruption truthfully. Startup recovery happens before the MCP session and cannot count as a replayed GUI action. A bridge script or shell-driven JSON-RPC session remains diagnostic-only and does not count as direct-host evidence.
+Record the exact Codex version and exact host-reported model identifier. Record the observed host approval/automatic-mode behavior without changing host policy. The plugin confirmation count must be zero for a passing result.
 
-Run both tasks with the same host-reported model:
+The same host-reported model must receive the first PNG and second PNG in one direct stdio loop and continue repeated tool calls from fresh state.
 
-1. Ask the Agent to discover and lock the Calculator exact window, use exact-window mode, calculate `37 × 19`, visibly confirm `703`, and stop.
-2. Generate a one-use sentence at run time. Ask the Agent to open TextEdit and enter it through visible GUI interaction, visually confirm it, and stop. Never store the sentence in evidence.
+1. `calculator`: use only UCU to operate Calculator, visibly prove `37 × 19` and `703`, then make a natural stop.
+2. `unique_input`: write the test-flow value once in the UCU-owned native text Fixture. The independent oracle must prove the complete value and `write_count: 1`. Do not retain the nonce; report only `exact_value_confirmed:true` and `nonce_recorded:false`, then make a natural stop.
+3. `covered_window`: while another application covers the UCU Fixture, prove one semantic background effect and one pixel-window effect against its canvas. A passing record requires the target to remain background and `foreground_fallback:not-needed`, then a natural stop. If foreground fallback is required, record it as `reported` in a truthful failed or blocked record.
 
-For the two tasks, confirm the first PNG and a later PNG reached the same host-reported model, repeated tool calls occurred, and the Agent made a natural stop with no tool calls after the visible goal. The plugin confirmation count is zero. Record any Codex host approval, prompt, or policy block truthfully; do not weaken host policy to force a pass.
+Using any shell bridge, shell-driven JSON-RPC, AppleScript, DOM automation, mental arithmetic instead of the Calculator GUI, or host built-in Computer Use invalidates the result. Diagnostic use of any of these cannot be converted into evidence.
 
-Write the redacted result outside the repository using `development-evidence.schema.json`, then validate it with:
+Write one external JSON file conforming to `development-evidence.schema.json`. It must say `schema_version: 2`, identify the exact repository/commit and versions `0.2.6` / `1.2.0` / `0.22.2`, and record `direct_stdio:true`, `shell_bridge:false`, and `builtin_computer_use:false`. Use `verified-development` only when both PNG turns, the same model/direct loop, all three tasks, exactly-once input, background proof, and natural stop pass. Otherwise use `failed`, `blocked`, or `not-run`.
+
+Return only the privacy-safe v2 JSON report. Do not return or store screenshots, prompts, nonces, tool arguments, clipboard contents, raw image payloads, typed content, paths, environment data, identities, native IDs, refs, or tokens. Limitations must use only the schema's allowlisted categories.
+
+Validate the external file from the exact checkout:
 
 ```bash
-CUA_HOST_DEVELOPMENT_EVIDENCE_FILES=/absolute/private/evidence/codex-development.json \
+CUA_HOST_DEVELOPMENT_EVIDENCE_FILES=/absolute/private/evidence/codex-v2.json \
   npx --yes pnpm@9.0.4 exec vitest run tests/contract/host-development-evidence.test.ts
 ```
 
-`development-passed` is not `verified` and cannot satisfy release verification. It must not update release evidence, engine eligibility, or the production compatibility table.
+This development record cannot satisfy release verification or change the production compatibility table.

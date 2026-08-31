@@ -1,36 +1,56 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://universal-computer-use.invalid/schemas/host-development-evidence-v1.json",
-  "title": "Redacted Computer Use Named-Host Development Loop Evidence",
+  "$id": "https://universal-computer-use.invalid/schemas/host-development-evidence-v2.json",
+  "title": "Redacted Computer Use Mac Agent Preview Host Evidence",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "evidence_type",
     "status",
+    "build",
     "host",
     "system",
-    "tools",
+    "transport",
+    "mcp",
     "image_delivery",
     "continuous_loop",
     "automatic_mode",
     "task_results",
     "natural_stop",
+    "limitations",
     "timestamp",
     "reviewer"
   ],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "evidence_type": { "const": "computer-use-host-development-loop" },
     "status": {
-      "enum": ["development-passed", "failed", "blocked", "not-run"]
+      "enum": ["verified-development", "failed", "blocked", "not-run"]
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "git_commit", "product", "protocol", "engine"],
+      "properties": {
+        "repository": {
+          "const": "https://github.com/Nico0713520/universal-computer-use"
+        },
+        "git_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "product": { "const": "0.2.6" },
+        "protocol": { "const": "1.2.0" },
+        "engine": { "const": "0.22.2" }
+      }
     },
     "host": {
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "version", "reported_model_id"],
       "properties": {
-        "name": { "enum": ["codex", "kimi", "hanaagent", "workbuddy"] },
+        "name": { "enum": ["codex", "hanaagent", "workbuddy"] },
         "version": {
           "type": "string",
           "minLength": 1,
@@ -48,7 +68,7 @@
     "system": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["platform", "os_version", "engine_version"],
+      "required": ["platform", "os_version", "arch"],
       "properties": {
         "platform": { "const": "macos" },
         "os_version": {
@@ -56,22 +76,37 @@
           "pattern": "^[0-9]+(?:\\.[0-9]+){0,3}$",
           "maxLength": 32
         },
-        "engine_version": {
-          "type": "string",
-          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
-        }
+        "arch": { "enum": ["arm64", "x64"] }
       }
     },
-    "tools": {
-      "type": "array",
-      "minItems": 2,
-      "maxItems": 2,
-      "uniqueItems": true,
-      "prefixItems": [
-        { "const": "computer_observe" },
-        { "const": "computer_act" }
-      ],
-      "items": false
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direct_stdio", "shell_bridge", "builtin_computer_use"],
+      "properties": {
+        "direct_stdio": { "type": "boolean" },
+        "shell_bridge": { "type": "boolean" },
+        "builtin_computer_use": { "type": "boolean" }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["server_name", "tools"],
+      "properties": {
+        "server_name": { "const": "computer-use" },
+        "tools": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "prefixItems": [
+            { "const": "computer_observe" },
+            { "const": "computer_act" }
+          ],
+          "items": false
+        }
+      }
     },
     "image_delivery": {
       "type": "object",
@@ -79,14 +114,16 @@
       "required": [
         "mime_type",
         "first_turn_png",
-        "later_turn_png",
-        "same_host_reported_model"
+        "second_turn_png",
+        "same_host_reported_model",
+        "same_direct_loop"
       ],
       "properties": {
         "mime_type": { "const": "image/png" },
         "first_turn_png": { "type": "boolean" },
-        "later_turn_png": { "type": "boolean" },
-        "same_host_reported_model": { "type": "boolean" }
+        "second_turn_png": { "type": "boolean" },
+        "same_host_reported_model": { "type": "boolean" },
+        "same_direct_loop": { "type": "boolean" }
       }
     },
     "continuous_loop": {
@@ -103,7 +140,7 @@
       "additionalProperties": false,
       "required": ["plugin_confirmation_count", "host_authorization"],
       "properties": {
-        "plugin_confirmation_count": { "const": 0 },
+        "plugin_confirmation_count": { "type": "integer", "minimum": 0, "maximum": 1000 },
         "host_authorization": {
           "enum": [
             "no-host-prompt-observed",
@@ -116,27 +153,55 @@
     "task_results": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["calculator", "text_edit"],
+      "required": ["calculator", "unique_input", "covered_window"],
       "properties": {
         "calculator": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["result", "expression", "visible_result", "exact_window_mode"],
+          "required": ["result", "visible_expression", "visible_result", "naturally_stopped"],
           "properties": {
-            "result": { "enum": ["passed", "failed", "not-run"] },
-            "expression": { "const": "37x19" },
+            "result": { "enum": ["pass", "fail", "not-run"] },
+            "visible_expression": { "enum": ["37×19", "not-observed"] },
             "visible_result": { "enum": ["703", "not-observed"] },
-            "exact_window_mode": { "type": "boolean" }
+            "naturally_stopped": { "type": "boolean" }
           }
         },
-        "text_edit": {
+        "unique_input": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["result", "visible_gui_interaction", "one_use_sentence_recorded"],
+          "required": [
+            "result",
+            "exact_value_confirmed",
+            "write_count",
+            "nonce_recorded",
+            "naturally_stopped"
+          ],
           "properties": {
-            "result": { "enum": ["passed", "failed", "not-run"] },
-            "visible_gui_interaction": { "type": "boolean" },
-            "one_use_sentence_recorded": { "const": false }
+            "result": { "enum": ["pass", "fail", "not-run"] },
+            "exact_value_confirmed": { "type": "boolean" },
+            "write_count": { "type": "integer", "minimum": 0, "maximum": 1000 },
+            "nonce_recorded": { "const": false },
+            "naturally_stopped": { "type": "boolean" }
+          }
+        },
+        "covered_window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "result",
+            "semantic_background_effect",
+            "pixel_window_effect",
+            "target_remained_background",
+            "foreground_fallback",
+            "naturally_stopped"
+          ],
+          "properties": {
+            "result": { "enum": ["pass", "fail", "not-run"] },
+            "semantic_background_effect": { "type": "boolean" },
+            "pixel_window_effect": { "type": "boolean" },
+            "target_remained_background": { "type": "boolean" },
+            "foreground_fallback": { "enum": ["not-needed", "reported"] },
+            "naturally_stopped": { "type": "boolean" }
           }
         }
       }
@@ -144,10 +209,26 @@
     "natural_stop": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["result", "tool_calls_after_visible_goal"],
+      "required": ["result", "tool_calls_after_goal"],
       "properties": {
-        "result": { "enum": ["passed", "failed", "not-run"] },
-        "tool_calls_after_visible_goal": { "type": "integer", "minimum": 0, "maximum": 1000 }
+        "result": { "enum": ["pass", "fail", "not-run"] },
+        "tool_calls_after_goal": { "type": "integer", "minimum": 0, "maximum": 1000 }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "host-approval-observed",
+          "foreground-fallback-reported",
+          "host-image-delivery-incomplete",
+          "host-loop-incomplete",
+          "host-automatic-mode-limited",
+          "task-incomplete",
+          "host-policy-blocked"
+        ]
       }
     },
     "timestamp": {
@@ -176,21 +257,38 @@
       "type": "object",
       "required": [
         "status",
+        "transport",
         "image_delivery",
         "continuous_loop",
         "automatic_mode",
         "task_results",
-        "natural_stop"
+        "natural_stop",
+        "limitations"
       ],
       "properties": {
-        "status": { "const": "development-passed" },
+        "status": { "const": "verified-development" },
+        "transport": {
+          "type": "object",
+          "required": ["direct_stdio", "shell_bridge", "builtin_computer_use"],
+          "properties": {
+            "direct_stdio": { "const": true },
+            "shell_bridge": { "const": false },
+            "builtin_computer_use": { "const": false }
+          }
+        },
         "image_delivery": {
           "type": "object",
-          "required": ["first_turn_png", "later_turn_png", "same_host_reported_model"],
+          "required": [
+            "first_turn_png",
+            "second_turn_png",
+            "same_host_reported_model",
+            "same_direct_loop"
+          ],
           "properties": {
             "first_turn_png": { "const": true },
-            "later_turn_png": { "const": true },
-            "same_host_reported_model": { "const": true }
+            "second_turn_png": { "const": true },
+            "same_host_reported_model": { "const": true },
+            "same_direct_loop": { "const": true }
           }
         },
         "continuous_loop": {
@@ -213,34 +311,68 @@
         },
         "task_results": {
           "type": "object",
-          "required": ["calculator", "text_edit"],
+          "required": ["calculator", "unique_input", "covered_window"],
           "properties": {
             "calculator": {
               "type": "object",
-              "required": ["result", "visible_result", "exact_window_mode"],
+              "required": ["result", "visible_expression", "visible_result", "naturally_stopped"],
               "properties": {
-                "result": { "const": "passed" },
+                "result": { "const": "pass" },
+                "visible_expression": { "const": "37×19" },
                 "visible_result": { "const": "703" },
-                "exact_window_mode": { "const": true }
+                "naturally_stopped": { "const": true }
               }
             },
-            "text_edit": {
+            "unique_input": {
               "type": "object",
-              "required": ["result", "visible_gui_interaction", "one_use_sentence_recorded"],
+              "required": [
+                "result",
+                "exact_value_confirmed",
+                "write_count",
+                "nonce_recorded",
+                "naturally_stopped"
+              ],
               "properties": {
-                "result": { "const": "passed" },
-                "visible_gui_interaction": { "const": true },
-                "one_use_sentence_recorded": { "const": false }
+                "result": { "const": "pass" },
+                "exact_value_confirmed": { "const": true },
+                "write_count": { "const": 1 },
+                "nonce_recorded": { "const": false },
+                "naturally_stopped": { "const": true }
+              }
+            },
+            "covered_window": {
+              "type": "object",
+              "required": [
+                "result",
+                "semantic_background_effect",
+                "pixel_window_effect",
+                "target_remained_background",
+                "foreground_fallback",
+                "naturally_stopped"
+              ],
+              "properties": {
+                "result": { "const": "pass" },
+                "semantic_background_effect": { "const": true },
+                "pixel_window_effect": { "const": true },
+                "target_remained_background": { "const": true },
+                "foreground_fallback": { "const": "not-needed" },
+                "naturally_stopped": { "const": true }
               }
             }
           }
         },
         "natural_stop": {
           "type": "object",
-          "required": ["result", "tool_calls_after_visible_goal"],
+          "required": ["result", "tool_calls_after_goal"],
           "properties": {
-            "result": { "const": "passed" },
-            "tool_calls_after_visible_goal": { "const": 0 }
+            "result": { "const": "pass" },
+            "tool_calls_after_goal": { "const": 0 }
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "enum": ["host-approval-observed", "foreground-fallback-reported"]
           }
         }
       }
