@@ -1,5 +1,7 @@
 import { isAbsolute, win32 } from "node:path";
 
+import type { CursorMode } from "../engine/cursor-mode.js";
+
 export type ConfigClient =
   | "generic"
   | "codex"
@@ -36,6 +38,7 @@ export function renderConfig(
   client: ConfigClient,
   nodeExecutablePath: string,
   mcpScriptPath: string,
+  cursorMode: CursorMode = "auto",
 ): ConfigOutput {
   if (
     !isAbsoluteOnAnySupportedPlatform(nodeExecutablePath) ||
@@ -53,7 +56,7 @@ export function renderConfig(
           mcpServers: {
             "computer-use": {
               command: nodeExecutablePath,
-              args: [mcpScriptPath],
+              args: [mcpScriptPath, "--cursor", cursorMode],
             },
           },
         },
@@ -64,7 +67,7 @@ export function renderConfig(
     };
   }
   return {
-    stdout: `${client} mcp add computer-use -- ${commandArgument(nodeExecutablePath)} ${commandArgument(mcpScriptPath)}\n`,
+    stdout: `${client} mcp add computer-use -- ${commandArgument(nodeExecutablePath)} ${commandArgument(mcpScriptPath)} --cursor ${cursorMode}\n`,
     stderr: legacyStderr,
   };
 }

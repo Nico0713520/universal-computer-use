@@ -6,6 +6,10 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { CuaEngine } from "../engine/cua.js";
+import {
+  resolveCursorMode,
+  type CursorMode,
+} from "../engine/cursor-mode.js";
 import { loadEngineLock, type EngineLock } from "../engine/lock.js";
 import type { EnginePort } from "../engine/port.js";
 import {
@@ -43,7 +47,10 @@ type CliDependencies = Readonly<{
   runner: ProcessRunner;
   accessRuntimePath: (path: string) => Promise<void>;
   connectEngine: (lock: EngineLock) => Promise<EnginePort>;
-  connectMcpEngine?: (lock: EngineLock) => Promise<EnginePort>;
+  connectMcpEngine?: (
+    lock: EngineLock,
+    options?: Readonly<{ cursorMode: CursorMode }>,
+  ) => Promise<EnginePort>;
   nodeExecutablePath: string;
   mcpScriptPath: string;
   mcpScriptExists?: () => Promise<boolean>;
@@ -116,9 +123,9 @@ function usage(): string {
     "Usage:",
     "  computer-use setup [--development]",
     "  computer-use doctor [--json]",
-    "  computer-use config --client generic|codex|kimi|hanaagent|workbuddy",
+    "  computer-use config --client generic|codex|kimi|hanaagent|workbuddy [--cursor auto|visible|hidden]",
     "  computer-use uninstall [--engine]",
-    "  computer-use mcp",
+    "  computer-use mcp [--cursor auto|visible|hidden]",
   ].join("\n");
 }
 
@@ -187,7 +194,13 @@ export async function runCli(
   }
 
   if (command === "config") {
-    if (args.length !== 2 || args[0] !== "--client") throw new Error(usage());
+    if (
+      (args.length !== 2 && args.length !== 4) ||
+      args[0] !== "--client" ||
+      (args.length === 4 && args[2] !== "--cursor")
+    ) {
+      throw new Error(usage());
+    }
     const client = args[1];
     if (
       client !== "generic" &&
@@ -207,6 +220,7 @@ export async function runCli(
       client satisfies ConfigClient,
       dependencies.nodeExecutablePath,
       dependencies.mcpScriptPath,
+      resolveCursorMode(args.slice(2), {}),
     );
     io.stdout.write(output.stdout);
     io.stderr.write(output.stderr);
@@ -231,9 +245,12 @@ export async function runCli(
   }
 
   if (command === "mcp") {
-    requireOnly(args, []);
+    const cursorMode = resolveCursorMode(args, process.env);
     const lock = await dependencies.loadLock();
-    const engine = await (dependencies.connectMcpEngine ?? dependencies.connectEngine)(lock);
+    const engine = await (dependencies.connectMcpEngine ?? dependencies.connectEngine)(
+      lock,
+      { cursorMode },
+    );
     await dependencies.runMcpServer(createProductionRuntime(engine));
     return 0;
   }

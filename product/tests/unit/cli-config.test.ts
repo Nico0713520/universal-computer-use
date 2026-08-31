@@ -13,7 +13,10 @@ describe("config", () => {
       `${JSON.stringify(
         {
           mcpServers: {
-            "computer-use": { command: nodeExecutable, args: [mcpScript] },
+            "computer-use": {
+              command: nodeExecutable,
+              args: [mcpScript, "--cursor", "auto"],
+            },
           },
         },
         null,
@@ -22,7 +25,10 @@ describe("config", () => {
     );
     expect(JSON.parse(output.stdout)).toEqual({
       mcpServers: {
-        "computer-use": { command: nodeExecutable, args: [mcpScript] },
+        "computer-use": {
+          command: nodeExecutable,
+          args: [mcpScript, "--cursor", "auto"],
+        },
       },
     });
     expect(output.stderr).toBe(
@@ -31,8 +37,8 @@ describe("config", () => {
   });
 
   it.each([
-    ["codex", `codex mcp add computer-use -- "${nodeExecutable}" "${mcpScript}"\n`],
-    ["kimi", `kimi mcp add computer-use -- "${nodeExecutable}" "${mcpScript}"\n`],
+    ["codex", `codex mcp add computer-use -- "${nodeExecutable}" "${mcpScript}" --cursor auto\n`],
+    ["kimi", `kimi mcp add computer-use -- "${nodeExecutable}" "${mcpScript}" --cursor auto\n`],
   ] as const)("prints the exact %s registration command", (client, expected) => {
     const output = renderConfig(client, nodeExecutable, mcpScript);
     expect(output.stdout).toBe(expected);
@@ -50,7 +56,7 @@ describe("config", () => {
         mcpServers: {
           "computer-use": {
             command: nodeExecutable,
-            args: [mcpScript],
+            args: [mcpScript, "--cursor", "auto"],
           },
         },
       });
@@ -60,7 +66,7 @@ describe("config", () => {
             mcpServers: {
               "computer-use": {
                 command: nodeExecutable,
-                args: [mcpScript],
+                args: [mcpScript, "--cursor", "auto"],
               },
             },
           },
@@ -92,8 +98,21 @@ describe("config", () => {
         "C:\\Program Files\\computer-use\\dist\\mcp\\main.js",
       ).stdout,
     ).toBe(
-      'codex mcp add computer-use -- "C:\\Program Files\\nodejs\\node.exe" "C:\\Program Files\\computer-use\\dist\\mcp\\main.js"\n',
+      'codex mcp add computer-use -- "C:\\Program Files\\nodejs\\node.exe" "C:\\Program Files\\computer-use\\dist\\mcp\\main.js" --cursor auto\n',
     );
+  });
+
+  it("renders an explicit hidden mode without changing the public server name", () => {
+    const output = renderConfig("generic", nodeExecutable, mcpScript, "hidden");
+
+    expect(JSON.parse(output.stdout)).toEqual({
+      mcpServers: {
+        "computer-use": {
+          command: nodeExecutable,
+          args: [mcpScript, "--cursor", "hidden"],
+        },
+      },
+    });
   });
 
   it.each([

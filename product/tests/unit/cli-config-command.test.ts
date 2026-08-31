@@ -49,7 +49,10 @@ describe("computer-use config command", () => {
     });
 
     expect(stdout.join("")).toContain(
-      "computer-use config --client generic|codex|kimi|hanaagent|workbuddy",
+      "computer-use config --client generic|codex|kimi|hanaagent|workbuddy [--cursor auto|visible|hidden]",
+    );
+    expect(stdout.join("")).toContain(
+      "computer-use mcp [--cursor auto|visible|hidden]",
     );
   });
 
@@ -70,7 +73,7 @@ describe("computer-use config command", () => {
         mcpServers: {
           "computer-use": {
             command: nodeExecutablePath,
-            args: [mcpScriptPath],
+            args: [mcpScriptPath, "--cursor", "auto"],
           },
         },
       });
@@ -116,5 +119,25 @@ describe("computer-use config command", () => {
     ).rejects.toThrow("unsupported config client: unknown");
     expect(fixture.stdout).toEqual([]);
     expect(fixture.stderr).toEqual([]);
+  });
+
+  it("passes an explicit Cursor mode to generated host configuration", async () => {
+    const fixture = commandFixture();
+
+    const exitCode = await runCli(
+      ["config", "--client", "hanaagent", "--cursor", "hidden"],
+      fixture.io,
+      fixture.dependencies,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(fixture.stdout[0]!)).toEqual({
+      mcpServers: {
+        "computer-use": {
+          command: nodeExecutablePath,
+          args: [mcpScriptPath, "--cursor", "hidden"],
+        },
+      },
+    });
   });
 });
