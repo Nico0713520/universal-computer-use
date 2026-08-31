@@ -286,8 +286,11 @@ async function main() {
       }
       throw new CursorAbFailure("cursor_ab_failed:evidence_missing_or_invalid");
     }
+    if (childFailed) {
+      await rm(selected.path, { force: true });
+      throw new CursorAbFailure("cursor_ab_failed:lane_failed");
+    }
     preserve = true;
-    if (childFailed) throw new CursorAbFailure("cursor_ab_failed:lane_failed");
     process.stdout.write(`${JSON.stringify({ status: "passed", evidence_path: selected.path })}\n`);
   } finally {
     if (!preserve && selected.temporaryRoot !== undefined) {

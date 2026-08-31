@@ -151,6 +151,20 @@ describe("macOS Cursor A/B launcher", () => {
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual(evidence());
   });
 
+  it("removes passed evidence when the child exits nonzero", async () => {
+    const path = await fixturePath();
+    const result = await run(path, undefined, {
+      CUA_CURSOR_AB_TEST_CHILD_EXIT_CODE: "1",
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "cursor_ab_failed:lane_failed\n",
+    });
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("preserves a strict child diagnostic and emits only its stable error code", async () => {
     const path = await fixturePath();
     const diagnosticPath = `${path}.diagnostic.json`;
