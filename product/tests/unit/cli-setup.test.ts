@@ -85,6 +85,11 @@ const healthyDoctor = {
   required_tools_present: true,
   desktop_unlocked: true,
   permissions: "unknown" as const,
+  permission_details: {
+    accessibility: "unknown" as const,
+    screen_recording: "unknown" as const,
+    source: "unknown" as const,
+  },
   observation_succeeded: true,
   screenshot: { width: 100, height: 80 },
 };

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   parseAppList,
+  parseDesktopObservation,
   parseHealth,
   parseLaunchResult,
   parseWindowList,
@@ -100,6 +101,41 @@ function windowState(): Record<string, unknown> {
 }
 
 describe("Cua 0.22.2 raw JSON parsers", () => {
+  it.each([
+    "permission_required",
+    "accessibility_permission_required",
+    "screen_recording_permission_required",
+  ])("preserves the %s desktop capture failure for doctor", (errorCode) => {
+    const failure = result({});
+    failure.isError = true;
+    failure.errorCode = errorCode;
+
+    expect(() => parseDesktopObservation(failure)).toThrowError(
+      expect.objectContaining({
+        code: "permission_required",
+        recovery: "grant_permission",
+        retryable: false,
+      }),
+    );
+  });
+
+  it.each(["desktop_locked", "session_0"])(
+    "preserves the %s desktop failure as a non-interactive session",
+    (errorCode) => {
+      const failure = result({});
+      failure.isError = true;
+      failure.errorCode = errorCode;
+
+      expect(() => parseDesktopObservation(failure)).toThrowError(
+        expect.objectContaining({
+          code: "interactive_session_required",
+          recovery: "stop",
+          retryable: false,
+        }),
+      );
+    },
+  );
+
   it("keeps native app/window identifiers internal while parsing locked discovery fixtures", async () => {
     const apps = parseAppList(result(await fixture(fixtureUrls.apps)), "macos");
     const windows = parseWindowList(

@@ -118,6 +118,13 @@ const LaunchSchema = z.object({
   }).passthrough(),
 }).passthrough();
 
+const DESKTOP_PERMISSION_ERRORS = new Set([
+  "permission_required",
+  "accessibility_permission_required",
+  "screen_recording_permission_required",
+]);
+const NON_INTERACTIVE_DESKTOP_ERRORS = new Set(["desktop_locked", "session_0"]);
+
 function contractError(message: string): ComputerUseError {
   return new ComputerUseError("engine_contract_changed", message, "doctor", false);
 }
@@ -146,6 +153,28 @@ function onePng(result: ToolResult, context: string): Readonly<{ mimeType: "imag
 
 export function parseDesktopObservation(result: ToolResult): EngineDesktopObservation {
   if (result.isError) {
+    if (
+      result.errorCode !== undefined &&
+      DESKTOP_PERMISSION_ERRORS.has(result.errorCode)
+    ) {
+      throw new ComputerUseError(
+        "permission_required",
+        "CuaDriver requires desktop capture permissions",
+        "grant_permission",
+        false,
+      );
+    }
+    if (
+      result.errorCode !== undefined &&
+      NON_INTERACTIVE_DESKTOP_ERRORS.has(result.errorCode)
+    ) {
+      throw new ComputerUseError(
+        "interactive_session_required",
+        "The desktop is locked or non-interactive",
+        "stop",
+        false,
+      );
+    }
     throw new ComputerUseError("capture_failed", "Cua failed to capture the desktop", "observe_again", true);
   }
   let value: unknown;

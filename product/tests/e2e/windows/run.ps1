@@ -370,8 +370,12 @@ Assert-ExactKeys $doctor @(
   "ok", "product_version", "protocol_version", "platform", "supported_platform",
   "expected_engine_version", "reported_engine_version", "engine_connected",
   "required_tools_present", "desktop_unlocked", "permissions",
+  "permission_details",
   "observation_succeeded", "screenshot"
 ) "doctor report"
+Assert-ExactKeys $doctor.permission_details @(
+  "accessibility", "screen_recording", "source"
+) "doctor permission details"
 if (
   $doctor.ok -ne $true -or $doctor.platform -ne "windows" -or
   $doctor.reported_engine_version -ne $lock.version -or
@@ -384,6 +388,13 @@ if ($doctor.desktop_unlocked -ne $true -or $doctor.observation_succeeded -ne $tr
 }
 if ($doctor.permissions -notin @("granted", "required", "unknown")) {
   Stop-Lane "Runtime returned an unknown permission classification"
+}
+if (
+  $doctor.permission_details.accessibility -notin @("granted", "required", "unknown") -or
+  $doctor.permission_details.screen_recording -notin @("granted", "required", "unknown") -or
+  $doctor.permission_details.source -notin @("driver-daemon", "observation", "unknown")
+) {
+  Stop-Lane "Runtime returned invalid permission details"
 }
 $screenshotWidth = Assert-Integer $doctor.screenshot.width "doctor screenshot width" 1280 100000
 $screenshotHeight = Assert-Integer $doctor.screenshot.height "doctor screenshot height" 800 100000

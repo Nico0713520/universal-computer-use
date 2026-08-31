@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 
 import { CuaEngine } from "../engine/cua.js";
 import { loadEngineLock, type EngineLock } from "../engine/lock.js";
+import type { EnginePort } from "../engine/port.js";
+import {
+  boundedRuntimeStartupWait,
+  createRuntimeConnector,
+} from "../engine/runtime-startup.js";
 import { ComputerUseError, ERROR_CODES } from "../errors.js";
 import {
   connectProductionEngine,
@@ -14,9 +19,11 @@ import {
   runStdioServer,
 } from "../mcp/main.js";
 import { renderConfig, type ConfigClient } from "./config.js";
+import { renderDoctorHuman } from "./doctor-output.js";
 import { isDirectEntryPoint } from "./entrypoint.js";
-import { runDoctor } from "./doctor.js";
+import { runDoctor, type DoctorOptions } from "./doctor.js";
 import { probeMacInteractiveSession } from "./interactive-session.js";
+import { probeMacPermissions } from "./macos-permissions.js";
 import {
   fetchDownloader,
   nodeProcessRunner,
@@ -35,13 +42,14 @@ type CliDependencies = Readonly<{
   loadLock: () => Promise<EngineLock>;
   downloader: Downloader;
   runner: ProcessRunner;
-  connectEngine: typeof CuaEngine.connect;
-  connectMcpEngine?: typeof CuaEngine.connect;
+  connectEngine: (lock: EngineLock) => Promise<EnginePort>;
+  connectMcpEngine?: (lock: EngineLock) => Promise<EnginePort>;
   nodeExecutablePath: string;
   mcpScriptPath: string;
   productOwnedPaths: readonly string[];
   isEngineInstalled: () => Promise<boolean>;
   runMcpServer: typeof runStdioServer;
+  doctorOptions?: DoctorOptions;
 }>;
 
 const mcpScriptPath = fileURLToPath(new URL("../mcp/main.js", import.meta.url));
@@ -58,11 +66,24 @@ function defaultEnginePath(): string {
   );
 }
 
+function connectDiagnosticEngine(lock: EngineLock): Promise<CuaEngine> {
+  // A CLI doctor invocation gets its own bounded startup attempt. Reusing the
+  // MCP connector would reuse its cached promise and could report stale state.
+  return createRuntimeConnector({
+    platform: process.platform,
+    connect: (candidate) => CuaEngine.connect(candidate),
+    access,
+    runner: nodeProcessRunner,
+    wait: boundedRuntimeStartupWait,
+    now: Date.now,
+  })(lock);
+}
+
 const defaultDependencies: CliDependencies = {
   loadLock: loadEngineLock,
   downloader: fetchDownloader,
   runner: nodeProcessRunner,
-  connectEngine: CuaEngine.connect,
+  connectEngine: connectDiagnosticEngine,
   connectMcpEngine: connectProductionEngine,
   nodeExecutablePath: process.execPath,
   mcpScriptPath,
@@ -122,12 +143,14 @@ export async function runCli(
         runner: dependencies.runner,
         runDoctor: () =>
           runDoctor(
-            {},
+            dependencies.doctorOptions ?? {},
             {
               lock,
               connectEngine: dependencies.connectEngine,
               probeInteractiveSession: () =>
                 probeMacInteractiveSession(dependencies.runner),
+              probeMacPermissions: () =>
+                probeMacPermissions(dependencies.runner),
             },
           ),
       },
@@ -144,15 +167,20 @@ export async function runCli(
     requireOnly(args, ["--json"]);
     const lock = await dependencies.loadLock();
     const report = await runDoctor(
-      {},
+      dependencies.doctorOptions ?? {},
       {
         lock,
         connectEngine: dependencies.connectEngine,
         probeInteractiveSession: () =>
           probeMacInteractiveSession(dependencies.runner),
+        probeMacPermissions: () => probeMacPermissions(dependencies.runner),
       },
     );
-    io.stdout.write(`${JSON.stringify(report)}\n`);
+    io.stdout.write(
+      args.includes("--json")
+        ? `${JSON.stringify(report)}\n`
+        : `${renderDoctorHuman(report)}\n`,
+    );
     return report.ok ? 0 : 1;
   }
 
