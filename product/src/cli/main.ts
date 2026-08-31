@@ -200,7 +200,7 @@ export async function runCli(
     }
     if (!(await (dependencies.mcpScriptExists?.() ?? Promise.resolve(true)))) {
       throw new Error(
-        `MCP build output is missing: ${dependencies.mcpScriptPath}. Run the package build first.`,
+        "MCP build output is missing. Run the package build before generating host configuration.",
       );
     }
     const output = renderConfig(

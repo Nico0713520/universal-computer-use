@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runCli } from "../../src/cli/main.js";
+import { runCli, serializeCliFailure } from "../../src/cli/main.js";
 import { loadEngineLock } from "../../src/engine/lock.js";
 import { FakeEngine } from "../helpers/fake-engine.js";
 
 const nodeExecutablePath = "/opt/node/bin/node";
 const mcpScriptPath = "/opt/universal-computer-use/dist/mcp/main.js";
 
-function commandFixture(mcpScriptBuilt = true) {
+function commandFixture(
+  mcpScriptBuilt = true,
+  builtMcpScriptPath = mcpScriptPath,
+) {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const runner = { run: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })) };
@@ -18,7 +21,7 @@ function commandFixture(mcpScriptBuilt = true) {
     async accessRuntimePath() {},
     connectEngine: vi.fn(async () => new FakeEngine()),
     nodeExecutablePath,
-    mcpScriptPath,
+    mcpScriptPath: builtMcpScriptPath,
     mcpScriptExists: vi.fn(async () => mcpScriptBuilt),
     productOwnedPaths: [],
     async isEngineInstalled() { return true; },
@@ -77,15 +80,29 @@ describe("computer-use config command", () => {
   );
 
   it("fails closed when the built MCP entrypoint is missing", async () => {
-    const fixture = commandFixture(false);
+    const sensitivePath = "/Users/alice/secret/path/dist/mcp/main.js";
+    const fixture = commandFixture(false, sensitivePath);
 
-    await expect(
-      runCli(
+    let failure: unknown;
+    try {
+      await runCli(
         ["config", "--client", "hanaagent"],
         fixture.io,
         fixture.dependencies,
-      ),
-    ).rejects.toThrow("MCP build output is missing");
+      );
+    } catch (error) {
+      failure = error;
+    }
+    const serialized = serializeCliFailure(failure);
+
+    expect(serialized).toEqual({
+      ok: false,
+      error: {
+        code: "command_failed",
+        message: "MCP build output is missing. Run the package build before generating host configuration.",
+      },
+    });
+    expect(JSON.stringify(serialized)).not.toMatch(/\/Users\/alice|secret|\/path|mcp\.main\.js/iu);
     expect(fixture.stdout).toEqual([]);
     expect(fixture.stderr).toEqual([]);
     expect(fixture.runner.run).not.toHaveBeenCalled();

@@ -13,6 +13,8 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+const SAFE_REVIEWER_ID = /^[A-Za-z0-9]+(?:[._+-][A-Za-z0-9]+)*$/u;
+
 function taskResults(value: JsonRecord): string[] {
   const tasks = child(value, "task_results");
   return ["calculator", "unique_input", "covered_window"]
@@ -109,6 +111,9 @@ export function hostDevelopmentEvidenceSemanticErrors(value: unknown): string[] 
   if (host.reported_model_id === "example/model-token") errors.push("external_placeholder_model");
   if (system.os_version === "0.0.0") errors.push("external_placeholder_os_version");
   if (reviewer.id === "synthetic-example") errors.push("external_placeholder_reviewer");
+  if (typeof reviewer.id !== "string" || !SAFE_REVIEWER_ID.test(reviewer.id)) {
+    errors.push("unsafe_external_reviewer_id");
+  }
 
   const limitations = strings(value.limitations);
   if (value.status === "verified-development") {

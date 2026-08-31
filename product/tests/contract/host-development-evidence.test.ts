@@ -261,6 +261,31 @@ describe("named-host development evidence v2", () => {
     }
   });
 
+  it("accepts a non-sensitive reviewer token and rejects identity, URI, path, or whitespace shapes", async () => {
+    const parser = await evidenceParser();
+    const safe = completeDevelopmentEvidence();
+    (safe.reviewer as JsonRecord).id = "independent-reviewer-7";
+    expect(parser.safeParse(safe).success).toBe(true);
+
+    for (const reviewerId of [
+      "reviewer@example.com",
+      "https://example.com/reviewer",
+      "file:///Users/alice/reviewer",
+      "/Users/alice/reviewer",
+      "C:\\Users\\alice\\reviewer",
+      "reviewer seven",
+      " reviewer-7",
+      "reviewer-7 ",
+    ]) {
+      const candidate = completeDevelopmentEvidence();
+      (candidate.reviewer as JsonRecord).id = reviewerId;
+      expect(parser.safeParse(candidate).success, reviewerId).toBe(false);
+      expect(hostDevelopmentEvidenceSemanticErrors(candidate), reviewerId).toContain(
+        "unsafe_external_reviewer_id",
+      );
+    }
+  });
+
   it("supports exact host display identifiers while rejecting path, URI, and email shapes", async () => {
     const parser = await evidenceParser();
     const displayedVersion = completeDevelopmentEvidence();
