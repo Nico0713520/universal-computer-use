@@ -163,8 +163,7 @@ export async function runDoctor(
         "Installed Cua version differs from engine.lock.json",
         "setup",
         false,
-        false,
-        "runtime_version_mismatch",
+        { diagnosticReason: "runtime_version_mismatch" },
       );
     }
     requiredToolsPresent = true;
@@ -176,8 +175,7 @@ export async function runDoctor(
           "The macOS login window is active",
           "stop",
           false,
-          false,
-          "interactive_session_locked",
+          { diagnosticReason: "interactive_session_locked" },
         );
       }
       if (interactiveSession === null) {
@@ -186,8 +184,7 @@ export async function runDoctor(
           "The macOS interactive session could not be verified",
           "doctor",
           true,
-          false,
-          "interactive_session_unknown",
+          { diagnosticReason: "interactive_session_unknown" },
         );
       }
       desktopUnlocked = true;
@@ -201,8 +198,7 @@ export async function runDoctor(
         "CuaDriver is missing one or more required desktop permissions",
         "grant_permission",
         false,
-        false,
-        "desktop_permission_required",
+        { diagnosticReason: "desktop_permission_required" },
       );
     }
     const observed = await engine.observe(new AbortController().signal);
@@ -212,8 +208,7 @@ export async function runDoctor(
         "Runtime desktop platform differs from the current host",
         "setup",
         false,
-        false,
-        "runtime_version_mismatch",
+        { diagnosticReason: "runtime_version_mismatch" },
       );
     }
     report = {
@@ -278,17 +273,14 @@ export async function runDoctor(
   try {
     await engine.close();
     return { ...report, cleanup: { status: "succeeded" } };
-  } catch (error) {
+  } catch {
     const cleanupFailure = serializedError(
       new ComputerUseError(
         "runtime_unavailable",
-        error instanceof Error
-          ? error.message
-          : "Diagnostic session cleanup failed",
+        "Diagnostic session cleanup failed",
         "doctor",
         true,
-        false,
-        "session_cleanup_failed",
+        { diagnosticReason: "session_cleanup_failed" },
       ),
     );
     return {

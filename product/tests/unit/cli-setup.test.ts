@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { serializeCliFailure } from "../../src/cli/main.js";
 import type { EngineLock } from "../../src/engine/lock.js";
 import { loadEngineLock } from "../../src/engine/lock.js";
 import {
@@ -204,16 +205,37 @@ describe("setup", () => {
     const lock = await fixtureLock();
     lock.platforms.macos.installer_files[1].sha256 = "0".repeat(64);
 
-    await expect(
-      runSetup(
+    let failure: unknown;
+    try {
+      await runSetup(
         { development: true, platform: "darwin", arch: "x64" },
         {
           lock,
           ...boundary,
           runDoctor: vi.fn(async () => healthyDoctor),
         },
-      ),
-    ).rejects.toThrow("checksum mismatch");
+      );
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: "engine_version_mismatch",
+      message: "Downloaded Cua installer failed locked checksum verification",
+      recovery: "setup",
+      retryable: false,
+      diagnosticReason: "runtime_integrity_mismatch",
+    });
+    expect(serializeCliFailure(failure)).toEqual({
+      ok: false,
+      error: {
+        code: "engine_version_mismatch",
+        message: "Downloaded Cua installer failed locked checksum verification",
+        recovery: "setup",
+        retryable: false,
+        diagnostic_reason: "runtime_integrity_mismatch",
+      },
+    });
+    expect(JSON.stringify(serializeCliFailure(failure))).not.toContain("computer-use-setup-");
     expect(boundary.runs).toEqual([]);
     const tempDirectory = dirname(boundary.downloads[0].destination);
     await expect(access(tempDirectory)).rejects.toThrow();

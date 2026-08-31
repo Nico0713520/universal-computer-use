@@ -85,7 +85,15 @@ function assertSafeInstallerFilename(name: string): void {
 
 async function verifySha256(path: string, expected: string): Promise<void> {
   const actual = createHash("sha256").update(await readFile(path)).digest("hex");
-  if (actual !== expected) throw new Error(`checksum mismatch: ${path}`);
+  if (actual !== expected) {
+    throw new ComputerUseError(
+      "engine_version_mismatch",
+      "Downloaded Cua installer failed locked checksum verification",
+      "setup",
+      false,
+      { diagnosticReason: "runtime_integrity_mismatch" },
+    );
+  }
 }
 
 async function requireSuccess(

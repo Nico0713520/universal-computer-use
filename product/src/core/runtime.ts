@@ -315,7 +315,7 @@ export class ComputerUseRuntime {
           "Window snapshot resolved to a non-window action",
           "doctor",
           false,
-          true,
+          { snapshotConsumed: true },
         );
       }
       const window = this.targets.resolveWindow(snapshot.target.windowRef);
@@ -772,8 +772,12 @@ export class ComputerUseRuntime {
       error.message,
       error.recovery,
       error.retryable,
-      true,
-      error.diagnosticReason,
+      {
+        snapshotConsumed: true,
+        ...(error.diagnosticReason === undefined
+          ? {}
+          : { diagnosticReason: error.diagnosticReason }),
+      },
     );
   }
 

@@ -52,7 +52,15 @@ export type ComputerUseDiagnosticReason =
   | "capture_failed"
   | "session_cleanup_failed";
 
+export type ComputerUseErrorOptions = Readonly<{
+  snapshotConsumed?: boolean;
+  diagnosticReason?: ComputerUseDiagnosticReason;
+}>;
+
 export class ComputerUseError extends Error {
+  readonly snapshotConsumed: boolean;
+  readonly diagnosticReason?: ComputerUseDiagnosticReason;
+
   constructor(
     public readonly code: ComputerUseErrorCode,
     message: string,
@@ -66,9 +74,10 @@ export class ComputerUseError extends Error {
       | "use_foreground"
       | "stop",
     public readonly retryable: boolean,
-    public readonly snapshotConsumed = false,
-    public readonly diagnosticReason?: ComputerUseDiagnosticReason,
+    options: ComputerUseErrorOptions = {},
   ) {
     super(message);
+    this.snapshotConsumed = options.snapshotConsumed ?? false;
+    this.diagnosticReason = options.diagnosticReason;
   }
 }

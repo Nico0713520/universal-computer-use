@@ -410,8 +410,7 @@ describe("public protocol", () => {
       "Screen Recording is denied",
       "grant_permission",
       false,
-      false,
-      "screen_recording_permission_required",
+      { diagnosticReason: "screen_recording_permission_required" },
     );
     expect(diagnostic.diagnosticReason).toBe(
       "screen_recording_permission_required",

@@ -6,6 +6,7 @@ import {
   ActionRoute,
   CaptureScope,
   CuaDriver,
+  DriverError,
   EffectiveScope,
   type ToolResult,
 } from "@trycua/cua-driver";
@@ -13,6 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CuaEngine } from "../../src/engine/cua.js";
 import { loadEngineLock } from "../../src/engine/lock.js";
+import { createRuntimeConnector } from "../../src/engine/runtime-startup.js";
 import { TargetRegistry } from "../../src/target-registry.js";
 import { fakeSdk } from "../helpers/fake-cua-sdk.js";
 
@@ -50,7 +52,9 @@ describe("Cua daemon connection", () => {
   it("maps an asynchronous transport failure during metadata to runtime_unavailable", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
-    vi.spyOn(sdk, "metadata").mockRejectedValueOnce(new Error("DriverError.Transport"));
+    vi.spyOn(sdk, "metadata").mockRejectedValueOnce(
+      new DriverError.Transport({ socketPath: "/private/fixture.sock", reason: "closed" }),
+    );
     vi.spyOn(CuaDriver, "connect").mockReturnValueOnce(sdk as never);
 
     await expect(CuaEngine.connect(lock)).rejects.toMatchObject({
@@ -63,7 +67,9 @@ describe("Cua daemon connection", () => {
   it("maps a transport loss during Cursor bootstrap to runtime_unavailable", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
-    vi.spyOn(sdk, "callTool").mockRejectedValueOnce(new Error("DriverError.Transport"));
+    vi.spyOn(sdk, "callTool").mockRejectedValueOnce(
+      new DriverError.Transport({ socketPath: "/private/fixture.sock", reason: "closed" }),
+    );
     vi.spyOn(CuaDriver, "connect").mockReturnValueOnce(sdk as never);
 
     await expect(CuaEngine.connect(lock)).rejects.toMatchObject({
@@ -72,6 +78,76 @@ describe("Cua daemon connection", () => {
       retryable: true,
     });
     expect(sdk.endSessionCalls).toHaveLength(2);
+  });
+
+  it("preserves a rejected startSession transport failure for connection recovery", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
+    vi.spyOn(sdk, "startSession").mockRejectedValueOnce(
+      new DriverError.Transport({ socketPath: "/private/fixture.sock", reason: "closed" }),
+    );
+    vi.spyOn(CuaDriver, "connect").mockReturnValueOnce(sdk as never);
+
+    await expect(CuaEngine.connect(lock)).rejects.toMatchObject({
+      code: "runtime_unavailable",
+      recovery: "doctor",
+      retryable: true,
+      diagnosticReason: "runtime_startup_failed",
+    });
+    expect(sdk.endSessionCalls).toHaveLength(1);
+  });
+
+  it("runs bounded startup recovery after startSession loses its transport", async () => {
+    const lock = await loadEngineLock();
+    const failing = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
+    const healthy = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
+    vi.spyOn(failing, "startSession").mockRejectedValueOnce(
+      new DriverError.Transport({ socketPath: "/private/fixture.sock", reason: "closed" }),
+    );
+    vi.spyOn(CuaDriver, "connect")
+      .mockReturnValueOnce(failing as never)
+      .mockReturnValueOnce(healthy as never);
+    const runner = {
+      run: vi.fn(async (command: string, args: readonly string[]) => ({
+        code: 0,
+        stdout: command === "/usr/bin/codesign" && args.includes("-dv")
+          ? "Identifier=com.trycua.driver"
+          : "",
+        stderr: "",
+      })),
+    };
+    const connector = createRuntimeConnector({
+      platform: "darwin",
+      connect: (candidate) => CuaEngine.connect(candidate),
+      access: vi.fn(async () => undefined),
+      runner,
+      wait: vi.fn(async () => undefined),
+      now: () => 0,
+    });
+
+    const engine = await connector(lock);
+
+    expect(runner.run).toHaveBeenCalledWith(
+      "/usr/bin/open",
+      ["-g", "/Applications/CuaDriver.app", "--args", "serve"],
+      { timeoutMs: 30_000 },
+    );
+    expect(failing.endSessionCalls).toHaveLength(1);
+    await engine.close();
+  });
+
+  it("classifies a non-transport startSession rejection as session initialization failure", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
+    vi.spyOn(sdk, "startSession").mockRejectedValueOnce(new Error("invalid scope"));
+
+    await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
+      code: "engine_version_mismatch",
+      recovery: "setup",
+      retryable: false,
+      diagnosticReason: "session_initialization_failed",
+    });
+    expect(sdk.endSessionCalls).toHaveLength(1);
   });
 
   it("rejects a daemon version that differs from the lock", async () => {

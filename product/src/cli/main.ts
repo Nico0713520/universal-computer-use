@@ -12,7 +12,7 @@ import {
   boundedRuntimeStartupWait,
   createRuntimeConnector,
 } from "../engine/runtime-startup.js";
-import { ComputerUseError, ERROR_CODES } from "../errors.js";
+import { ComputerUseError } from "../errors.js";
 import {
   connectProductionEngine,
   createProductionRuntime,
@@ -218,12 +218,37 @@ export async function runCli(
   throw new Error(usage());
 }
 
-function errorCode(error: unknown): string {
-  if (error instanceof ComputerUseError) return error.code;
-  if (error instanceof Error && ERROR_CODES.some((code) => error.message.includes(code))) {
-    return ERROR_CODES.find((code) => error.message.includes(code)) ?? "command_failed";
+export function serializeCliFailure(error: unknown): Readonly<{
+  ok: false;
+  error: Readonly<{
+    code: string;
+    message: string;
+    recovery?: ComputerUseError["recovery"];
+    retryable?: boolean;
+    diagnostic_reason?: ComputerUseError["diagnosticReason"];
+  }>;
+}> {
+  if (error instanceof ComputerUseError) {
+    return {
+      ok: false,
+      error: {
+        code: error.code,
+        message: error.message,
+        recovery: error.recovery,
+        retryable: error.retryable,
+        ...(error.diagnosticReason === undefined
+          ? {}
+          : { diagnostic_reason: error.diagnosticReason }),
+      },
+    };
   }
-  return "command_failed";
+  return {
+    ok: false,
+    error: {
+      code: "command_failed",
+      message: error instanceof Error ? error.message : String(error),
+    },
+  };
 }
 
 if (isDirectEntryPoint(process.argv[1], import.meta.url)) {
@@ -233,7 +258,7 @@ if (isDirectEntryPoint(process.argv[1], import.meta.url)) {
     })
     .catch((error: unknown) => {
       process.stderr.write(
-        `${JSON.stringify({ ok: false, error: { code: errorCode(error), message: error instanceof Error ? error.message : String(error) } })}\n`,
+        `${JSON.stringify(serializeCliFailure(error))}\n`,
       );
       process.exitCode = 1;
     });

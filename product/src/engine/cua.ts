@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   CaptureScope,
   CuaDriver,
+  DriverError,
+  DriverError_Tags,
   EffectiveScope,
   type CuaDriverLike,
 } from "@trycua/cua-driver";
@@ -38,6 +40,10 @@ export type CuaSdkLike = Pick<
 
 function abortError(): DOMException {
   return new DOMException("The operation was aborted", "AbortError");
+}
+
+function isCuaTransportError(error: unknown): boolean {
+  return DriverError.instanceOf(error) && error.tag === DriverError_Tags.Transport;
 }
 
 function cancellableWait(waitMs: number, signal: AbortSignal): Promise<void> {
@@ -94,8 +100,7 @@ export class CuaEngine implements EnginePort {
         "Cua Driver daemon is unavailable",
         "doctor",
         true,
-        false,
-        "runtime_startup_failed",
+        { diagnosticReason: "runtime_startup_failed" },
       );
     }
 
@@ -103,17 +108,13 @@ export class CuaEngine implements EnginePort {
       return await CuaEngine.fromSdk(sdk, lock);
     } catch (error) {
       if (error instanceof ComputerUseError) throw error;
-      const detail = error instanceof Error
-        ? `${error.name} ${error.message}`
-        : String(error);
-      if (!/DriverError\.Transport|\bTransport\b/u.test(detail)) throw error;
+      if (!isCuaTransportError(error)) throw error;
       throw new ComputerUseError(
         "runtime_unavailable",
         "Cua Driver daemon is unavailable",
         "doctor",
         true,
-        false,
-        "runtime_startup_failed",
+        { diagnosticReason: "runtime_startup_failed" },
       );
     }
   }
@@ -126,8 +127,7 @@ export class CuaEngine implements EnginePort {
         "Installed Cua version differs from engine.lock.json",
         "setup",
         false,
-        false,
-        "runtime_version_mismatch",
+        { diagnosticReason: "runtime_version_mismatch" },
       );
     }
 
@@ -140,8 +140,7 @@ export class CuaEngine implements EnginePort {
         "Cua tool contract is malformed",
         "setup",
         false,
-        false,
-        "runtime_version_mismatch",
+        { diagnosticReason: "runtime_version_mismatch" },
       );
     }
     const tools =
@@ -166,8 +165,7 @@ export class CuaEngine implements EnginePort {
         "Cua tool contract is incomplete",
         "setup",
         false,
-        false,
-        "runtime_version_mismatch",
+        { diagnosticReason: "runtime_version_mismatch" },
       );
     }
 
@@ -193,6 +191,11 @@ export class CuaEngine implements EnginePort {
       window.value.state.effectiveScope === EffectiveScope.Window;
     if (!validDesktop || !validWindow) {
       await Promise.allSettled([...activeSessions].reverse().map(async (session) => sdk.endSession({ session })));
+      const transportFailure = starts.find(
+        (start): start is PromiseRejectedResult =>
+          start.status === "rejected" && isCuaTransportError(start.reason),
+      );
+      if (transportFailure !== undefined) throw transportFailure.reason;
       const rejected = starts.find((start): start is PromiseRejectedResult => start.status === "rejected");
       if (rejected !== undefined) {
         throw new ComputerUseError(
@@ -200,8 +203,7 @@ export class CuaEngine implements EnginePort {
           "Cua could not initialize the required diagnostic sessions",
           "setup",
           false,
-          false,
-          "session_initialization_failed",
+          { diagnosticReason: "session_initialization_failed" },
         );
       }
       throw new ComputerUseError(
@@ -209,8 +211,7 @@ export class CuaEngine implements EnginePort {
         "Cua did not establish the required desktop and window scopes",
         "setup",
         false,
-        false,
-        "session_initialization_failed",
+        { diagnosticReason: "session_initialization_failed" },
       );
     }
 

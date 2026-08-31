@@ -159,8 +159,7 @@ export function parseDesktopObservation(result: ToolResult): EngineDesktopObserv
         "CuaDriver requires desktop capture permissions",
         "grant_permission",
         false,
-        false,
-        diagnosticReason,
+        { diagnosticReason },
       );
     }
     if (classification.kind === "interactive_session") {
@@ -169,8 +168,7 @@ export function parseDesktopObservation(result: ToolResult): EngineDesktopObserv
         "The desktop is locked or non-interactive",
         "stop",
         false,
-        false,
-        "interactive_session_locked",
+        { diagnosticReason: "interactive_session_locked" },
       );
     }
     throw new ComputerUseError(
@@ -178,8 +176,7 @@ export function parseDesktopObservation(result: ToolResult): EngineDesktopObserv
       "Cua failed to capture the desktop",
       "observe_again",
       true,
-      false,
-      "capture_failed",
+      { diagnosticReason: "capture_failed" },
     );
   }
   let value: unknown;
@@ -191,8 +188,7 @@ export function parseDesktopObservation(result: ToolResult): EngineDesktopObserv
       "Cua returned malformed desktop metadata",
       "observe_again",
       true,
-      false,
-      "capture_failed",
+      { diagnosticReason: "capture_failed" },
     );
   }
   const parsed = DesktopStateSchema.safeParse(value);
@@ -202,8 +198,7 @@ export function parseDesktopObservation(result: ToolResult): EngineDesktopObserv
       "Cua returned invalid desktop metadata",
       "observe_again",
       true,
-      false,
-      "capture_failed",
+      { diagnosticReason: "capture_failed" },
     );
   }
   const image = result.images.length === 1 ? result.images[0] : undefined;
@@ -213,8 +208,7 @@ export function parseDesktopObservation(result: ToolResult): EngineDesktopObserv
       "Cua did not return exactly one screenshot image",
       "observe_again",
       true,
-      false,
-      "capture_failed",
+      { diagnosticReason: "capture_failed" },
     );
   }
   return {

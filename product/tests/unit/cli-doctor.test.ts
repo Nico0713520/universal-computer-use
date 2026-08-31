@@ -205,8 +205,7 @@ describe("doctor", () => {
             "intentionally identical opaque message",
             "grant_permission",
             false,
-            false,
-            diagnosticReason,
+            { diagnosticReason },
           ),
         ],
       });
@@ -271,7 +270,9 @@ describe("doctor", () => {
 
   it("turns a successful diagnosis into a structural failure when session cleanup fails", async () => {
     const engine = new FakeEngine({ platform: "macos" });
-    vi.spyOn(engine, "close").mockRejectedValueOnce(new Error("cleanup failed"));
+    vi.spyOn(engine, "close").mockRejectedValueOnce(
+      new Error("cleanup failed at /private/sensitive/session.sock"),
+    );
 
     const report = await runDoctor(
       { platform: "darwin", arch: "arm64" },
@@ -292,14 +293,14 @@ describe("doctor", () => {
       observation_succeeded: true,
       error: {
         code: "runtime_unavailable",
-        message: "cleanup failed",
+        message: "Diagnostic session cleanup failed",
         diagnostic_reason: "session_cleanup_failed",
       },
       cleanup: {
         status: "failed",
         error: {
           code: "runtime_unavailable",
-          message: "cleanup failed",
+          message: "Diagnostic session cleanup failed",
           diagnostic_reason: "session_cleanup_failed",
         },
       },
@@ -309,7 +310,9 @@ describe("doctor", () => {
 
   it("preserves the primary diagnosis while separately reporting cleanup failure", async () => {
     const engine = new FakeEngine({ platform: "macos" });
-    vi.spyOn(engine, "close").mockRejectedValueOnce(new Error("cleanup failed"));
+    vi.spyOn(engine, "close").mockRejectedValueOnce(
+      new Error("cleanup failed at /private/sensitive/session.sock"),
+    );
 
     const report = await runDoctor(
       { platform: "darwin", arch: "arm64" },
@@ -335,12 +338,13 @@ describe("doctor", () => {
         status: "failed",
         error: {
           code: "runtime_unavailable",
-          message: "cleanup failed",
+          message: "Diagnostic session cleanup failed",
           diagnostic_reason: "session_cleanup_failed",
         },
       },
     });
     expect(engine.observations).toBe(0);
+    expect(JSON.stringify(report)).not.toContain("/private/sensitive");
   });
 
   it("continues to one observation when signed permission state cannot be confirmed", async () => {
