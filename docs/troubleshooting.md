@@ -1,6 +1,6 @@
 # Computer Use Plugin Troubleshooting
 
-This plugin uses the host Agent's current multimodal model. It does not include an internal vision model, provider endpoint, API key, GUI, or native input implementation. The separately installed, version-locked Cua Runtime owns capture, permissions, signing and input delivery. Version 0.2.6 is a Mac Agent Preview (Developer Preview), not a public Beta.
+This plugin uses the host Agent's current multimodal model. It does not include an internal vision model, provider endpoint, API key, GUI, or native input implementation. The separately installed, version-locked Cua Runtime owns capture, permissions, signing and input delivery. Version 0.2.7 is a Mac Agent Preview (Developer Preview), not a public Beta.
 
 ## Start with doctor
 
@@ -33,7 +33,9 @@ If a host sees text but not the screenshot, it does not support MCP `ImageConten
 
 ## macOS host starts before CuaDriver
 
-Product 0.2.6 gives the independent diagnostic connector and MCP pre-session connector one bounded startup attempt when their initial connection returns `runtime_unavailable`. The attempt happens before any diagnostic session or MCP request: it verifies the installed `/Applications/CuaDriver.app`, starts its `serve` process, and exits readiness polling on the first successful connection. A missing app returns `runtime_missing`; a signing mismatch returns `engine_version_mismatch`; a failed start or 10-second deadline returns `runtime_unavailable`. Recovery does not install or upgrade Cua and never receives or replays a GUI action. UCU never restarts Cua after an MCP session starts. Either doctor mode may perform this same input-free bounded recovery before opening its diagnostic session.
+Product 0.2.7 gives the independent diagnostic connector and MCP pre-session connector one bounded startup attempt when their initial connection returns `runtime_unavailable`. The attempt happens before any diagnostic session or MCP request: it verifies the installed `/Applications/CuaDriver.app`, starts its `serve` process, and exits readiness polling on the first successful connection. A missing app returns `runtime_missing`; a signing mismatch returns `engine_version_mismatch`; a failed start or 10-second deadline returns `runtime_unavailable`. Recovery does not install or upgrade Cua and never receives or replays a GUI action. UCU never restarts Cua after an MCP session starts. Either doctor mode may perform this same input-free bounded recovery before opening its diagnostic session.
+
+Adaptive Cursor mode is selected when the MCP process starts: `--cursor auto` (default), `--cursor visible`, or `--cursor hidden`; `UCU_CURSOR_MODE` is the lower-priority environment fallback. `computer-use config --client <host> --cursor <mode>` writes the choice into generated host configuration. `computer-use doctor --json --cursor <mode>` reports `cursor_mode` and `cursor_ready`. Every screenshot hides the presentation cursor first, and no mode adds a fixed wait or simulated thinking time.
 
 After adding the MCP server to a host, restart the host and begin a new conversation. A conversation whose tool inventory was frozen before registration will not gain the two tools dynamically. Shell-driven JSON-RPC can diagnose transport behavior but is not direct-host compatibility evidence.
 
@@ -51,7 +53,7 @@ Use `computer-use config --client hanaagent` or `computer-use config --client wo
 
 ## Logs and privacy
 
-Runtime metadata logs are JSONL on the MCP process's standard error. They contain only timestamp, per-process hashes, tool/action type, duration, route/effect/delivery and stable error code. They must not contain screenshot bytes, typed text, key contents, clipboard data, model prompts or environment values. Standard output is reserved for MCP frames.
+Runtime metadata logs are JSONL on the MCP process's standard error. They contain only timestamp, per-process hashes, tool/action type, duration, route/effect/delivery, a `cursor_visual:"degraded"` marker when foreground presentation could not be shown, and stable error code. They must not contain screenshot bytes, typed text, key contents, clipboard data, model prompts or environment values. Standard output is reserved for MCP frames.
 
 The real platform, host and soak evidence files belong outside the repository. They are strict, redacted JSON without screenshots or traces. A macOS development run that cannot build complete schema-v4 evidence writes a separate sibling `*.diagnostic.json` after cleanup; it is a failure report, never passing evidence. Schema v4 may include aggregate action-route counts, but never typed content, screenshots, raw samples, or window titles. CI uploads JSON evidence only.
 

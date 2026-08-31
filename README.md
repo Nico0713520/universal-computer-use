@@ -1,6 +1,6 @@
 # Universal Computer Use
 
-> Mac Agent Preview (Developer Preview), version 0.2.6. This is not a public Beta or Stable package release.
+> Mac Agent Preview (Developer Preview), version 0.2.7. This is not a public Beta or Stable package release.
 
 Universal Computer Use is a lightweight, model-free MCP plugin that gives an existing multimodal Agent the ability to observe and operate the current macOS or Windows desktop.
 
@@ -32,7 +32,7 @@ macOS / Windows desktop
 
 The adapter exposes one UCU session to the host but keeps Cua's mutually exclusive desktop- and window-capture scopes in separate internal sessions. Desktop calls stay on the desktop scope; exact window screenshots and background element actions stay on the window scope.
 
-Product `0.2.6` uses protocol `1.2.0` and keeps the public MCP surface at exactly two tools:
+Product `0.2.7` uses protocol `1.2.0` and keeps the public MCP surface at exactly two tools:
 
 - `computer_observe` returns a one-use `snapshot_id` for the desktop or an exact window, with a PNG when a visual frame is requested and bounded elements for window observations.
 - `computer_act` validates and consumes that snapshot, executes exactly one action, and returns the fresh target state plus a new snapshot ID.
@@ -55,16 +55,18 @@ node dist/cli/main.js doctor --json
 node dist/cli/main.js config --client generic
 ```
 
+Generated configurations explicitly use `--cursor auto`. Choose `--cursor visible` for debugging/recording or `--cursor hidden` for a fully quiet presentation layer, for example `computer-use config --client hanaagent --cursor hidden`. The mode is fixed when the MCP process starts and is not controlled by the model.
+
 Development setup installs only the exact checksummed scripts and Cua Runtime version pinned in [`product/engine.lock.json`](product/engine.lock.json). macOS still requires the user to grant Screen Recording and Accessibility to the signed CuaDriver application. The human `doctor` output explains readiness; `doctor --json` preserves the machine-readable report. Permission status is accepted only from the signed daemon identity or remains unknown. Host approval policy remains authoritative.
 
 The npm package name is reserved in the project metadata but is not published yet. Ordinary `setup`, Beta verification, and Stable verification deliberately fail closed until the engine, platform, host-loop, and soak evidence gates are complete.
 
-To share the explicit 0.2.6 Developer Preview without publishing it, build a local npm tarball from `product`, install that exact file on the test Mac, and keep the development flag visible:
+To share the explicit 0.2.7 Developer Preview without publishing it, build a local npm tarball from `product`, install that exact file on the test Mac, and keep the development flag visible:
 
 ```bash
 cd product
 npm pack
-npm install --global ./universal-computer-use-plugin-0.2.6.tgz
+npm install --global ./universal-computer-use-plugin-0.2.7.tgz
 computer-use setup --development
 computer-use doctor
 computer-use doctor --json
@@ -90,7 +92,7 @@ Run one host at a time. Multi-Agent concurrent control is deferred until after t
 
 ## Current status
 
-The v0.2.6 Mac Agent Preview completes signed-daemon permission diagnostics, human-readable doctor output, named HanaAgent/WorkBuddy configuration, and exact-commit host-test handoffs on top of the macOS session-owned Agent Cursor integration. Both internal Cua sessions disable visible cursor motion during initialization and read the state back before the MCP server becomes available; partial initialization fails closed and cleans up both sessions. This removes Cua's presentation animation from ordinary UCU automation without adding an artificial post-action delay. It does not make foreground input invisible: an explicitly foreground action can still activate or move focus between applications.
+The v0.2.7 Mac Agent Preview adds an Adaptive Cursor on top of the signed-daemon diagnostics, named host configuration, and exact-commit test handoffs. The default `auto` mode keeps background operations and every screenshot quiet, while foreground pointer actions use Cua's click-through cursor with an 80 ms glide, 40 ms click dwell, and 700 ms idle hide. `visible` shows pointer actions for debugging or recording; `hidden` disables presentation motion. Both internal sessions are configured and read back before the MCP server becomes available, and partial initialization fails closed and cleans up both sessions. There is no artificial post-action delay or simulated human thinking time. Foreground input can still activate or move focus between applications.
 
 Development evidence now uses schema v4 and records only aggregate action-route counts such as `accessibility` and `synthetic_events`, never screenshots, entered text, raw samples, or window titles. The full macOS lane and the focused performance/A-B lanes refuse to start unless the operator supplies `--exclusive-desktop`. The Cursor A/B tool compares the same target in the same Cua process and session, but no new speed claim is made until that real-machine lane is deliberately run on an idle desktop. Runtime recovery remains bounded to startup before the MCP session exists; UCU never restarts Cua after a session starts and never replays an observation or action.
 
@@ -104,7 +106,7 @@ Development evidence now uses schema v4 and records only aggregate action-route 
 | Windows DPI | harness complete | passed | pending real hardware | pending | blocked |
 | Windows exact window | blocked upstream | truthful refusal | unavailable | unavailable | blocked |
 
-No local profile is a Beta/Stable claim. Codex and HanaAgent remain `not-tested`, while WorkBuddy remains `experimental`, until exact-commit external reports prove direct stdio image delivery and the complete control loop. Kimi is outside the v0.2.6 Mac Agent Preview host set and retains its separate unevidenced release lane. The complete macOS lane must still be rerun on a clean account. Windows still needs physical 100%/125%/150% DPI runs, and the pinned Cua 0.22.2 Windows window APIs remain upstream stubs. Lock screen, disconnected sessions, and Windows UAC secure desktop remain unsupported.
+No local profile is a Beta/Stable claim. Codex and HanaAgent remain `not-tested`, while WorkBuddy remains `experimental`, until exact-commit external reports prove direct stdio image delivery and the complete control loop. Kimi is outside the v0.2.7 Mac Agent Preview host set and retains its separate unevidenced release lane. The complete macOS lane, including the Adaptive Cursor latency/visibility profile, must still be rerun on an idle clean account. Windows still needs physical 100%/125%/150% DPI runs, and the pinned Cua 0.22.2 Windows window APIs remain upstream stubs. Lock screen, disconnected sessions, and Windows UAC secure desktop remain unsupported.
 
 ## Documentation
 

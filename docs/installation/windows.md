@@ -1,6 +1,6 @@
 # Windows installation
 
-Version 0.2.6 does not promote Windows as part of the Mac Agent Preview. Windows remains a development-only desktop compatibility path: there is no public Beta, signed one-click MSI, or SmartScreen-ready installer yet, and UAC secure desktop remains unsupported.
+Version 0.2.7 does not promote Windows as part of the Mac Agent Preview. Windows remains a development-only desktop compatibility path: there is no public Beta, signed one-click MSI, or SmartScreen-ready installer yet, and UAC secure desktop remains unsupported.
 
 ## Prerequisites
 

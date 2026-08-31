@@ -86,7 +86,11 @@ describe("host integration artifacts", () => {
 
     expect(server).toEqual({
       command: "/replace/with/absolute/path/to/node",
-      args: ["/replace/with/absolute/path/to/universal-computer-use/product/dist/mcp/main.js"],
+      args: [
+        "/replace/with/absolute/path/to/universal-computer-use/product/dist/mcp/main.js",
+        "--cursor",
+        "auto",
+      ],
     });
     expect(entries).toContain("mcp.example.json");
     expect(entries).not.toContain(".mcp.json");

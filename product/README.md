@@ -1,6 +1,6 @@
 # Universal Computer Use Plugin
 
-Mac Agent Preview (Developer Preview), version `0.2.6`. This is not a public Beta. The lightweight local MCP bridge lets a compatible multimodal Agent observe and operate the current desktop. The host Agent supplies the vision model and decision loop; product `0.2.6` and protocol `1.2.0` supply the validation, lifecycle, and execution bridge.
+Mac Agent Preview (Developer Preview), version `0.2.7`. This is not a public Beta. The lightweight local MCP bridge lets a compatible multimodal Agent observe and operate the current desktop. The host Agent supplies the vision model and decision loop; product `0.2.7` and protocol `1.2.0` supply the validation, lifecycle, and execution bridge.
 
 Cua Driver is a separate MIT-licensed runtime dependency. Its Rust and native platform code are not bundled as product source, modified, or re-signed by this project. The exact reviewed runtime and installer artifacts are pinned in `engine.lock.json`.
 
@@ -27,6 +27,8 @@ node dist/cli/main.js doctor --json
 node dist/cli/main.js config --client generic
 ```
 
+Generated configurations explicitly use `--cursor auto`. Choose `--cursor visible` for debugging/recording or `--cursor hidden` for a fully quiet presentation layer. The mode is fixed when the MCP process starts and cannot be changed by the model.
+
 `setup --development` downloads the exact verified upstream installer siblings pinned in `engine.lock.json`, runs the locked install path, verifies the installed identity, starts the runtime, and opens the operating-system permission flow. On macOS, grant Screen Recording and Accessibility to the stable `CuaDriver.app` identity. The final command prints the stdio MCP configuration to add to the Agent host.
 
 Use `config --client codex`, `kimi`, `hanaagent`, or `workbuddy` for named manual registration. HanaAgent and WorkBuddy output deterministic absolute direct stdio JSON and never edit host settings. Install or link the packaged Canonical Computer Use Skill at `skills/computer-use/SKILL.md`, then restart the selected host and start a new conversation before expecting exactly two tools. WorkBuddy and DeepSeek Harness declarations remain experimental; none of these files is verified compatibility evidence.
@@ -37,7 +39,7 @@ The npm name is reserved but not published. Create and install an exact local pr
 
 ```bash
 npm pack
-npm install --global ./universal-computer-use-plugin-0.2.6.tgz
+npm install --global ./universal-computer-use-plugin-0.2.7.tgz
 computer-use setup --development
 computer-use doctor
 computer-use doctor --json
@@ -58,7 +60,7 @@ pnpm --silent host:test-prompt --host workbuddy \
   --commit <40-lowercase-hex-commit>
 ```
 
-Test one host at a time and return only the strict privacy-safe v2 report. Codex and HanaAgent remain `not-tested`; WorkBuddy remains `experimental` until such external evidence passes. Multi-Agent concurrent control is deferred and is not part of v0.2.6.
+Test one host at a time and return only the strict privacy-safe v2 report. Codex and HanaAgent remain `not-tested`; WorkBuddy remains `experimental` until such external evidence passes. Multi-Agent concurrent control is deferred and is not part of v0.2.7.
 
 ## Development checks
 
@@ -75,7 +77,7 @@ These source-only real-machine lanes deliberately refuse to run without `--exclu
 
 ## Current platform scope
 
-- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background semantic delivery, background window-pixel routing with explicit foreground escalation, bounded verification, and safe app launch are implemented. Product 0.2.6 disables Cua's session-owned Agent Cursor on both internal sessions and verifies both readbacks before serving MCP calls, so ordinary UCU automation does not inherit visible cursor animation. The harness has no fixed post-action sleep. Schema-v4 development evidence separates aggregate `accessibility` and `synthetic_events` action routes. Foreground delivery can still change application focus. The strict same-target Cursor A/B is currently blocked on the locked runtime because its required single background click takes the AX route on the tested Mac; double/right-click substitutions are rejected, so no Cursor latency improvement is claimed.
+- macOS with Cua 0.22.2: desktop compatibility, window discovery/capture, opaque element targeting, background semantic delivery, background window-pixel routing with explicit foreground escalation, bounded verification, and safe app launch are implemented. Product 0.2.7 configures and verifies an Adaptive Cursor on both internal sessions. Default `auto` hides it for background actions and observations, and shows it only for foreground pointer actions; `visible` and `hidden` are explicit startup modes. The harness has no fixed post-action sleep or simulated thinking delay. Foreground delivery can still change application focus. The exact visibility and latency claims remain pending the guarded idle-desktop Mac profile.
 - Windows with Cua 0.22.2: primary-desktop screenshot/input compatibility remains implemented. The pinned upstream `list_apps`, `list_windows`, and `get_window_state` entries are stubs, so window precision/background mode is intentionally not advertised as available. Windows 100%/125%/150% DPI evidence remains a release blocker.
 
-The `0.2.6` product still locks Cua `0.22.2`; both platforms are development-eligible but not release-eligible. Startup recovery may start an already-installed stopped runtime before a session exists, but UCU never restarts it after the MCP session starts and never replays a GUI action. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. Lock screen, disconnected sessions, and Windows UAC secure desktop are unsupported. See `../docs/troubleshooting.md` for permissions, evidence, and release details.
+The `0.2.7` product still locks Cua `0.22.2`; both platforms are development-eligible but not release-eligible. Startup recovery may start an already-installed stopped runtime before a session exists, but UCU never restarts it after the MCP session starts and never replays a GUI action. Ordinary `setup` and public Beta/Stable release verification deliberately remain blocked until the exact runtime has passed the applicable real-platform, host-loop, and soak evidence gates. Lock screen, disconnected sessions, and Windows UAC secure desktop are unsupported. See `../docs/troubleshooting.md` for permissions, evidence, and release details.

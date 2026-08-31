@@ -76,7 +76,7 @@ function fakeBoundary() {
 
 const healthyDoctor = {
   ok: true,
-  product_version: "0.2.6",
+  product_version: "0.2.7",
   protocol_version: "1.2.0",
   cursor_mode: "auto" as const,
   cursor_ready: true,

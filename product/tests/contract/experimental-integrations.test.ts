@@ -45,7 +45,7 @@ describe("experimental host adapters", () => {
 
     expect(manifest).toMatchObject({
       name: "computer-use",
-      version: "0.2.6",
+      version: "0.2.7",
       status: "experimental",
       computerUse: {
         skill: canonicalSkillReference,
@@ -58,6 +58,8 @@ describe("experimental host adapters", () => {
           command: "/replace/with/absolute/path/to/node",
           args: [
             "/replace/with/absolute/path/to/universal-computer-use/product/dist/mcp/main.js",
+            "--cursor",
+            "auto",
           ],
         },
       },

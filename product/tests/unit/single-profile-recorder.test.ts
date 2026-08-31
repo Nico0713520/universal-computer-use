@@ -4,7 +4,7 @@ import { SingleProfileRecorder } from "../e2e/development/single-profile-recorde
 import type { PerformanceSample } from "../e2e/development/performance-recorder.js";
 
 const METADATA = {
-  product_version: "0.2.6",
+  product_version: "0.2.7",
   protocol_version: "1.2.0",
   engine_version: "0.22.2",
   macos_version: "15.6.1",

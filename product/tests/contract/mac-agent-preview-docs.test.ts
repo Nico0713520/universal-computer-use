@@ -6,7 +6,7 @@ async function read(path: string): Promise<string> {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
-describe("v0.2.6 Mac Agent Preview documentation", () => {
+describe("v0.2.7 Mac Agent Preview documentation", () => {
   it("states the preview, packaging, attribution, and serial-control boundaries", async () => {
     const [root, product, compatibility, troubleshooting] = await Promise.all([
       read("../../../README.md"),
@@ -26,6 +26,11 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
     expect(combined).toContain("does not include an internal vision model");
     expect(combined).toContain("Multi-Agent concurrent control is deferred");
     expect(combined).toContain("one host at a time");
+    expect(combined).toContain("Adaptive Cursor");
+    expect(combined).toContain("`auto`");
+    expect(combined).toContain("`visible`");
+    expect(combined).toContain("`hidden`");
+    expect(combined).toContain("no artificial post-action delay");
     expect(combined).not.toMatch(/\bp(?:50|95)\b|faster path|faster route|quicker path|lower latency|more performant/i);
   });
 
@@ -94,7 +99,7 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
     expect(windows).toContain("$packResult = @($packJsonText | ConvertFrom-Json)");
     expect(windows).toContain("$packagePath");
     expect(windows).toContain("Test-Path -LiteralPath $packagePath");
-    expect(windows).not.toContain("npm install --global .\\universal-computer-use-plugin-0.2.6.tgz");
+    expect(windows).not.toContain("npm install --global .\\universal-computer-use-plugin-0.2.7.tgz");
     expect(windows).toContain("@(\"setup\", \"--development\")");
     expect(windows).toContain("@(\"doctor\", \"--json\")");
     expect(windows).not.toContain("npm install --global @universal-computer-use/plugin");

@@ -1,6 +1,6 @@
 # macOS installation
 
-Version 0.2.6 is a Mac Agent Preview (Developer Preview), not a public Beta. There is no one-click installer, DMG, notarized public package, or automatic host configuration in this milestone.
+Version 0.2.7 is a Mac Agent Preview (Developer Preview), not a public Beta. There is no one-click installer, DMG, notarized public package, or automatic host configuration in this milestone.
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ After installation, setup verifies `/Applications/CuaDriver.app` with `codesign 
 
 The plugin does not modify Codex, HanaAgent, WorkBuddy, Kimi, or another host's configuration automatically. The permission dialogs and System Settings entries keep the visible CuaDriver attribution; UCU does not hide or rebrand the signed Runtime identity.
 
-After installation, product 0.2.6 can recover an installed but stopped CuaDriver through either the independent diagnostic connector or the MCP pre-session connector. If the initial connection returns `runtime_unavailable`, that connector may make one bounded startup attempt before any diagnostic session or MCP request: it requires the fixed app path and locked signature, opens `serve`, and polls until the first successful connection or a 10-second hard deadline. Doctor also completes its trusted interactive-session, Runtime-identity, and daemon-permission prechecks before connecting. Recovery does not install or upgrade Cua, never replays an observation or GUI action, and never restarts Cua after an MCP session starts. During MCP session initialization, UCU disables Cua's session-owned Agent Cursor on both internal sessions and verifies the state before accepting tools. Both doctor modes remain input-free diagnostics even when their connector starts the already-installed verified daemon.
+After installation, product 0.2.7 can recover an installed but stopped CuaDriver through either the independent diagnostic connector or the MCP pre-session connector. If the initial connection returns `runtime_unavailable`, that connector may make one bounded startup attempt before any diagnostic session or MCP request: it requires the fixed app path and locked signature, opens `serve`, and polls until the first successful connection or a 10-second hard deadline. Doctor also completes its trusted interactive-session, Runtime-identity, and daemon-permission prechecks before connecting. Recovery does not install or upgrade Cua, never replays an observation or GUI action, and never restarts Cua after an MCP session starts. During session initialization, UCU configures and verifies the Adaptive Cursor on both internal sessions. Default `auto` hides it during background actions and every observation, while foreground pointer actions remain visible. Use `--cursor visible` for debugging/recording or `--cursor hidden` for a fully quiet presentation layer. Both doctor modes remain input-free diagnostics even when their connector starts the already-installed verified daemon.
 
 ## Screen Recording and Accessibility
 

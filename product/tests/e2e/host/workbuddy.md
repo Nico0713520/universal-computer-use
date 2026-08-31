@@ -37,7 +37,7 @@ Using any shell bridge, shell-driven JSON-RPC, AppleScript, DOM automation, ment
 
 ## Privacy-safe v2 report
 
-Write one external JSON file conforming to `development-evidence.schema.json`. It must say `schema_version: 2`, identify the exact repository/commit and versions `0.2.6` / `1.2.0` / `0.22.2`, and record `direct_stdio:true`, `shell_bridge:false`, and `builtin_computer_use:false`. Use `verified-development` only when both PNG turns, the same model/direct loop, all three tasks, exactly-once input, background proof, and natural stop pass. Otherwise use `failed`, `blocked`, or `not-run`.
+Write one external JSON file conforming to `development-evidence.schema.json`. It must say `schema_version: 2`, identify the exact repository/commit and versions `0.2.7` / `1.2.0` / `0.22.2`, and record `direct_stdio:true`, `shell_bridge:false`, and `builtin_computer_use:false`. Use `verified-development` only when both PNG turns, the same model/direct loop, all three tasks, exactly-once input, background proof, and natural stop pass. Otherwise use `failed`, `blocked`, or `not-run`.
 
 Return only the privacy-safe v2 JSON report. Do not return or store screenshots, prompts, nonces, tool arguments, clipboard contents, raw image payloads, typed content, paths, environment data, identities, native IDs, refs, or tokens. Limitations must use only the schema's allowlisted categories.
 
