@@ -1,6 +1,6 @@
 # Universal Computer Use v0.2.6 Mac Agent Preview 设计规格
 
-状态：待用户书面复核后进入实施计划
+状态：用户已于 2026-08-31 确认，进入实施计划
 
 日期：2026-08-31
 
@@ -319,4 +319,3 @@ GitHub 与包说明必须写明 Developer Preview。Cua `0.22.2` 的 `release_el
 4. 宿主若不转发 MCP 图片，UCU 不内置第二视觉模型补救，只能标记实验或不兼容。
 5. Cua 是独立 Runtime 依赖；UCU 复用而不复制其 macOS 原生代码。
 6. 本版本不解决多个宿主同时控制桌面；文档要求串行使用，长期版本再考虑协调机制。
-
