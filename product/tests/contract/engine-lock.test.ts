@@ -64,6 +64,8 @@ describe("engine lock", () => {
       "set_value",
       "health_report",
       "set_agent_cursor_enabled",
+      "set_agent_cursor_motion",
+      "set_agent_cursor_theme",
       "get_agent_cursor_state",
     ]);
     expect(lock.platforms.macos.installer_files.map(({ name }) => name)).toEqual([

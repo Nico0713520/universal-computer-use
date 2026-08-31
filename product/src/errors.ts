@@ -46,6 +46,7 @@ export type ComputerUseDiagnosticReason =
   | "interactive_session_unknown"
   | "session_initialization_failed"
   | "cursor_initialization_failed"
+  | "cursor_transition_failed"
   | "desktop_permission_required"
   | "screen_recording_permission_required"
   | "accessibility_permission_required"

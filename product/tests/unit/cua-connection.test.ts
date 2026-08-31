@@ -13,6 +13,10 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import { CuaEngine } from "../../src/engine/cua.js";
+import {
+  AGENT_CURSOR_MOTION,
+  AGENT_CURSOR_THEME,
+} from "../../src/engine/agent-cursor.js";
 import { loadEngineLock } from "../../src/engine/lock.js";
 import { createRuntimeConnector } from "../../src/engine/runtime-startup.js";
 import { TargetRegistry } from "../../src/target-registry.js";
@@ -225,7 +229,7 @@ describe("Cua daemon connection", () => {
     ]);
   });
 
-  it("disables and verifies the Agent Cursor for both internal sessions", async () => {
+  it("configures and verifies the Adaptive Cursor for both internal sessions", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({
       driverVersion: lock.version,
@@ -236,6 +240,14 @@ describe("Cua daemon connection", () => {
     const sessions = sdk.startSessionCalls.map(({ session }) => session as string);
 
     expect(sdk.callToolCalls).toEqual([
+      ...sessions.map((session) => ({
+        name: "set_agent_cursor_theme",
+        argumentsJson: JSON.stringify({ session, ...AGENT_CURSOR_THEME }),
+      })),
+      ...sessions.map((session) => ({
+        name: "set_agent_cursor_motion",
+        argumentsJson: JSON.stringify({ session, ...AGENT_CURSOR_MOTION }),
+      })),
       ...sessions.map((session) => ({
         name: "set_agent_cursor_enabled",
         argumentsJson: JSON.stringify({ session, enabled: false }),
@@ -273,6 +285,10 @@ describe("Cua daemon connection", () => {
       { session: sessions[0] },
     ]);
     expect(sdk.callToolCalls.map(({ name }) => name)).toEqual([
+      "set_agent_cursor_theme",
+      "set_agent_cursor_theme",
+      "set_agent_cursor_motion",
+      "set_agent_cursor_motion",
       "set_agent_cursor_enabled",
       "set_agent_cursor_enabled",
     ]);
@@ -283,24 +299,44 @@ describe("Cua daemon connection", () => {
     const sdk = fakeSdk({
       driverVersion: lock.version,
       tools: [...lock.required_tools],
-      toolResults: {
-        get_agent_cursor_state: [
-          result({ session: "placeholder", enabled: false }),
-          result({ session: "placeholder", enabled: true }),
-        ],
-      },
     });
+    const originalCallTool = sdk.callTool.bind(sdk);
     vi.spyOn(sdk, "callTool").mockImplementation(async (name, argumentsJson) => {
-      sdk.callToolCalls.push({ name, argumentsJson });
       const input = JSON.parse(argumentsJson) as { session: string };
-      if (name === "set_agent_cursor_enabled") {
-        return result({ session: input.session, enabled: false });
-      }
       if (name === "get_agent_cursor_state") {
+        sdk.callToolCalls.push({ name, argumentsJson });
         const readbackIndex = sdk.callToolCalls.filter((call) => call.name === name).length;
-        return result({ session: input.session, enabled: readbackIndex === 2 });
+        return result({
+          session: input.session,
+          enabled: readbackIndex === 2,
+          position: null,
+          theme: {
+            id: AGENT_CURSOR_THEME.theme_id,
+            version: "2",
+            profile: "cua-driver-actions-v2",
+            reduced_motion: AGENT_CURSOR_THEME.reduced_motion,
+            fallback: null,
+          },
+          visual_state: {
+            requested_action: "idle",
+            resolved_action: "idle",
+            modifiers: [],
+            phase: "idle",
+            frame: 0,
+            preempted_count: 0,
+          },
+          motion: {
+            start_handle: 0.3,
+            end_handle: 0.3,
+            arc_size: 0.25,
+            arc_flow: 0,
+            spring: 0.72,
+            ...AGENT_CURSOR_MOTION,
+            turn_radius: 80,
+          },
+        });
       }
-      throw new Error("unexpected_sdk_call");
+      return originalCallTool(name, argumentsJson);
     });
 
     await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
