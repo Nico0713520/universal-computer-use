@@ -361,8 +361,7 @@ async function textEditWindows(
   return ownedTitle === undefined
     ? windows
     : windows.filter((window) =>
-        normalized(window.title) === normalized(ownedTitle) &&
-        normalized(window.app_name).toLocaleLowerCase("en-US") === "textedit");
+        normalized(window.title) === normalized(ownedTitle));
 }
 
 async function waitForTextEditWindowGone(

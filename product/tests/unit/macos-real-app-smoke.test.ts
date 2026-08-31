@@ -42,6 +42,7 @@ function desktop(snapshot: string, windows: readonly string[]): CallToolResult {
 function desktopWithTitles(
   snapshot: string,
   windows: readonly Readonly<{ ref: string; title: string; visible?: boolean }>[],
+  appName = "TextEdit",
 ): CallToolResult {
   return result({
     snapshot_id: snapshot,
@@ -49,7 +50,7 @@ function desktopWithTitles(
     windows: windows.map((window) => ({
       window_ref: window.ref,
       app_ref: "app_textedit",
-      app_name: "TextEdit",
+      app_name: appName,
       title: window.title,
       is_on_screen: window.visible ?? true,
       minimized: false,
@@ -193,7 +194,7 @@ describe("TextEdit owned-window smoke", () => {
     const openDocument = vi.fn(async () => undefined);
     const client = scriptedClient([
       desktopWithTitles("desktop-1", []),
-      desktopWithTitles("desktop-2", [{ ref: "owned", title: "owned.txt" }]),
+      desktopWithTitles("desktop-2", [{ ref: "owned", title: "owned.txt" }], "文本编辑"),
     ], calls);
 
     await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
