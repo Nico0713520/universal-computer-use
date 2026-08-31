@@ -2,7 +2,11 @@ import process from "node:process";
 
 import type { EngineLock, EnginePlatform } from "../engine/lock.js";
 import type { EnginePort } from "../engine/port.js";
-import { ComputerUseError, type ComputerUseErrorCode } from "../errors.js";
+import {
+  ComputerUseError,
+  type ComputerUseDiagnosticReason,
+  type ComputerUseErrorCode,
+} from "../errors.js";
 import { PRODUCT_VERSION, PROTOCOL_VERSION } from "../version.js";
 import type {
   MacPermissionProbeResult,
@@ -15,6 +19,14 @@ export interface DoctorPermissionReport {
   screen_recording: PermissionState;
   source: "driver-daemon" | "observation" | "unknown";
 }
+
+export type DoctorErrorReport = Readonly<{
+  code: ComputerUseErrorCode;
+  message: string;
+  recovery: ComputerUseError["recovery"];
+  retryable: boolean;
+  diagnostic_reason?: ComputerUseDiagnosticReason;
+}>;
 
 export type DoctorReport = Readonly<{
   ok: boolean;
@@ -31,12 +43,11 @@ export type DoctorReport = Readonly<{
   permission_details: DoctorPermissionReport;
   observation_succeeded: boolean;
   screenshot: Readonly<{ width: number; height: number }> | null;
-  error?: Readonly<{
-    code: ComputerUseErrorCode;
-    message: string;
-    recovery: ComputerUseError["recovery"];
-    retryable: boolean;
+  cleanup: Readonly<{
+    status: "not_needed" | "succeeded" | "failed";
+    error?: DoctorErrorReport;
   }>;
+  error?: DoctorErrorReport;
 }>;
 
 export type DoctorOptions = Readonly<{
@@ -75,13 +86,16 @@ function aggregatePermissions(
   return "unknown";
 }
 
-function serializedError(error: unknown): NonNullable<DoctorReport["error"]> {
+function serializedError(error: unknown): DoctorErrorReport {
   if (error instanceof ComputerUseError) {
     return {
       code: error.code,
       message: error.message,
       recovery: error.recovery,
       retryable: error.retryable,
+      ...(error.diagnosticReason === undefined
+        ? {}
+        : { diagnostic_reason: error.diagnosticReason }),
     };
   }
   return {
@@ -112,6 +126,7 @@ function failedBase(
     permission_details: UNKNOWN_PERMISSIONS,
     observation_succeeded: false,
     screenshot: null,
+    cleanup: { status: "not_needed" },
     error,
   };
 }
@@ -140,6 +155,7 @@ export async function runDoctor(
   let requiredToolsPresent = false;
   let desktopUnlocked: boolean | null = null;
   let permissionDetails: DoctorPermissionReport = UNKNOWN_PERMISSIONS;
+  let report: DoctorReport;
   try {
     if (engine.version !== dependencies.lock.version) {
       throw new ComputerUseError(
@@ -147,6 +163,8 @@ export async function runDoctor(
         "Installed Cua version differs from engine.lock.json",
         "setup",
         false,
+        false,
+        "runtime_version_mismatch",
       );
     }
     requiredToolsPresent = true;
@@ -158,6 +176,8 @@ export async function runDoctor(
           "The macOS login window is active",
           "stop",
           false,
+          false,
+          "interactive_session_locked",
         );
       }
       if (interactiveSession === null) {
@@ -166,6 +186,8 @@ export async function runDoctor(
           "The macOS interactive session could not be verified",
           "doctor",
           true,
+          false,
+          "interactive_session_unknown",
         );
       }
       desktopUnlocked = true;
@@ -179,6 +201,8 @@ export async function runDoctor(
         "CuaDriver is missing one or more required desktop permissions",
         "grant_permission",
         false,
+        false,
+        "desktop_permission_required",
       );
     }
     const observed = await engine.observe(new AbortController().signal);
@@ -188,9 +212,11 @@ export async function runDoctor(
         "Runtime desktop platform differs from the current host",
         "setup",
         false,
+        false,
+        "runtime_version_mismatch",
       );
     }
-    return {
+    report = {
       ok: true,
       product_version: PRODUCT_VERSION,
       protocol_version: PROTOCOL_VERSION,
@@ -208,19 +234,34 @@ export async function runDoctor(
         width: observed.image.width,
         height: observed.image.height,
       },
+      cleanup: { status: "not_needed" },
     };
   } catch (error) {
     const failure = serializedError(error);
+    const observedPermissionDetails: DoctorPermissionReport =
+      failure.diagnostic_reason === "screen_recording_permission_required"
+        ? {
+            accessibility: "unknown",
+            screen_recording: "required",
+            source: "observation",
+          }
+        : failure.diagnostic_reason === "accessibility_permission_required"
+          ? {
+              accessibility: "required",
+              screen_recording: "unknown",
+              source: "observation",
+            }
+          : {
+              accessibility: "unknown",
+              screen_recording: "unknown",
+              source: "observation",
+            };
     const reportedPermissionDetails: DoctorPermissionReport =
       failure.code === "permission_required" &&
       aggregatePermissions(permissionDetails) !== "required"
-        ? {
-            accessibility: "unknown",
-            screen_recording: "unknown",
-            source: "observation",
-          }
+        ? observedPermissionDetails
         : permissionDetails;
-    return {
+    report = {
       ...failedBase(dependencies.lock, platform, failure),
       reported_engine_version: engine.version,
       engine_connected: true,
@@ -232,10 +273,29 @@ export async function runDoctor(
         : aggregatePermissions(reportedPermissionDetails),
       permission_details: reportedPermissionDetails,
     };
-  } finally {
-    // Closing a short-lived diagnostic session is best effort. The diagnosis
-    // already describes the user's actionable state and must not be replaced
-    // by a cleanup transport error.
-    await engine.close().catch(() => undefined);
+  }
+
+  try {
+    await engine.close();
+    return { ...report, cleanup: { status: "succeeded" } };
+  } catch (error) {
+    const cleanupFailure = serializedError(
+      new ComputerUseError(
+        "runtime_unavailable",
+        error instanceof Error
+          ? error.message
+          : "Diagnostic session cleanup failed",
+        "doctor",
+        true,
+        false,
+        "session_cleanup_failed",
+      ),
+    );
+    return {
+      ...report,
+      ok: false,
+      ...(report.error === undefined ? { error: cleanupFailure } : {}),
+      cleanup: { status: "failed", error: cleanupFailure },
+    };
   }
 }

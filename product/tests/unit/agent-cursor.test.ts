@@ -82,6 +82,7 @@ describe("Cua Agent Cursor policy", () => {
         code: "engine_contract_changed",
         recovery: "doctor",
         retryable: false,
+        diagnosticReason: "cursor_initialization_failed",
       });
 
     expect(sdk.calls.map(({ name }) => name)).toEqual([
@@ -116,7 +117,10 @@ describe("Cua Agent Cursor policy", () => {
     });
 
     await expect(disableAndVerifyAgentCursor(sdk, ["desktop", "window"]))
-      .rejects.toMatchObject({ code: "engine_contract_changed" });
+      .rejects.toMatchObject({
+        code: "engine_contract_changed",
+        diagnosticReason: "cursor_initialization_failed",
+      });
   });
 
   it("rejects duplicate or blank session names before calling Cua", async () => {

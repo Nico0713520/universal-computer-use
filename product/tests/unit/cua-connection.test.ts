@@ -80,6 +80,7 @@ describe("Cua daemon connection", () => {
 
     await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
       code: "engine_version_mismatch",
+      diagnosticReason: "runtime_version_mismatch",
     });
   });
 
@@ -187,6 +188,7 @@ describe("Cua daemon connection", () => {
 
     await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
       code: "engine_contract_changed",
+      diagnosticReason: "cursor_initialization_failed",
     });
 
     const sessions = sdk.startSessionCalls.map(({ session }) => session as string);
@@ -246,6 +248,7 @@ describe("Cua daemon connection", () => {
 
     await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
       code: "engine_version_mismatch",
+      diagnosticReason: "session_initialization_failed",
     });
     expect(sdk.endSessionCalls).toHaveLength(2);
   });
@@ -260,6 +263,7 @@ describe("Cua daemon connection", () => {
 
     await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
       code: "engine_version_mismatch",
+      diagnosticReason: "session_initialization_failed",
     });
     expect(sdk.endSessionCalls).toHaveLength(2);
   });

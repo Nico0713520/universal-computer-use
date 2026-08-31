@@ -102,10 +102,10 @@ function windowState(): Record<string, unknown> {
 
 describe("Cua 0.22.2 raw JSON parsers", () => {
   it.each([
-    "permission_required",
-    "accessibility_permission_required",
-    "screen_recording_permission_required",
-  ])("preserves the %s desktop capture failure for doctor", (errorCode) => {
+    ["permission_required", "desktop_permission_required"],
+    ["accessibility_permission_required", "accessibility_permission_required"],
+    ["screen_recording_permission_required", "screen_recording_permission_required"],
+  ] as const)("preserves the %s desktop capture failure for doctor", (errorCode, diagnosticReason) => {
     const failure = result({});
     failure.isError = true;
     failure.errorCode = errorCode;
@@ -115,6 +115,7 @@ describe("Cua 0.22.2 raw JSON parsers", () => {
         code: "permission_required",
         recovery: "grant_permission",
         retryable: false,
+        diagnosticReason,
       }),
     );
   });
@@ -131,10 +132,24 @@ describe("Cua 0.22.2 raw JSON parsers", () => {
           code: "interactive_session_required",
           recovery: "stop",
           retryable: false,
+          diagnosticReason: "interactive_session_locked",
         }),
       );
     },
   );
+
+  it("marks an unclassified desktop observation error as a typed capture failure", () => {
+    const failure = result({});
+    failure.isError = true;
+    failure.errorCode = "capture_backend_failed";
+
+    expect(() => parseDesktopObservation(failure)).toThrowError(
+      expect.objectContaining({
+        code: "capture_failed",
+        diagnosticReason: "capture_failed",
+      }),
+    );
+  });
 
   it("keeps native app/window identifiers internal while parsing locked discovery fixtures", async () => {
     const apps = parseAppList(result(await fixture(fixtureUrls.apps)), "macos");

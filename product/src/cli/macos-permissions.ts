@@ -35,11 +35,10 @@ const UNKNOWN_RESULT: MacPermissionProbeResult = {
 
 export async function probeMacPermissions(
   runner: ProcessRunner,
-  executablePath = DEFAULT_CUA_EXECUTABLE,
 ): Promise<MacPermissionProbeResult> {
   try {
     const result = await runner.run(
-      executablePath,
+      DEFAULT_CUA_EXECUTABLE,
       ["permissions", "status", "--json"],
       { timeoutMs: PROBE_TIMEOUT_MS },
     );

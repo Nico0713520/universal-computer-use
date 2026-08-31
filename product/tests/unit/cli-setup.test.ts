@@ -92,6 +92,7 @@ const healthyDoctor = {
   },
   observation_succeeded: true,
   screenshot: { width: 100, height: 80 },
+  cleanup: { status: "succeeded" as const },
 };
 
 describe("setup", () => {

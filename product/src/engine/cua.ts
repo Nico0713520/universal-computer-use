@@ -94,6 +94,8 @@ export class CuaEngine implements EnginePort {
         "Cua Driver daemon is unavailable",
         "doctor",
         true,
+        false,
+        "runtime_startup_failed",
       );
     }
 
@@ -110,6 +112,8 @@ export class CuaEngine implements EnginePort {
         "Cua Driver daemon is unavailable",
         "doctor",
         true,
+        false,
+        "runtime_startup_failed",
       );
     }
   }
@@ -122,6 +126,8 @@ export class CuaEngine implements EnginePort {
         "Installed Cua version differs from engine.lock.json",
         "setup",
         false,
+        false,
+        "runtime_version_mismatch",
       );
     }
 
@@ -134,6 +140,8 @@ export class CuaEngine implements EnginePort {
         "Cua tool contract is malformed",
         "setup",
         false,
+        false,
+        "runtime_version_mismatch",
       );
     }
     const tools =
@@ -158,6 +166,8 @@ export class CuaEngine implements EnginePort {
         "Cua tool contract is incomplete",
         "setup",
         false,
+        false,
+        "runtime_version_mismatch",
       );
     }
 
@@ -184,12 +194,23 @@ export class CuaEngine implements EnginePort {
     if (!validDesktop || !validWindow) {
       await Promise.allSettled([...activeSessions].reverse().map(async (session) => sdk.endSession({ session })));
       const rejected = starts.find((start): start is PromiseRejectedResult => start.status === "rejected");
-      if (rejected !== undefined) throw rejected.reason;
+      if (rejected !== undefined) {
+        throw new ComputerUseError(
+          "engine_version_mismatch",
+          "Cua could not initialize the required diagnostic sessions",
+          "setup",
+          false,
+          false,
+          "session_initialization_failed",
+        );
+      }
       throw new ComputerUseError(
         "engine_version_mismatch",
         "Cua did not establish the required desktop and window scopes",
         "setup",
         false,
+        false,
+        "session_initialization_failed",
       );
     }
 

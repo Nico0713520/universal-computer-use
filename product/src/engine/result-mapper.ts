@@ -9,23 +9,7 @@ import {
 } from "@trycua/cua-driver";
 
 import type { EngineExecution } from "./port.js";
-
-const PERMISSION_ERROR_CODES = new Set([
-  "permission_required",
-  "accessibility_permission_required",
-  "screen_recording_permission_required",
-]);
-
-const INTERACTIVE_SESSION_ERROR_CODES = new Set([
-  "desktop_locked",
-  "session_0",
-]);
-
-const EXPLICIT_REFUSAL_ERROR_CODES = new Set([
-  "background_uipi_blocked",
-  "foreground_required",
-  "permission_denied",
-]);
+import { classifyCuaErrorCode } from "./cua-error-code.js";
 
 function failed(errorCode: EngineExecution["errorCode"] = "action_failed"): EngineExecution {
   return {
@@ -48,13 +32,14 @@ function refused(): EngineExecution {
 }
 
 function mapErrorCode(errorCode: string | undefined): EngineExecution {
-  if (errorCode !== undefined && PERMISSION_ERROR_CODES.has(errorCode)) {
+  const classification = classifyCuaErrorCode(errorCode);
+  if (classification.kind === "permission") {
     return failed("permission_required");
   }
-  if (errorCode !== undefined && INTERACTIVE_SESSION_ERROR_CODES.has(errorCode)) {
+  if (classification.kind === "interactive_session") {
     return failed("interactive_session_required");
   }
-  if (errorCode !== undefined && EXPLICIT_REFUSAL_ERROR_CODES.has(errorCode)) {
+  if (classification.kind === "explicit_refusal") {
     return refused();
   }
   return failed();

@@ -50,6 +50,7 @@ describe("doctor", () => {
       },
       observation_succeeded: true,
       screenshot: { width: 2560, height: 1440 },
+      cleanup: { status: "succeeded" },
     });
     expect(engine.observations).toBe(1);
     expect(execute).not.toHaveBeenCalled();
@@ -185,6 +186,49 @@ describe("doctor", () => {
     expect(report.ok).toBe(false);
   });
 
+  it.each([
+    [
+      "screen_recording_permission_required",
+      { accessibility: "unknown", screen_recording: "required", source: "observation" },
+    ],
+    [
+      "accessibility_permission_required",
+      { accessibility: "required", screen_recording: "unknown", source: "observation" },
+    ],
+  ] as const)(
+    "preserves the %s observation identity without parsing messages",
+    async (diagnosticReason, expectedDetails) => {
+      const engine = new FakeEngine({
+        observationSequence: [
+          new ComputerUseError(
+            "permission_required",
+            "intentionally identical opaque message",
+            "grant_permission",
+            false,
+            false,
+            diagnosticReason,
+          ),
+        ],
+      });
+
+      const report = await runDoctor(
+        { platform: "darwin", arch: "arm64" },
+        {
+          lock: await loadEngineLock(),
+          connectEngine: vi.fn(async () => engine),
+          probeInteractiveSession: vi.fn(async () => true),
+          probeMacPermissions: vi.fn(async () => unknownMacPermissions),
+        },
+      );
+
+      expect(report.permission_details).toEqual(expectedDetails);
+      expect(report.error).toMatchObject({
+        code: "permission_required",
+        diagnostic_reason: diagnosticReason,
+      });
+    },
+  );
+
   it("stops before capture when the signed daemon reports one missing macOS grant", async () => {
     const engine = new FakeEngine({ platform: "macos" });
 
@@ -225,7 +269,7 @@ describe("doctor", () => {
     expect(engine.closes).toBe(1);
   });
 
-  it("does not let a session cleanup failure replace the completed diagnosis", async () => {
+  it("turns a successful diagnosis into a structural failure when session cleanup fails", async () => {
     const engine = new FakeEngine({ platform: "macos" });
     vi.spyOn(engine, "close").mockRejectedValueOnce(new Error("cleanup failed"));
 
@@ -243,8 +287,60 @@ describe("doctor", () => {
       },
     );
 
-    expect(report).toMatchObject({ ok: true, observation_succeeded: true });
+    expect(report).toMatchObject({
+      ok: false,
+      observation_succeeded: true,
+      error: {
+        code: "runtime_unavailable",
+        message: "cleanup failed",
+        diagnostic_reason: "session_cleanup_failed",
+      },
+      cleanup: {
+        status: "failed",
+        error: {
+          code: "runtime_unavailable",
+          message: "cleanup failed",
+          diagnostic_reason: "session_cleanup_failed",
+        },
+      },
+    });
     expect(engine.close).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the primary diagnosis while separately reporting cleanup failure", async () => {
+    const engine = new FakeEngine({ platform: "macos" });
+    vi.spyOn(engine, "close").mockRejectedValueOnce(new Error("cleanup failed"));
+
+    const report = await runDoctor(
+      { platform: "darwin", arch: "arm64" },
+      {
+        lock: await loadEngineLock(),
+        connectEngine: vi.fn(async () => engine),
+        probeInteractiveSession: vi.fn(async () => true),
+        probeMacPermissions: vi.fn(async () => ({
+          accessibility: "required" as const,
+          screen_recording: "granted" as const,
+          source: "driver-daemon" as const,
+        })),
+      },
+    );
+
+    expect(report).toMatchObject({
+      ok: false,
+      error: {
+        code: "permission_required",
+        diagnostic_reason: "desktop_permission_required",
+      },
+      cleanup: {
+        status: "failed",
+        error: {
+          code: "runtime_unavailable",
+          message: "cleanup failed",
+          diagnostic_reason: "session_cleanup_failed",
+        },
+      },
+    });
+    expect(engine.observations).toBe(0);
   });
 
   it("continues to one observation when signed permission state cannot be confirmed", async () => {

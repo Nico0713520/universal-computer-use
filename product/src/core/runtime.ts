@@ -773,6 +773,7 @@ export class ComputerUseRuntime {
       error.recovery,
       error.retryable,
       true,
+      error.diagnosticReason,
     );
   }
 

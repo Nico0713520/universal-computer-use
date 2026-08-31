@@ -404,5 +404,17 @@ describe("public protocol", () => {
       recovery: "observe_again",
       retryable: true,
     });
+
+    const diagnostic = new ComputerUseError(
+      "permission_required",
+      "Screen Recording is denied",
+      "grant_permission",
+      false,
+      false,
+      "screen_recording_permission_required",
+    );
+    expect(diagnostic.diagnosticReason).toBe(
+      "screen_recording_permission_required",
+    );
   });
 });

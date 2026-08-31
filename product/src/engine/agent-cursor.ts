@@ -16,6 +16,8 @@ function contractFailure(): ComputerUseError {
     "Cua did not disable the Agent Cursor for every UCU session",
     "doctor",
     false,
+    false,
+    "cursor_initialization_failed",
   );
 }
 

@@ -101,6 +101,7 @@ describe("macOS Runtime startup", () => {
       code: "runtime_missing",
       recovery: "setup",
       retryable: false,
+      diagnosticReason: "runtime_missing",
     });
   });
 
@@ -222,6 +223,7 @@ describe("macOS Runtime startup", () => {
       code: "runtime_unavailable",
       recovery: "doctor",
       retryable: true,
+      diagnosticReason: "runtime_startup_failed",
     });
     expect(wait.mock.calls.reduce((sum, [ms]) => sum + ms, 0)).toBe(10_000);
     expect(wait.mock.calls.every(([ms]) => ms <= 1_000)).toBe(true);
@@ -275,7 +277,24 @@ describe("macOS Runtime startup", () => {
     await expect(connector(await loadEngineLock())).rejects.toMatchObject({
       code: "runtime_unavailable",
       recovery: "doctor",
+      diagnosticReason: "runtime_startup_failed",
     });
     expect(wait).not.toHaveBeenCalled();
+  });
+
+  it("marks a failed signature inspection with a typed signer reason", async () => {
+    const runner = successfulRunner();
+    runner.run.mockResolvedValueOnce({ code: 1, stdout: "", stderr: "opaque" });
+
+    await expect(
+      verifyMacRuntimeSignature(
+        await loadEngineLock(),
+        runner,
+        "/Applications/CuaDriver.app",
+      ),
+    ).rejects.toMatchObject({
+      code: "engine_version_mismatch",
+      diagnosticReason: "runtime_signature_mismatch",
+    });
   });
 });

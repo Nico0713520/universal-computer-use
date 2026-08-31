@@ -9,6 +9,7 @@ import type {
   EngineExecution,
   EngineWindowObservation,
 } from "./port.js";
+import { classifyCuaErrorCode } from "./cua-error-code.js";
 
 const PlatformSchema = z.enum(["macos", "windows"]);
 const finite = z.number().finite();
@@ -118,13 +119,6 @@ const LaunchSchema = z.object({
   }).passthrough(),
 }).passthrough();
 
-const DESKTOP_PERMISSION_ERRORS = new Set([
-  "permission_required",
-  "accessibility_permission_required",
-  "screen_recording_permission_required",
-]);
-const NON_INTERACTIVE_DESKTOP_ERRORS = new Set(["desktop_locked", "session_0"]);
-
 function contractError(message: string): ComputerUseError {
   return new ComputerUseError("engine_contract_changed", message, "doctor", false);
 }
@@ -153,43 +147,75 @@ function onePng(result: ToolResult, context: string): Readonly<{ mimeType: "imag
 
 export function parseDesktopObservation(result: ToolResult): EngineDesktopObservation {
   if (result.isError) {
-    if (
-      result.errorCode !== undefined &&
-      DESKTOP_PERMISSION_ERRORS.has(result.errorCode)
-    ) {
+    const classification = classifyCuaErrorCode(result.errorCode);
+    if (classification.kind === "permission") {
+      const diagnosticReason = classification.permission === "screen_recording"
+        ? "screen_recording_permission_required"
+        : classification.permission === "accessibility"
+          ? "accessibility_permission_required"
+          : "desktop_permission_required";
       throw new ComputerUseError(
         "permission_required",
         "CuaDriver requires desktop capture permissions",
         "grant_permission",
         false,
+        false,
+        diagnosticReason,
       );
     }
-    if (
-      result.errorCode !== undefined &&
-      NON_INTERACTIVE_DESKTOP_ERRORS.has(result.errorCode)
-    ) {
+    if (classification.kind === "interactive_session") {
       throw new ComputerUseError(
         "interactive_session_required",
         "The desktop is locked or non-interactive",
         "stop",
         false,
+        false,
+        "interactive_session_locked",
       );
     }
-    throw new ComputerUseError("capture_failed", "Cua failed to capture the desktop", "observe_again", true);
+    throw new ComputerUseError(
+      "capture_failed",
+      "Cua failed to capture the desktop",
+      "observe_again",
+      true,
+      false,
+      "capture_failed",
+    );
   }
   let value: unknown;
   try {
     value = JSON.parse(result.structuredJson ?? "");
   } catch {
-    throw new ComputerUseError("capture_failed", "Cua returned malformed desktop metadata", "observe_again", true);
+    throw new ComputerUseError(
+      "capture_failed",
+      "Cua returned malformed desktop metadata",
+      "observe_again",
+      true,
+      false,
+      "capture_failed",
+    );
   }
   const parsed = DesktopStateSchema.safeParse(value);
   if (!parsed.success) {
-    throw new ComputerUseError("capture_failed", "Cua returned invalid desktop metadata", "observe_again", true);
+    throw new ComputerUseError(
+      "capture_failed",
+      "Cua returned invalid desktop metadata",
+      "observe_again",
+      true,
+      false,
+      "capture_failed",
+    );
   }
   const image = result.images.length === 1 ? result.images[0] : undefined;
   if (image === undefined || image.mimeType !== "image/png" || image.dataBase64.length === 0) {
-    throw new ComputerUseError("capture_failed", "Cua did not return exactly one screenshot image", "observe_again", true);
+    throw new ComputerUseError(
+      "capture_failed",
+      "Cua did not return exactly one screenshot image",
+      "observe_again",
+      true,
+      false,
+      "capture_failed",
+    );
   }
   return {
     image: {

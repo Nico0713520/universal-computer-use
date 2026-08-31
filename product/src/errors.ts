@@ -36,6 +36,22 @@ export const ERROR_CODES = [
 
 export type ComputerUseErrorCode = typeof ERROR_CODES[number];
 
+export type ComputerUseDiagnosticReason =
+  | "runtime_missing"
+  | "runtime_version_mismatch"
+  | "runtime_integrity_mismatch"
+  | "runtime_signature_mismatch"
+  | "runtime_startup_failed"
+  | "interactive_session_locked"
+  | "interactive_session_unknown"
+  | "session_initialization_failed"
+  | "cursor_initialization_failed"
+  | "desktop_permission_required"
+  | "screen_recording_permission_required"
+  | "accessibility_permission_required"
+  | "capture_failed"
+  | "session_cleanup_failed";
+
 export class ComputerUseError extends Error {
   constructor(
     public readonly code: ComputerUseErrorCode,
@@ -51,6 +67,7 @@ export class ComputerUseError extends Error {
       | "stop",
     public readonly retryable: boolean,
     public readonly snapshotConsumed = false,
+    public readonly diagnosticReason?: ComputerUseDiagnosticReason,
   ) {
     super(message);
   }

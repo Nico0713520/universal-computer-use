@@ -371,11 +371,12 @@ Assert-ExactKeys $doctor @(
   "expected_engine_version", "reported_engine_version", "engine_connected",
   "required_tools_present", "desktop_unlocked", "permissions",
   "permission_details",
-  "observation_succeeded", "screenshot"
+  "observation_succeeded", "screenshot", "cleanup"
 ) "doctor report"
 Assert-ExactKeys $doctor.permission_details @(
   "accessibility", "screen_recording", "source"
 ) "doctor permission details"
+Assert-ExactKeys $doctor.cleanup @("status") "doctor cleanup"
 if (
   $doctor.ok -ne $true -or $doctor.platform -ne "windows" -or
   $doctor.reported_engine_version -ne $lock.version -or
@@ -385,6 +386,9 @@ if (
 }
 if ($doctor.desktop_unlocked -ne $true -or $doctor.observation_succeeded -ne $true) {
   Stop-Lane "Runtime did not report an unlocked observable desktop"
+}
+if ($doctor.cleanup.status -ne "succeeded") {
+  Stop-Lane "Runtime diagnostic session cleanup failed"
 }
 if ($doctor.permissions -notin @("granted", "required", "unknown")) {
   Stop-Lane "Runtime returned an unknown permission classification"

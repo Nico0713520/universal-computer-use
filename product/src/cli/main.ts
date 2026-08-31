@@ -19,11 +19,10 @@ import {
   runStdioServer,
 } from "../mcp/main.js";
 import { renderConfig, type ConfigClient } from "./config.js";
+import { createDoctorDependencyAdapter } from "./doctor-dependencies.js";
 import { renderDoctorHuman } from "./doctor-output.js";
 import { isDirectEntryPoint } from "./entrypoint.js";
 import { runDoctor, type DoctorOptions } from "./doctor.js";
-import { probeMacInteractiveSession } from "./interactive-session.js";
-import { probeMacPermissions } from "./macos-permissions.js";
 import {
   fetchDownloader,
   nodeProcessRunner,
@@ -124,6 +123,10 @@ export async function runCli(
   dependencies: CliDependencies = defaultDependencies,
 ): Promise<number> {
   const [command, ...args] = argv;
+  const doctorDependencies = createDoctorDependencyAdapter({
+    connectEngine: dependencies.connectEngine,
+    runner: dependencies.runner,
+  });
   if (command === undefined) throw new Error(usage());
   if (command === "--help" || command === "-h") {
     requireOnly(args, []);
@@ -144,14 +147,7 @@ export async function runCli(
         runDoctor: () =>
           runDoctor(
             dependencies.doctorOptions ?? {},
-            {
-              lock,
-              connectEngine: dependencies.connectEngine,
-              probeInteractiveSession: () =>
-                probeMacInteractiveSession(dependencies.runner),
-              probeMacPermissions: () =>
-                probeMacPermissions(dependencies.runner),
-            },
+            doctorDependencies(lock),
           ),
       },
     );
@@ -168,13 +164,7 @@ export async function runCli(
     const lock = await dependencies.loadLock();
     const report = await runDoctor(
       dependencies.doctorOptions ?? {},
-      {
-        lock,
-        connectEngine: dependencies.connectEngine,
-        probeInteractiveSession: () =>
-          probeMacInteractiveSession(dependencies.runner),
-        probeMacPermissions: () => probeMacPermissions(dependencies.runner),
-      },
+      doctorDependencies(lock),
     );
     io.stdout.write(
       args.includes("--json")

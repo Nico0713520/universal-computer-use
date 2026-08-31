@@ -23,6 +23,8 @@ async function requireProcessSuccess(
       `${label} failed`,
       "setup",
       false,
+      false,
+      "runtime_signature_mismatch",
     );
   }
   return result;
@@ -34,6 +36,8 @@ function signerMismatch(message: string): ComputerUseError {
     message,
     "setup",
     false,
+    false,
+    "runtime_signature_mismatch",
   );
 }
 
@@ -131,6 +135,8 @@ async function connectWithStartup<T>(
       "CuaDriver is not installed at the locked macOS application path",
       "setup",
       false,
+      false,
+      "runtime_missing",
     );
   }
   await verifyMacRuntimeSignature(lock, dependencies.runner, appPath);
@@ -145,6 +151,8 @@ async function connectWithStartup<T>(
       "CuaDriver could not be started",
       "doctor",
       true,
+      false,
+      "runtime_startup_failed",
     );
   }
 
@@ -164,6 +172,8 @@ async function connectWithStartup<T>(
         "CuaDriver did not become ready before the startup deadline",
         "doctor",
         true,
+        false,
+        "runtime_startup_failed",
       );
     }
     const delayMs = READINESS_DELAYS_MS[Math.min(attempt, READINESS_DELAYS_MS.length - 1)]!;
