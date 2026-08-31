@@ -8,6 +8,7 @@ import {
 } from "@trycua/cua-driver";
 
 import { ComputerUseError } from "../errors.js";
+import { disableAndVerifyAgentCursor } from "./agent-cursor.js";
 import { mapAction } from "./action-mapper.js";
 import {
   parseAppList,
@@ -192,7 +193,20 @@ export class CuaEngine implements EnginePort {
       );
     }
 
-    return new CuaEngine(sdk, lock.version, desktop.value.state.session, window.value.state.session);
+    const sessions = [
+      desktop.value.state.session,
+      window.value.state.session,
+    ] as const;
+    try {
+      await disableAndVerifyAgentCursor(sdk, sessions);
+    } catch (error) {
+      await Promise.allSettled(
+        [...sessions].reverse().map(async (session) => sdk.endSession({ session })),
+      );
+      throw error;
+    }
+
+    return new CuaEngine(sdk, lock.version, sessions[0], sessions[1]);
   }
 
   async discover(input: EngineDiscoverInput, signal: AbortSignal): Promise<EngineDiscovery> {

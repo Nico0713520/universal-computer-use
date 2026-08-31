@@ -60,6 +60,20 @@ describe("Cua daemon connection", () => {
     });
   });
 
+  it("maps a transport loss during Cursor bootstrap to runtime_unavailable", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
+    vi.spyOn(sdk, "callTool").mockRejectedValueOnce(new Error("DriverError.Transport"));
+    vi.spyOn(CuaDriver, "connect").mockReturnValueOnce(sdk as never);
+
+    await expect(CuaEngine.connect(lock)).rejects.toMatchObject({
+      code: "runtime_unavailable",
+      recovery: "doctor",
+      retryable: true,
+    });
+    expect(sdk.endSessionCalls).toHaveLength(2);
+  });
+
   it("rejects a daemon version that differs from the lock", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({ driverVersion: "0.22.0", tools: [...lock.required_tools] });
@@ -134,6 +148,94 @@ describe("Cua daemon connection", () => {
     ]);
   });
 
+  it("disables and verifies the Agent Cursor for both internal sessions", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+    });
+
+    const engine = await CuaEngine.fromSdk(sdk, lock);
+    const sessions = sdk.startSessionCalls.map(({ session }) => session as string);
+
+    expect(sdk.callToolCalls).toEqual([
+      ...sessions.map((session) => ({
+        name: "set_agent_cursor_enabled",
+        argumentsJson: JSON.stringify({ session, enabled: false }),
+      })),
+      ...sessions.map((session) => ({
+        name: "get_agent_cursor_state",
+        argumentsJson: JSON.stringify({ session }),
+      })),
+    ]);
+
+    await engine.close();
+  });
+
+  it("cleans both sessions when one Cursor configuration call fails", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: {
+        set_agent_cursor_enabled: [
+          result({ session: "desktop", enabled: false }),
+          { ...result({ code: "cursor_failed" }), isError: true },
+        ],
+      },
+    });
+
+    await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
+      code: "engine_contract_changed",
+    });
+
+    const sessions = sdk.startSessionCalls.map(({ session }) => session as string);
+    expect(sdk.endSessionCalls).toEqual([
+      { session: sessions[1] },
+      { session: sessions[0] },
+    ]);
+    expect(sdk.callToolCalls.map(({ name }) => name)).toEqual([
+      "set_agent_cursor_enabled",
+      "set_agent_cursor_enabled",
+    ]);
+  });
+
+  it("cleans both sessions when Cursor readback remains enabled", async () => {
+    const lock = await loadEngineLock();
+    const sdk = fakeSdk({
+      driverVersion: lock.version,
+      tools: [...lock.required_tools],
+      toolResults: {
+        get_agent_cursor_state: [
+          result({ session: "placeholder", enabled: false }),
+          result({ session: "placeholder", enabled: true }),
+        ],
+      },
+    });
+    vi.spyOn(sdk, "callTool").mockImplementation(async (name, argumentsJson) => {
+      sdk.callToolCalls.push({ name, argumentsJson });
+      const input = JSON.parse(argumentsJson) as { session: string };
+      if (name === "set_agent_cursor_enabled") {
+        return result({ session: input.session, enabled: false });
+      }
+      if (name === "get_agent_cursor_state") {
+        const readbackIndex = sdk.callToolCalls.filter((call) => call.name === name).length;
+        return result({ session: input.session, enabled: readbackIndex === 2 });
+      }
+      throw new Error("unexpected_sdk_call");
+    });
+
+    await expect(CuaEngine.fromSdk(sdk, lock)).rejects.toMatchObject({
+      code: "engine_contract_changed",
+    });
+
+    const sessions = sdk.startSessionCalls.map(({ session }) => session as string);
+    expect(sdk.endSessionCalls).toEqual([
+      { session: sessions[1] },
+      { session: sessions[0] },
+    ]);
+  });
+
   it("rejects a session that does not establish desktop scope", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({
@@ -173,6 +275,7 @@ describe("Cua daemon connection", () => {
       toolResult,
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
+    sdk.callToolCalls.length = 0;
 
     await expect(engine.observe(new AbortController().signal)).resolves.toEqual({
       image: {
@@ -341,6 +444,7 @@ describe("Cua daemon connection", () => {
       },
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
+    sdk.callToolCalls.length = 0;
 
     const discovery = await engine.discover({ apps: true, windows: true }, new AbortController().signal);
 
@@ -397,6 +501,7 @@ describe("Cua daemon connection", () => {
   it("requests apps and windows concurrently for one window discovery", async () => {
     const lock = await loadEngineLock();
     const sdk = fakeSdk({ driverVersion: lock.version, tools: [...lock.required_tools] });
+    const engine = await CuaEngine.fromSdk(sdk, lock);
     let inFlight = 0;
     let maxInFlight = 0;
     vi.spyOn(sdk, "callTool").mockImplementation(async (name) => {
@@ -408,7 +513,6 @@ describe("Cua daemon connection", () => {
       if (name === "list_windows") return result({ windows: [] });
       throw new Error(`unexpected tool: ${name}`);
     });
-    const engine = await CuaEngine.fromSdk(sdk, lock);
 
     await engine.discover({ apps: true, windows: true }, new AbortController().signal);
 
@@ -428,6 +532,7 @@ describe("Cua daemon connection", () => {
       },
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
+    sdk.callToolCalls.length = 0;
     const registry = new TargetRegistry({ token: () => "abcdefghijklmnop" });
     const [window] = registry.registerWindows([{
       nativeKey: "window:7",
@@ -490,6 +595,7 @@ describe("Cua daemon connection", () => {
       toolResults: { click: clickResult },
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
+    sdk.callToolCalls.length = 0;
 
     await expect(engine.execute({
       target: { kind: "window", pid: 42, windowId: 7 },
@@ -533,6 +639,7 @@ describe("Cua daemon connection", () => {
       },
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
+    sdk.callToolCalls.length = 0;
 
     await expect(engine.health(new AbortController().signal)).resolves.toBe(true);
     expect(sdk.callToolCalls).toEqual([{
@@ -557,6 +664,7 @@ describe("Cua daemon connection", () => {
       },
     });
     const engine = await CuaEngine.fromSdk(sdk, lock);
+    sdk.callToolCalls.length = 0;
     const registry = new TargetRegistry({ token: () => "abcdefghijklmnop" });
     const [app] = registry.registerApps([{
       nativeKey: "bundle:com.apple.calculator",
