@@ -39,6 +39,12 @@ class SmokeFailure extends Error {
   }
 }
 
+class TextEditOwnershipCleanupFailure extends SmokeFailure {
+  constructor(readonly pid: number) {
+    super("verification_failed");
+  }
+}
+
 export type Discovery = Readonly<{
   result: CallToolResult;
   app: PublicApp;
@@ -274,23 +280,144 @@ async function openTextEditDocument(documentPath: string): Promise<void> {
   if (code !== 0) throw new SmokeFailure("textedit_unavailable");
 }
 
+export type TextEditProcessController = Readonly<{
+  listPids: () => Promise<ReadonlySet<number>>;
+  openDocument: (path: string) => Promise<void>;
+  terminate: (pid: number) => Promise<void>;
+}>;
+
+type TextEditTerminationDependencies = Readonly<{
+  signal: (pid: number, signal: NodeJS.Signals | 0) => void;
+  wait: (ms: number) => Promise<void>;
+  now: () => number;
+}>;
+
+function processExited(error: unknown): boolean {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === "ESRCH";
+}
+
+export async function terminateOwnedTextEditPid(
+  pid: number,
+  dependencies: TextEditTerminationDependencies = {
+    signal: (candidate, signal) => process.kill(candidate, signal),
+    wait: (ms) => new Promise<void>((resolvePromise) => setTimeout(resolvePromise, ms)),
+    now: Date.now,
+  },
+): Promise<void> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new SmokeFailure("verification_failed");
+  try {
+    dependencies.signal(pid, "SIGTERM");
+  } catch (error) {
+    if (processExited(error)) return;
+    throw error;
+  }
+
+  const deadline = dependencies.now() + 5_000;
+  do {
+    try {
+      dependencies.signal(pid, 0);
+    } catch (error) {
+      if (processExited(error)) return;
+      throw error;
+    }
+    if (dependencies.now() >= deadline) throw new SmokeFailure("verification_failed");
+    await dependencies.wait(50);
+  } while (true);
+}
+
+async function listTextEditPids(): Promise<ReadonlySet<number>> {
+  const child = spawn("/usr/bin/pgrep", ["-x", "TextEdit"], {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  let stdout = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+  const [code] = await once(child, "exit") as [number | null];
+  if (code === 1) return new Set();
+  if (code !== 0) throw new SmokeFailure("textedit_unavailable");
+  const values = stdout.trim() === ""
+    ? []
+    : stdout.trim().split(/\s+/u).map((value) => Number(value));
+  if (!values.every((pid) => Number.isSafeInteger(pid) && pid > 0)) {
+    throw new SmokeFailure("textedit_unavailable");
+  }
+  return new Set(values);
+}
+
+const defaultTextEditProcesses: TextEditProcessController = {
+  listPids: listTextEditPids,
+  openDocument: openTextEditDocument,
+  terminate: terminateOwnedTextEditPid,
+};
+
+export type OwnedTextEditWindow = Readonly<{
+  windowRef: string;
+  pid: number;
+}>;
+
+async function waitForUniqueNewTextEditPid(
+  processes: TextEditProcessController,
+  before: ReadonlySet<number>,
+  timeoutMs = 5_000,
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const current = await processes.listPids();
+    const added = [...current].filter((pid) => !before.has(pid));
+    if (added.length === 1) return added[0]!;
+    if (added.length > 1 || Date.now() >= deadline) {
+      throw new SmokeFailure("textedit_unavailable");
+    }
+    await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
+  } while (true);
+}
+
+async function terminateFailedTextEditOwnership(
+  processes: TextEditProcessController,
+  pid: number,
+): Promise<void> {
+  try {
+    await processes.terminate(pid);
+  } catch {
+    throw new TextEditOwnershipCleanupFailure(pid);
+  }
+}
+
 export async function ownFreshTextEditWindow(
   client: Client,
   documentPath: string,
-  openDocument: (path: string) => Promise<void> = openTextEditDocument,
-): Promise<string> {
+  processes: TextEditProcessController = defaultTextEditProcesses,
+): Promise<OwnedTextEditWindow> {
   const ownedTitle = basename(documentPath);
   if ((await textEditWindows(client, ownedTitle)).length !== 0) {
     throw new SmokeFailure("textedit_unavailable");
   }
-  await openDocument(documentPath);
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    const owned = selectExactVisibleWindow(await textEditWindows(client, ownedTitle));
-    if (typeof owned?.window_ref === "string") return owned.window_ref;
-    await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
+  const beforePids = await processes.listPids();
+  let openFailed = false;
+  try {
+    await processes.openDocument(documentPath);
+  } catch {
+    openFailed = true;
   }
-  throw new SmokeFailure("textedit_unavailable");
+  const ownedPid = await waitForUniqueNewTextEditPid(processes, beforePids);
+  if (openFailed) {
+    await terminateFailedTextEditOwnership(processes, ownedPid);
+    throw new SmokeFailure("textedit_unavailable");
+  }
+  try {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const owned = selectExactVisibleWindow(await textEditWindows(client, ownedTitle));
+      if (typeof owned?.window_ref === "string") {
+        return { windowRef: owned.window_ref, pid: ownedPid };
+      }
+      await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
+    }
+    throw new SmokeFailure("textedit_unavailable");
+  } catch (error) {
+    await terminateFailedTextEditOwnership(processes, ownedPid);
+    throw error;
+  }
 }
 
 function editableElement(result: CallToolResult): PublicElement | undefined {
@@ -468,10 +595,12 @@ export async function cleanupSmokeResources(
     calculatorWindowRef: string | undefined;
     calculatorCurrent?: CallToolResult | undefined;
     ownedTextEditWindow: string | undefined;
+    ownedTextEditPid?: number | undefined;
     textEditCurrent: CallToolResult | undefined;
     ownedTextEditRoot?: string | undefined;
     ownedTextEditTitle?: string | undefined;
   }>,
+  processes: Pick<TextEditProcessController, "terminate"> = defaultTextEditProcesses,
 ): Promise<boolean> {
   let passed = true;
   try {
@@ -495,6 +624,13 @@ export async function cleanupSmokeResources(
   } catch {
     passed = false;
   }
+  if (resources.ownedTextEditPid !== undefined) {
+    try {
+      await processes.terminate(resources.ownedTextEditPid);
+    } catch {
+      passed = false;
+    }
+  }
   if (resources.ownedTextEditRoot !== undefined) {
     try {
       await rm(resources.ownedTextEditRoot, { recursive: true, force: true });
@@ -507,12 +643,13 @@ export async function cleanupSmokeResources(
 
 export async function runRealAppSmoke(
   client: Client,
-  openDocument: (path: string) => Promise<void> = openTextEditDocument,
+  processes: TextEditProcessController = defaultTextEditProcesses,
 ): Promise<RealAppSmoke> {
   let calculatorWindowRef: string | undefined;
   let calculatorTouched = false;
   let calculatorCurrent: CallToolResult | undefined;
   let ownedTextEditWindow: string | undefined;
+  let ownedTextEditPid: number | undefined;
   let textEditCurrent: CallToolResult | undefined;
   let ownedTextEditRoot: string | undefined;
   let ownedTextEditTitle: string | undefined;
@@ -539,13 +676,18 @@ export async function runRealAppSmoke(
     ownedTextEditTitle = `ucu-${randomUUID()}.txt`;
     const documentPath = join(ownedTextEditRoot, ownedTextEditTitle);
     await writeFile(documentPath, "", { flag: "wx" });
-    ownedTextEditWindow = await ownFreshTextEditWindow(client, documentPath, openDocument);
+    const ownedTextEdit = await ownFreshTextEditWindow(client, documentPath, processes);
+    ownedTextEditWindow = ownedTextEdit.windowRef;
+    ownedTextEditPid = ownedTextEdit.pid;
     const textEdit = await runTextEdit(client, ownedTextEditWindow);
     textEditCurrent = textEdit.current;
     textEditPassed = textEdit.passed;
     textEditSingleWrite = textEdit.singleWrite;
     if (!textEditPassed || !textEditSingleWrite) throw new SmokeFailure("verification_failed");
   } catch (error) {
+    if (error instanceof TextEditOwnershipCleanupFailure) {
+      ownedTextEditPid = error.pid;
+    }
     failure ??= error instanceof SmokeFailure ? error.code : "verification_failed";
   }
 
@@ -554,10 +696,11 @@ export async function runRealAppSmoke(
     calculatorWindowRef,
     calculatorCurrent,
     ownedTextEditWindow,
+    ownedTextEditPid,
     textEditCurrent,
     ownedTextEditRoot,
     ownedTextEditTitle,
-  });
+  }, processes);
   if (!cleanupPassed) failure ??= "verification_failed";
 
   return {

@@ -12,6 +12,8 @@ import {
   selectExactVisibleWindow,
   ensureCalculatorWindow,
   runRealAppSmoke,
+  terminateOwnedTextEditPid,
+  type TextEditProcessController,
   validTextEditSetValueResult,
 } from "../e2e/development/macos-real-app-smoke.js";
 
@@ -160,6 +162,20 @@ function scriptedClient(
   } as unknown as Client;
 }
 
+function textEditProcesses(
+  pidSnapshots: readonly (readonly number[])[] = [[41], [41, 73]],
+): TextEditProcessController & {
+  openDocument: ReturnType<typeof vi.fn>;
+  terminate: ReturnType<typeof vi.fn>;
+} {
+  let snapshot = 0;
+  return {
+    listPids: vi.fn(async () => new Set(pidSnapshots[Math.min(snapshot++, pidSnapshots.length - 1)])),
+    openDocument: vi.fn(async () => undefined),
+    terminate: vi.fn(async () => undefined),
+  };
+}
+
 describe("TextEdit owned-window smoke", () => {
   it("opens the owned document without foregrounding TextEdit", async () => {
     const source = await readFile(
@@ -167,6 +183,28 @@ describe("TextEdit owned-window smoke", () => {
       "utf8",
     );
     expect(source).toContain('["-n", "-F", "-g", "-a", "TextEdit", documentPath]');
+  });
+
+  it("terminates and waits for only the proven TextEdit PID", async () => {
+    let aliveChecks = 0;
+    const signal = vi.fn((pid: number, value: NodeJS.Signals | 0) => {
+      expect(pid).toBe(73);
+      if (value === 0 && (aliveChecks += 1) >= 3) {
+        const exited = new Error("process exited") as NodeJS.ErrnoException;
+        exited.code = "ESRCH";
+        throw exited;
+      }
+    });
+    const wait = vi.fn(async () => undefined);
+
+    await expect(terminateOwnedTextEditPid(73, {
+      signal,
+      wait,
+      now: () => 0,
+    })).resolves.toBeUndefined();
+    expect(signal).toHaveBeenNthCalledWith(1, 73, "SIGTERM");
+    expect(signal).not.toHaveBeenCalledWith(41, expect.anything());
+    expect(wait).toHaveBeenCalled();
   });
 
   it("accepts confirmed TextEdit readback when Cua honestly reports verification_unknown", () => {
@@ -191,25 +229,82 @@ describe("TextEdit owned-window smoke", () => {
 
   it("opens an owned temporary document when no window exists", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
-    const openDocument = vi.fn(async () => undefined);
+    const processes = textEditProcesses();
     const client = scriptedClient([
       desktopWithTitles("desktop-1", []),
       desktopWithTitles("desktop-2", [{ ref: "owned", title: "owned.txt" }], "文本编辑"),
     ], calls);
 
-    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
-      .resolves.toBe("owned");
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", processes))
+      .resolves.toEqual({ windowRef: "owned", pid: 73 });
     expect(calls.map((call) => call.name)).toEqual([
       "computer_observe",
       "computer_observe",
     ]);
-    expect(openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
+    expect(processes.openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
+    expect(processes.listPids).toHaveBeenCalledTimes(2);
+    expect(processes.terminate).not.toHaveBeenCalled();
     expect(JSON.stringify(calls)).not.toContain("set_value");
+  });
+
+  it("waits for the one new TextEdit PID when process discovery trails open", async () => {
+    const processes = textEditProcesses([[41], [41], [41, 73]]);
+    const client = scriptedClient([
+      desktopWithTitles("desktop-1", []),
+      desktopWithTitles("desktop-2", [{ ref: "owned", title: "owned.txt" }]),
+    ], []);
+
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", processes))
+      .resolves.toEqual({ windowRef: "owned", pid: 73 });
+    expect(processes.listPids).toHaveBeenCalledTimes(3);
+    expect(processes.terminate).not.toHaveBeenCalled();
+  });
+
+  it("terminates only the proven new PID when exact-title window discovery fails", async () => {
+    const processes = textEditProcesses([[41], [41, 73]]);
+    const discoveryFailure: CallToolResult = {
+      isError: true,
+      content: [{ type: "text", text: "controlled discovery failure" }],
+    };
+    const client = scriptedClient([
+      desktopWithTitles("desktop-1", []),
+      discoveryFailure,
+    ], []);
+
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", processes))
+      .rejects.toThrow("verification_failed");
+    expect(processes.terminate).toHaveBeenCalledExactlyOnceWith(73);
+    expect(processes.terminate).not.toHaveBeenCalledWith(41);
+  });
+
+  it("reclaims the proven new PID even when open reports failure", async () => {
+    const processes = textEditProcesses([[41], [41, 73]]);
+    processes.openDocument.mockRejectedValueOnce(new Error("controlled open failure"));
+    const client = scriptedClient([
+      desktopWithTitles("desktop-1", []),
+    ], []);
+
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", processes))
+      .rejects.toThrow("textedit_unavailable");
+    expect(processes.terminate).toHaveBeenCalledExactlyOnceWith(73);
+    expect(processes.terminate).not.toHaveBeenCalledWith(41);
+  });
+
+  it("fails closed without terminating anything when two new TextEdit PIDs appear", async () => {
+    const processes = textEditProcesses([[41], [41, 73, 74]]);
+    const client = scriptedClient([
+      desktopWithTitles("desktop-1", []),
+    ], []);
+
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", processes))
+      .rejects.toThrow("textedit_unavailable");
+    expect(processes.openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
+    expect(processes.terminate).not.toHaveBeenCalled();
   });
 
   it("opens an owned document beside existing windows and proves its exact title", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
-    const openDocument = vi.fn(async () => undefined);
+    const processes = textEditProcesses();
     const client = scriptedClient([
       desktopWithTitles("desktop-1", [{ ref: "preexisting", title: "notes.txt" }]),
       desktopWithTitles("desktop-2", [
@@ -218,15 +313,15 @@ describe("TextEdit owned-window smoke", () => {
       ]),
     ], calls);
 
-    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
-      .resolves.toBe("owned");
-    expect(openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", processes))
+      .resolves.toEqual({ windowRef: "owned", pid: 73 });
+    expect(processes.openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
     expect(calls).toHaveLength(2);
     expect(JSON.stringify(calls)).not.toContain("set_value");
   });
 
   it("selects the exact owned title even when another window appears concurrently", async () => {
-    const openDocument = vi.fn(async () => undefined);
+    const processes = textEditProcesses();
     const client = scriptedClient([
       desktopWithTitles("desktop-1", [{ ref: "preexisting", title: "notes.txt" }]),
       desktopWithTitles("desktop-2", [
@@ -236,20 +331,21 @@ describe("TextEdit owned-window smoke", () => {
       ]),
     ], []);
 
-    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
-      .resolves.toBe("owned");
-    expect(openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", processes))
+      .resolves.toEqual({ windowRef: "owned", pid: 73 });
+    expect(processes.openDocument).toHaveBeenCalledExactlyOnceWith("/private/owned.txt");
   });
 
   it("fails closed before opening when the supposedly unique title already exists", async () => {
-    const openDocument = vi.fn(async () => undefined);
+    const processes = textEditProcesses();
     const client = scriptedClient([
       desktopWithTitles("desktop-1", [{ ref: "preexisting", title: "owned.txt" }]),
     ], []);
 
-    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", openDocument))
+    await expect(ownFreshTextEditWindow(client, "/private/owned.txt", processes))
       .rejects.toThrow("textedit_unavailable");
-    expect(openDocument).not.toHaveBeenCalled();
+    expect(processes.openDocument).not.toHaveBeenCalled();
+    expect(processes.terminate).not.toHaveBeenCalled();
   });
 
   it("closes only the owned ref and proves it disappeared without inventing an empty AXValue", async () => {
@@ -538,6 +634,26 @@ describe("Calculator cleanup", () => {
       (call.arguments.action as { type?: unknown }).type === "invoke_menu")).toBe(true);
   });
 
+  it("terminates the proven TextEdit PID even when exact-window cleanup fails", async () => {
+    const processes = textEditProcesses();
+    const client = scriptedClient([
+      windowState("fresh-before-close", "text-owned", true),
+      acted("after-close", "text-owned"),
+      desktop("still-open", ["text-owned"]),
+      desktop("still-open-again", ["text-owned"]),
+    ], []);
+
+    await expect(cleanupSmokeResources(client, {
+      calculatorTouched: false,
+      calculatorWindowRef: undefined,
+      ownedTextEditWindow: "text-owned",
+      ownedTextEditPid: 73,
+      textEditCurrent: windowState("old", "text-owned", true),
+    }, processes)).resolves.toBe(false);
+    expect(processes.terminate).toHaveBeenCalledExactlyOnceWith(73);
+    expect(processes.terminate).not.toHaveBeenCalledWith(41);
+  });
+
   it("dismisses a save sheet only on the exact owned TextEdit ref", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const client = scriptedClient([
@@ -566,13 +682,66 @@ describe("Calculator cleanup", () => {
 });
 
 describe("real app smoke isolation", () => {
+  it("reclaims the owned TextEdit PID after later smoke and window-cleanup failures", async () => {
+    const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
+    const processes = textEditProcesses([[41], [41, 73]]);
+    let titleDiscoveries = 0;
+    const client = {
+      callTool: async (request: Readonly<{ name: string; arguments?: Record<string, unknown> }>) => {
+        calls.push(request);
+        const discover = request.arguments?.discover as { query?: string } | undefined;
+        if (discover?.query === "com.apple.calculator") {
+          return result({ snapshot_id: "calculator-missing", apps: [], windows: [] }, true);
+        }
+        if (typeof discover?.query === "string") {
+          titleDiscoveries += 1;
+          return titleDiscoveries === 1
+            ? desktopWithTitles("before-open", [])
+            : desktopWithTitles("after-open", [{ ref: "owned", title: discover.query }]);
+        }
+        return {
+          isError: true,
+          content: [{ type: "text", text: "controlled window failure" }],
+        } satisfies CallToolResult;
+      },
+    } as unknown as Client;
+
+    await expect(runRealAppSmoke(client, processes)).resolves.toMatchObject({
+      textedit_unique_value: false,
+      textedit_single_write: false,
+      cleanup_failed: true,
+    });
+    expect(processes.terminate).toHaveBeenCalledExactlyOnceWith(73);
+    expect(processes.terminate).not.toHaveBeenCalledWith(41);
+    expect(calls.some((call) => call.arguments?.target !== undefined)).toBe(true);
+  });
+
+  it("retries the same proven PID and reports cleanup failure when termination cannot complete", async () => {
+    const unavailable = result({ snapshot_id: "desktop", apps: [], windows: [] }, true);
+    const client = scriptedClient([unavailable, unavailable], []);
+    const processes = textEditProcesses([[41], [41, 73]]);
+    processes.openDocument.mockRejectedValueOnce(new Error("controlled open failure"));
+    processes.terminate.mockRejectedValue(new Error("controlled termination failure"));
+
+    await expect(runRealAppSmoke(client, processes)).resolves.toMatchObject({
+      textedit_unique_value: false,
+      textedit_single_write: false,
+      cleanup_failed: true,
+    });
+    expect(processes.terminate).toHaveBeenCalledTimes(2);
+    expect(processes.terminate).toHaveBeenNthCalledWith(1, 73);
+    expect(processes.terminate).toHaveBeenNthCalledWith(2, 73);
+    expect(processes.terminate).not.toHaveBeenCalledWith(41);
+  });
+
   it("still attempts TextEdit discovery after Calculator is unavailable", async () => {
     const calls: Array<Readonly<{ name: string; arguments?: Record<string, unknown> }>> = [];
     const unavailable = result({ snapshot_id: "desktop", apps: [], windows: [] }, true);
     const client = scriptedClient([unavailable, unavailable], calls);
-    const openDocument = vi.fn(async () => { throw new Error("controlled_open_failure"); });
+    const processes = textEditProcesses([[41], [41, 73]]);
+    processes.openDocument.mockRejectedValueOnce(new Error("controlled_open_failure"));
 
-    await expect(runRealAppSmoke(client, openDocument)).resolves.toMatchObject({
+    await expect(runRealAppSmoke(client, processes)).resolves.toMatchObject({
       calculator_703: false,
       textedit_unique_value: false,
       textedit_single_write: false,
@@ -587,6 +756,7 @@ describe("real app smoke isolation", () => {
     expect(calls[1]?.arguments?.discover).not.toHaveProperty("apps");
     expect((calls[1]?.arguments?.discover as { query?: unknown }).query)
       .toMatch(/^ucu-[0-9a-f-]+\.txt$/);
-    expect(openDocument).toHaveBeenCalledOnce();
+    expect(processes.openDocument).toHaveBeenCalledOnce();
+    expect(processes.terminate).toHaveBeenCalledExactlyOnceWith(73);
   });
 });
