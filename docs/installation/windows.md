@@ -11,20 +11,27 @@ Version 0.2.6 does not promote Windows as part of the Mac Agent Preview. Windows
 
 Model rule: this plugin uses the host Agent's current multimodal model. It does not include a model, model API key, planner, or private vision service.
 
-## Install and set up
+## Install and set up the development path
 
-From PowerShell or another terminal:
-
-```powershell
-npm install --global @universal-computer-use/plugin
-computer-use setup
-```
-
-Normal setup fails closed with `engine_not_release_eligible` unless the exact Windows engine in `engine.lock.json` has completed signer and E2E promotion. For candidate development only:
+The npm registry package is not published. Start from the reviewed public repository and an explicitly selected 40-character lowercase commit. In PowerShell:
 
 ```powershell
+git clone --no-checkout https://github.com/Nico0713520/universal-computer-use
+cd universal-computer-use
+git fetch origin <40-lowercase-hex-commit>
+git checkout --detach <40-lowercase-hex-commit>
+if ((git rev-parse HEAD) -ne "<40-lowercase-hex-commit>") { throw "commit mismatch" }
+cd product
+npx --yes pnpm@9.0.4 install --frozen-lockfile --ignore-scripts
+npx --yes pnpm@9.0.4 build
+npm pack
+npm install --global .\universal-computer-use-plugin-0.2.6.tgz
 computer-use setup --development
+computer-use doctor
+computer-use doctor --json
 ```
+
+The checkout must be clean and detached at the reviewed commit before build. Normal `computer-use setup` remains reserved for a future promoted package and currently fails closed with `engine_not_release_eligible`; it is not an installation step for this development path.
 
 Development setup always emits a machine-readable `development_only:true` warning and cannot qualify a public release.
 
@@ -66,15 +73,9 @@ computer-use config --client kimi
 
 Generic output is stdout-only JSON whose `command` is the absolute path to the current `node.exe` and whose first argument is the absolute `dist\mcp\main.js` path; it does not depend on `PATH`, an npm shim, or direct execution of a JavaScript file. Explanations are written to stderr. Codex and Kimi output deterministic registration commands with those paths as two independently quoted arguments. The host must send PNG content to its own current multimodal model and permit repeated `computer_observe` / one-action `computer_act` calls. Host approval settings remain the host's responsibility.
 
-## Upgrade
+## Upgrade a development checkout
 
-```powershell
-npm update --global @universal-computer-use/plugin
-computer-use setup
-computer-use doctor --json
-```
-
-Do not install an arbitrary Cua build. A candidate release must be an explicit stable SemVer tag, contain all required fix commits, match its release checksums and scripts, pass Windows 10/11 x64 tests at 100%, 125%, and 150% scaling, and record its Authenticode identity before release promotion.
+Select and verify a new reviewed source commit, repeat the build and local `npm pack` flow above, install that exact local tarball, then run `computer-use setup --development` and both doctor modes. Do not update from the unpublished registry package or install an arbitrary Cua build. A candidate release must be an explicit stable SemVer tag, contain all required fix commits, match its release checksums and scripts, pass Windows 10/11 x64 tests at 100%, 125%, and 150% scaling, and record its Authenticode identity before release promotion.
 
 ## Uninstall
 

@@ -17,6 +17,6 @@ export function createDoctorDependencyAdapter(
     lock,
     connectEngine: input.connectEngine,
     probeInteractiveSession: () => probeMacInteractiveSession(input.runner),
-    probeMacPermissions: () => probeMacPermissions(input.runner),
+    probeMacPermissions: () => probeMacPermissions(lock, input.runner),
   });
 }

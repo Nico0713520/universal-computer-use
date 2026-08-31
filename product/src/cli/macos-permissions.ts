@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { EngineLock } from "../engine/lock.js";
+import { verifyMacRuntimeSignature } from "../engine/runtime-startup.js";
 import type { ProcessRunner } from "./process-runner.js";
 
 export type PermissionState = "granted" | "required" | "unknown";
@@ -12,6 +14,7 @@ export interface MacPermissionProbeResult {
 
 const DEFAULT_CUA_EXECUTABLE =
   "/Applications/CuaDriver.app/Contents/MacOS/cua-driver";
+const DEFAULT_CUA_APP = "/Applications/CuaDriver.app";
 const PROBE_TIMEOUT_MS = 10_000;
 
 const PermissionResponseSchema = z
@@ -34,8 +37,10 @@ const UNKNOWN_RESULT: MacPermissionProbeResult = {
 };
 
 export async function probeMacPermissions(
+  lock: EngineLock,
   runner: ProcessRunner,
 ): Promise<MacPermissionProbeResult> {
+  await verifyMacRuntimeSignature(lock, runner, DEFAULT_CUA_APP);
   try {
     const result = await runner.run(
       DEFAULT_CUA_EXECUTABLE,

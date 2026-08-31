@@ -8,12 +8,13 @@ async function read(path: string): Promise<string> {
 
 describe("v0.2.6 Mac Agent Preview documentation", () => {
   it("states the preview, packaging, attribution, and serial-control boundaries", async () => {
-    const [root, product, compatibility] = await Promise.all([
+    const [root, product, compatibility, troubleshooting] = await Promise.all([
       read("../../../README.md"),
       read("../../README.md"),
       read("../../../docs/host-compatibility.md"),
+      read("../../../docs/troubleshooting.md"),
     ]);
-    const combined = [root, product, compatibility].join("\n");
+    const combined = [root, product, compatibility, troubleshooting].join("\n");
 
     expect(root).toContain("Mac Agent Preview");
     expect(root).toContain("not a public Beta");
@@ -25,7 +26,7 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
     expect(combined).toContain("does not include an internal vision model");
     expect(combined).toContain("Multi-Agent concurrent control is deferred");
     expect(combined).toContain("one host at a time");
-    expect(combined).not.toMatch(/\bp(?:50|95)\b/i);
+    expect(combined).not.toMatch(/\bp(?:50|95)\b|faster path|faster route|quicker path|lower latency|more performant/i);
   });
 
   it("documents signed-daemon permissions, both doctor modes, and named manual host setup", async () => {
@@ -36,7 +37,8 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
     const combined = `${macos}\n${troubleshooting}`;
 
     expect(combined).toContain("permissions status --json");
-    expect(combined).toContain("signed CuaDriver");
+    expect(combined).toContain("local app signature verification");
+    expect(combined).toContain("driver-daemon attribution");
     expect(combined).toContain("computer-use doctor\n");
     expect(combined).toContain("computer-use doctor --json");
     expect(macos).toContain("computer-use config --client hanaagent");
@@ -67,5 +69,20 @@ describe("v0.2.6 Mac Agent Preview documentation", () => {
       expect(document).toContain("pnpm --silent host:test-prompt");
       expect(document).not.toMatch(/(?<!\-silent )pnpm host:test-prompt/);
     }
+  });
+
+  it("documents an executable exact-source Windows development install instead of a registry release", async () => {
+    const windows = await read("../../../docs/installation/windows.md");
+
+    expect(windows).toContain("git checkout --detach <40-lowercase-hex-commit>");
+    expect(windows).toContain("git rev-parse HEAD");
+    expect(windows).toContain("pnpm@9.0.4 build");
+    expect(windows).toContain("npm pack");
+    expect(windows).toContain("npm install --global .\\universal-computer-use-plugin-0.2.6.tgz");
+    expect(windows).toContain("computer-use setup --development");
+    expect(windows).toContain("computer-use doctor --json");
+    expect(windows).not.toContain("npm install --global @universal-computer-use/plugin");
+    expect(windows).not.toMatch(/^computer-use setup$/m);
+    expect(windows).not.toContain("npm update --global @universal-computer-use/plugin");
   });
 });

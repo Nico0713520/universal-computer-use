@@ -3,38 +3,50 @@ import process from "node:process";
 import { describe, expect, it, vi } from "vitest";
 
 import { runCli } from "../../src/cli/main.js";
+import type { ProcessRunner } from "../../src/cli/process-runner.js";
 import { loadEngineLock } from "../../src/engine/lock.js";
 import { FakeEngine } from "../helpers/fake-engine.js";
 
 function commandFixture() {
   const stdout: string[] = [];
   const stderr: string[] = [];
+  const runner: ProcessRunner = {
+    async run(command) {
+      if (command === "/usr/bin/osascript") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ bundleIdentifier: "com.apple.Finder" }),
+          stderr: "",
+        };
+      }
+      if (command === "/usr/bin/codesign") {
+        return {
+          code: 0,
+          stdout: "",
+          stderr: "Identifier=com.trycua.driver",
+        };
+      }
+      if (command === "/usr/sbin/spctl") {
+        return { code: 0, stdout: "", stderr: "" };
+      }
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          accessibility: true,
+          screen_recording: true,
+          source: {
+            attribution: "driver-daemon",
+            bundle_id: "com.trycua.driver",
+          },
+        }),
+        stderr: "",
+      };
+    },
+  };
   const dependencies = {
     loadLock: loadEngineLock,
     downloader: { async download() {} },
-    runner: {
-      async run(command: string) {
-        if (command === "/usr/bin/osascript") {
-          return {
-            code: 0,
-            stdout: JSON.stringify({ bundleIdentifier: "com.apple.Finder" }),
-            stderr: "",
-          };
-        }
-        return {
-          code: 0,
-          stdout: JSON.stringify({
-            accessibility: true,
-            screen_recording: true,
-            source: {
-              attribution: "driver-daemon",
-              bundle_id: "com.trycua.driver",
-            },
-          }),
-          stderr: "",
-        };
-      },
-    },
+    runner,
     connectEngine: vi.fn(async () => new FakeEngine({ platform: "macos" })),
     nodeExecutablePath: process.execPath,
     mcpScriptPath: "/fixture/dist/mcp/main.js",
@@ -55,6 +67,53 @@ function commandFixture() {
 }
 
 describe("computer-use doctor command", () => {
+  it("short-circuits permission and observation when the local CuaDriver signature fails", async () => {
+    const fixture = commandFixture();
+    const engine = new FakeEngine({ platform: "macos" });
+    const runs: string[] = [];
+    fixture.dependencies.connectEngine = vi.fn(async () => engine);
+    fixture.dependencies.runner = {
+      async run(command, args) {
+        runs.push(`${command} ${args.join(" ")}`);
+        if (command === "/usr/bin/osascript") {
+          return {
+            code: 0,
+            stdout: JSON.stringify({ bundleIdentifier: "com.apple.Finder" }),
+            stderr: "",
+          };
+        }
+        if (command === "/usr/bin/codesign") {
+          return { code: 1, stdout: "", stderr: "rejected" };
+        }
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            accessibility: true,
+            screen_recording: true,
+            source: {
+              attribution: "driver-daemon",
+              bundle_id: "com.trycua.driver",
+            },
+          }),
+          stderr: "",
+        };
+      },
+    };
+
+    const exitCode = await runCli(["doctor", "--json"], fixture.io, fixture.dependencies);
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(fixture.stdout[0]!)).toMatchObject({
+      ok: false,
+      error: {
+        code: "engine_version_mismatch",
+        diagnostic_reason: "runtime_signature_mismatch",
+      },
+    });
+    expect(runs.some((value) => value.includes("permissions status --json"))).toBe(false);
+    expect(engine.observations).toBe(0);
+  });
+
   it("prints concise human guidance for bare doctor", async () => {
     const fixture = commandFixture();
 

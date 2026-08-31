@@ -22,6 +22,16 @@ describe("doctor production dependency adapter", () => {
               stderr: "",
             };
           }
+          if (command === "/usr/bin/codesign" && args.includes("-dv")) {
+            return {
+              code: 0,
+              stdout: "",
+              stderr: "Identifier=com.trycua.driver",
+            };
+          }
+          if (command === "/usr/bin/codesign" || command === "/usr/sbin/spctl") {
+            return { code: 0, stdout: "", stderr: "" };
+          }
           return {
             code: 0,
             stdout: JSON.stringify({
@@ -52,6 +62,18 @@ describe("doctor production dependency adapter", () => {
     expect(connectEngine).toHaveBeenCalledTimes(2);
     expect(runs).toEqual([
       expect.objectContaining({ command: "/usr/bin/osascript" }),
+      {
+        command: "/usr/bin/codesign",
+        args: ["--verify", "--deep", "--strict", "/Applications/CuaDriver.app"],
+      },
+      {
+        command: "/usr/sbin/spctl",
+        args: ["--assess", "--type", "execute", "/Applications/CuaDriver.app"],
+      },
+      {
+        command: "/usr/bin/codesign",
+        args: ["-dv", "--verbose=4", "/Applications/CuaDriver.app"],
+      },
       {
         command: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
         args: ["permissions", "status", "--json"],
