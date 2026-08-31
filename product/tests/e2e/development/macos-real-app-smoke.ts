@@ -267,7 +267,7 @@ export async function restoreCalculator(
 }
 
 async function openTextEditDocument(documentPath: string): Promise<void> {
-  const child = spawn("/usr/bin/open", ["-g", "-a", "TextEdit", documentPath], {
+  const child = spawn("/usr/bin/open", ["-n", "-F", "-g", "-a", "TextEdit", documentPath], {
     stdio: ["ignore", "ignore", "ignore"],
   });
   const [code] = await once(child, "exit") as [number | null];

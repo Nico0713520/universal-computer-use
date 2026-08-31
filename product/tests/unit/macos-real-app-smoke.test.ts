@@ -166,7 +166,7 @@ describe("TextEdit owned-window smoke", () => {
       new URL("../e2e/development/macos-real-app-smoke.ts", import.meta.url),
       "utf8",
     );
-    expect(source).toContain('["-g", "-a", "TextEdit", documentPath]');
+    expect(source).toContain('["-n", "-F", "-g", "-a", "TextEdit", documentPath]');
   });
 
   it("accepts confirmed TextEdit readback when Cua honestly reports verification_unknown", () => {
