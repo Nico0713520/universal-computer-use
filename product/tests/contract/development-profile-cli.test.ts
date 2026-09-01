@@ -35,7 +35,7 @@ function evidence(profile = PROFILE): Record<string, unknown> {
     evidence_type: "computer-use-macos-development-profile",
     status: "passed",
     metadata: {
-      product_version: "0.2.7",
+      product_version: "0.2.8",
       protocol_version: "1.2.0",
       engine_version: "0.22.2",
       macos_version: "15.6.1",

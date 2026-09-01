@@ -36,4 +36,4 @@ This validation does not itself promote the compatibility table; Task 15 must al
 
 ## Development Preview scope
 
-Kimi is not part of the v0.2.7 Mac Agent Preview host set. Its older development lane is retired rather than silently emitting records that no longer match the shared strict contract. This does not change the separate release-evidence runbook above, does not claim incompatibility, and does not claim that Kimi has been tested for v0.2.7.
+Kimi is not part of the v0.2.8 Mac Agent Preview host set. Its older development lane is retired rather than silently emitting records that no longer match the shared strict contract. This does not change the separate release-evidence runbook above, does not claim incompatibility, and does not claim that Kimi has been tested for v0.2.8.

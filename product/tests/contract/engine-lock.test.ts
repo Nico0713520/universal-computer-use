@@ -14,10 +14,11 @@ describe("engine lock", () => {
   it("keeps package, product, and protocol versions aligned for v0.2", async () => {
     const manifest = JSON.parse(
       await readFile(new URL("../../package.json", import.meta.url), "utf8"),
-    ) as { version?: unknown };
+    ) as { version?: unknown; engines?: { node?: unknown } };
 
-    expect(manifest.version).toBe("0.2.7");
-    expect(PRODUCT_VERSION).toBe("0.2.7");
+    expect(manifest.version).toBe("0.2.8");
+    expect(manifest.engines?.node).toBe("^22.21.0 || >=24.5.0");
+    expect(PRODUCT_VERSION).toBe("0.2.8");
     expect(PROTOCOL_VERSION).toBe("1.2.0");
   });
 

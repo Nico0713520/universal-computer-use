@@ -70,7 +70,7 @@ describe("doctor", () => {
 
     expect(report).toEqual({
       ok: true,
-      product_version: "0.2.7",
+      product_version: "0.2.8",
       protocol_version: "1.2.0",
       cursor_mode: "auto",
       cursor_ready: true,

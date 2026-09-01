@@ -43,7 +43,7 @@
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         },
-        "product": { "const": "0.2.7" },
+        "product": { "const": "0.2.8" },
         "protocol": { "const": "1.2.0" },
         "engine": { "const": "0.22.2" }
       }

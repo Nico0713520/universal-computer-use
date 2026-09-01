@@ -17,12 +17,36 @@ export const AGENT_CURSOR_MOTION = Object.freeze({
 
 export type AgentCursorSdk = Pick<CuaDriverLike, "callTool">;
 export type AgentCursorPreparation = "ready" | "degraded";
+export type AgentCursorReadbackWaiter = (delayMs: number) => Promise<void>;
 
 type ConfirmedCursorState = boolean | "unknown";
+
+const INITIAL_CURSOR_READBACK_DELAYS_MS = Object.freeze([
+  10,
+  20,
+  40,
+  80,
+  100,
+  150,
+] as const);
 
 const EnabledOutputSchema = z.object({
   session: z.string().min(1),
   enabled: z.boolean(),
+}).passthrough();
+
+const CursorStateReadbackSchema = z.object({
+  session: z.string().min(1),
+  enabled: z.boolean(),
+  theme: z.object({
+    id: z.string().min(1),
+    reduced_motion: z.string().min(1),
+  }).passthrough(),
+  motion: z.object({
+    glide_duration_ms: z.number().finite(),
+    dwell_after_click_ms: z.number().finite(),
+    idle_hide_ms: z.number().finite(),
+  }).passthrough(),
 }).passthrough();
 
 const CursorStateSchema = z.object({
@@ -78,15 +102,74 @@ function parseStructured(result: ToolResult): unknown {
   }
 }
 
+function boundedCursorReadbackWait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function verifyInitializedCursors(
+  sdk: AgentCursorSdk,
+  sessions: readonly string[],
+  waitForReadback: AgentCursorReadbackWaiter,
+): Promise<void> {
+  let pendingSessions = [...sessions];
+  for (const delayMs of [0, ...INITIAL_CURSOR_READBACK_DELAYS_MS]) {
+    if (delayMs > 0) await waitForReadback(delayMs);
+    const round = new AbortController();
+    let states: Array<{ session: string; converged: boolean }>;
+    try {
+      states = await Promise.all(pendingSessions.map(async (session) => {
+        const result = await sdk.callTool(
+          "get_agent_cursor_state",
+          JSON.stringify({ session }),
+          { signal: round.signal },
+        );
+        const value = parseStructured(result);
+        const readback = CursorStateReadbackSchema.safeParse(value);
+        if (
+          !readback.success ||
+          readback.data.session !== session ||
+          readback.data.enabled
+        ) {
+          throw initializationFailure();
+        }
+        return {
+          session,
+          converged: CursorStateSchema.safeParse(value).success,
+        };
+      }));
+    } catch (error) {
+      round.abort();
+      throw error;
+    }
+    const unconvergedSessions = states
+      .filter(({ converged }) => !converged)
+      .map(({ session }) => session);
+    if (unconvergedSessions.length === 0) return;
+    pendingSessions = unconvergedSessions;
+  }
+  throw initializationFailure();
+}
+
 async function runInitializationStage(
   sdk: AgentCursorSdk,
   sessions: readonly string[],
   tool: string,
   input: Record<string, unknown>,
 ): Promise<void> {
-  const results = await Promise.all(sessions.map(async (session) =>
-    sdk.callTool(tool, JSON.stringify({ session, ...input }))));
-  if (results.some(({ isError }) => isError)) throw initializationFailure();
+  const stage = new AbortController();
+  try {
+    await Promise.all(sessions.map(async (session) => {
+      const result = await sdk.callTool(
+        tool,
+        JSON.stringify({ session, ...input }),
+        { signal: stage.signal },
+      );
+      if (result.isError) throw initializationFailure();
+    }));
+  } catch (error) {
+    stage.abort();
+    throw error;
+  }
 }
 
 function verifiedEnabledOutput(
@@ -120,6 +203,7 @@ export class AgentCursorController {
   static async initialize(
     sdk: AgentCursorSdk,
     sessions: readonly string[],
+    waitForReadback: AgentCursorReadbackWaiter = boundedCursorReadbackWait,
   ): Promise<AgentCursorController> {
     assertSessions(sessions);
 
@@ -142,19 +226,7 @@ export class AgentCursorController {
       { enabled: false },
     );
 
-    const states = await Promise.all(sessions.map(async (session) => ({
-      session,
-      result: await sdk.callTool(
-        "get_agent_cursor_state",
-        JSON.stringify({ session }),
-      ),
-    })));
-    for (const { session, result } of states) {
-      const parsed = CursorStateSchema.safeParse(parseStructured(result));
-      if (!parsed.success || parsed.data.session !== session || parsed.data.enabled) {
-        throw initializationFailure();
-      }
-    }
+    await verifyInitializedCursors(sdk, sessions, waitForReadback);
 
     return new AgentCursorController(sdk, sessions);
   }

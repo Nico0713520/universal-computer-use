@@ -6,7 +6,7 @@
 
 **Architecture:** Four narrow public seams own the work: Cursor convergence, process timeout ownership, setup policy, and direct CLI proxy bootstrapping. Each is implemented as a vertical TDD slice, with no host-specific branch and no GUI action in automated verification.
 
-**Tech Stack:** TypeScript 5.7, Node.js 22.21+, Vitest 3.2, MCP SDK 1.30, locked Cua Driver 0.22.2.
+**Tech Stack:** TypeScript 5.7, Node.js 22.21–22.x or 24.5+, Vitest 3.2, MCP SDK 1.30, locked Cua Driver 0.22.2.
 
 ## Global Constraints
 
@@ -50,7 +50,7 @@
 - [ ] Add a real shell fixture test that creates a child and a lock, then needs one second in its TERM trap; assert timeout rejects, the child is gone, and the lock is removed.
 - [ ] Run the focused test and confirm a surviving child or lock makes it red.
 - [ ] Implement independent POSIX groups and TERM-to-KILL group signaling without changing default Windows behavior.
-- [ ] Keep cleanup bounded and make signal errors such as `ESRCH` harmless only after the owned process has exited.
+- [ ] Keep cleanup bounded and classify process-group signals by group state: `ESRCH` means the owned group is gone, while `EPERM` during a liveness probe means it may still exist and escalation must remain armed.
 - [ ] Run the focused process test repeatedly to prove it is deterministic and leaves no fixture process.
 - [ ] Commit the process ownership slice.
 
@@ -93,7 +93,7 @@
 - [ ] Add pure policy tests covering uppercase/lowercase proxy variables, already-enabled proxy mode, recursion marker, non-setup commands, and redaction.
 - [ ] Add a direct-entrypoint test that captures argv and exit status without network access.
 - [ ] Run focused tests red.
-- [ ] Implement the one-time re-exec policy and raise `engines.node` to `>=22.21.0`.
+- [ ] Implement the one-time re-exec policy and set `engines.node` to `^22.21.0 || >=24.5.0`.
 - [ ] Add `AbortSignal.timeout(60_000)` to locked script downloads and a deterministic timeout test.
 - [ ] Verify proxy values never appear in stdout, stderr, serialized errors, or snapshots.
 - [ ] Run focused tests green and commit.
@@ -116,4 +116,3 @@
 - [ ] Review the branch for leaked proxy values, fixed action waits, private lock deletion, or host-specific production logic.
 - [ ] Update version-facing documentation consistently without changing the two-tool protocol snapshot.
 - [ ] Commit, push the branch, and publish the exact commit for HanaAgent and WorkBuddy retesting.
-

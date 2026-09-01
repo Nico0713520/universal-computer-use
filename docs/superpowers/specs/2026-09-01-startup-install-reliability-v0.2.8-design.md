@@ -16,7 +16,7 @@ Make the existing two-tool MCP reliably reach host tool discovery on macOS by fi
 - HanaAgent observed a real Cua install lasting about 4 minutes 28 seconds, while UCU hard-stopped the installer after 120 seconds.
 - Cua 0.22.2 waits 600 seconds before reclaiming a dead install lock. A 120-second UCU retry can never reach that recovery point.
 - The current process runner kills only the direct child and gives a shell 250ms to clean up. A deterministic slow-cleanup shell fixture reproduced `process timeout`, a surviving descendant, and a present lock.
-- The current downloader uses Node global `fetch`. Node environment-proxy support requires Node 22.21+ and must be enabled at process startup; the package currently accepts Node 22.19.
+- The current downloader uses Node global `fetch`. Environment-proxy support first appears in Node 22.21 and 24.5 and must be enabled at process startup; Node 23 and Node 24.0–24.4 do not provide the required flag.
 
 ## Non-goals
 
@@ -67,7 +67,7 @@ UCU never removes `~/.cua-driver/packages/.install.lock.d`. Safe lock ownership 
 
 ### 3. Proxy-aware setup
 
-Raise the supported Node floor from 22.19 to 22.21, the first Node 22 release with built-in environment-proxy support.
+Support Node 22.21–22.x or 24.5+, the release lines that provide built-in environment-proxy support. Exclude Node 23 and Node 24.0–24.4 rather than accepting an apparently newer but incompatible runtime.
 
 At the direct CLI entrypoint, only `setup` is eligible for proxy re-execution:
 
@@ -107,4 +107,3 @@ Each slice follows red, green, then focused regression. Full unit, contract, typ
 - Downloader timeout is finite and checksums remain mandatory.
 - No production path contains a fixed three-second wait or GUI-action retry.
 - Existing two-tool MCP protocol snapshots remain unchanged.
-

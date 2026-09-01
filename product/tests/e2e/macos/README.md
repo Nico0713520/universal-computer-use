@@ -5,7 +5,7 @@ This lane proves the product seam on one controlled macOS 14+ Retina machine. A 
 ## Prerequisites
 
 - An unlocked, logged-in Aqua session owned by the user running the test.
-- Node.js 22.19+, Google Chrome and a built product checkout.
+- Node.js 22.21–22.x or 24.5+, Google Chrome and a built product checkout.
 - The unmodified `/Applications/CuaDriver.app`, or an absolute path supplied as `CUA_E2E_CUA_APP_PATH`.
 - Cua Screen Recording and Accessibility grants. Use the upstream signed-app flow: `cua-driver permissions grant`.
 - An engine installed at the exact version in `engine.lock.json`.

@@ -45,7 +45,7 @@ describe("experimental host adapters", () => {
 
     expect(manifest).toMatchObject({
       name: "computer-use",
-      version: "0.2.7",
+      version: "0.2.8",
       status: "experimental",
       computerUse: {
         skill: canonicalSkillReference,

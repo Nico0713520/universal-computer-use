@@ -6,7 +6,7 @@ async function read(path: string): Promise<string> {
   return readFile(new URL(path, import.meta.url), "utf8");
 }
 
-describe("v0.2.7 Mac Agent Preview documentation", () => {
+describe("v0.2.8 Mac Agent Preview documentation", () => {
   it("states the preview, packaging, attribution, and serial-control boundaries", async () => {
     const [root, product, compatibility, troubleshooting] = await Promise.all([
       read("../../../README.md"),
@@ -99,7 +99,7 @@ describe("v0.2.7 Mac Agent Preview documentation", () => {
     expect(windows).toContain("$packResult = @($packJsonText | ConvertFrom-Json)");
     expect(windows).toContain("$packagePath");
     expect(windows).toContain("Test-Path -LiteralPath $packagePath");
-    expect(windows).not.toContain("npm install --global .\\universal-computer-use-plugin-0.2.7.tgz");
+    expect(windows).not.toContain("npm install --global .\\universal-computer-use-plugin-0.2.8.tgz");
     expect(windows).toContain("@(\"setup\", \"--development\")");
     expect(windows).toContain("@(\"doctor\", \"--json\")");
     expect(windows).not.toContain("npm install --global @universal-computer-use/plugin");

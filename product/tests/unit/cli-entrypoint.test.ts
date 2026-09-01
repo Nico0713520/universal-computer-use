@@ -3,9 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isDirectEntryPoint } from "../../src/cli/entrypoint.js";
+import {
+  isDirectEntryPoint,
+  runDirectCliEntrypoint,
+} from "../../src/cli/entrypoint.js";
 
 const temporaryRoots: string[] = [];
 
@@ -40,5 +43,57 @@ describe("installed CLI entrypoint", () => {
     await writeFile(otherPath, "");
 
     expect(isDirectEntryPoint(otherPath, pathToFileURL(modulePath).href)).toBe(false);
+  });
+});
+
+describe("direct CLI execution", () => {
+  it("returns the proxy-enabled setup child exit code without running setup twice", async () => {
+    const runCli = vi.fn(async () => 0);
+    const reexec = vi.fn(async () => 29);
+
+    await expect(
+      runDirectCliEntrypoint(
+        {
+          argv: ["setup"],
+          execArgv: [],
+          environment: { HTTPS_PROXY: "http://proxy.test" },
+          nodeExecutablePath: "/opt/node/bin/node",
+          entrypointPath: "/opt/computer-use/dist/cli/main.js",
+        },
+        { runCli, reexec },
+      ),
+    ).resolves.toBe(29);
+
+    expect(runCli).not.toHaveBeenCalled();
+    expect(reexec).toHaveBeenCalledWith(
+      "/opt/node/bin/node",
+      [
+        "--use-env-proxy",
+        "/opt/computer-use/dist/cli/main.js",
+        "setup",
+      ],
+      expect.objectContaining({ stdio: "inherit", shell: false }),
+    );
+  });
+
+  it("leaves non-setup commands on the original CLI path", async () => {
+    const runCli = vi.fn(async () => 7);
+    const reexec = vi.fn(async () => 29);
+
+    await expect(
+      runDirectCliEntrypoint(
+        {
+          argv: ["doctor", "--json"],
+          execArgv: [],
+          environment: { HTTPS_PROXY: "http://proxy.test" },
+          nodeExecutablePath: "/opt/node/bin/node",
+          entrypointPath: "/opt/computer-use/dist/cli/main.js",
+        },
+        { runCli, reexec },
+      ),
+    ).resolves.toBe(7);
+
+    expect(runCli).toHaveBeenCalledWith(["doctor", "--json"]);
+    expect(reexec).not.toHaveBeenCalled();
   });
 });

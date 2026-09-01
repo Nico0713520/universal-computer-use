@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { access, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -42,6 +43,9 @@ function fakeBoundary() {
     command: string;
     args: string[];
     env?: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    terminateTree?: boolean;
+    terminationGraceMs?: number;
   }> = [];
   const downloader: Downloader = {
     async download(url, destination) {
@@ -51,7 +55,7 @@ function fakeBoundary() {
   };
   const runner: ProcessRunner = {
     async run(command, args, options) {
-      runs.push({ command, args, env: options.env });
+      runs.push({ command, args, ...options });
       const isSignatureInspection =
         command === "powershell.exe" && args.includes("-Command");
       const isMacIdentityInspection =
@@ -76,7 +80,7 @@ function fakeBoundary() {
 
 const healthyDoctor = {
   ok: true,
-  product_version: "0.2.7",
+  product_version: "0.2.8",
   protocol_version: "1.2.0",
   cursor_mode: "auto" as const,
   cursor_ready: true,
@@ -115,6 +119,137 @@ describe("setup", () => {
     expect(Date.now() - startedAt).toBeLessThan(750);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "normalizes the POSIX deadline exit race to either success or the stable timeout error",
+    async () => {
+      const unexpectedErrors: string[] = [];
+      for (let iteration = 0; iteration < 50; iteration += 1) {
+        try {
+          await nodeProcessRunner.run(
+            "/bin/bash",
+            ["-c", "sleep 0.01"],
+            { timeoutMs: 13, terminateTree: true, terminationGraceMs: 5 },
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message !== "process timeout: /bin/bash") unexpectedErrors.push(message);
+        }
+      }
+      expect(unexpectedErrors).toEqual([]);
+    },
+    5_000,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "terminates the owned POSIX installer tree after its TERM trap removes the fixture lock",
+    async () => {
+      const fixtureDirectory = await mkdtemp(join(tmpdir(), "computer-use-process-tree-"));
+      const scriptPath = join(fixtureDirectory, "installer-fixture.sh");
+      const lockPath = join(fixtureDirectory, "install.lock.d");
+      const childPidPath = join(fixtureDirectory, "child.pid");
+      await writeFile(
+        scriptPath,
+        [
+          "#!/usr/bin/env bash",
+          "set -u",
+          "lock_path=$1",
+          "child_pid_path=$2",
+          "mkdir \"$lock_path\"",
+          "cleanup() {",
+          "  kill \"$child_pid\" 2>/dev/null || true",
+          "  wait \"$child_pid\" 2>/dev/null || true",
+          "  sleep 1",
+          "  rmdir \"$lock_path\"",
+          "  exit 143",
+          "}",
+          "trap cleanup TERM",
+          "sleep 30 &",
+          "child_pid=$!",
+          "printf '%s\\n' \"$child_pid\" > \"$child_pid_path\"",
+          "wait \"$child_pid\"",
+        ].join("\n"),
+        { mode: 0o700 },
+      );
+
+      let childPid: number | undefined;
+      try {
+        await expect(
+          nodeProcessRunner.run(
+            "/bin/bash",
+            [scriptPath, lockPath, childPidPath],
+            {
+              timeoutMs: 500,
+              terminateTree: true,
+              terminationGraceMs: 1_500,
+            },
+          ),
+        ).rejects.toThrow("process timeout: /bin/bash");
+
+        childPid = Number.parseInt((await readFile(childPidPath, "utf8")).trim(), 10);
+        expect(Number.isSafeInteger(childPid)).toBe(true);
+        expect(() => process.kill(childPid!, 0)).toThrow();
+        await expect(access(lockPath)).rejects.toThrow();
+      } finally {
+        if (childPid !== undefined) {
+          try {
+            process.kill(childPid, "SIGKILL");
+          } catch {
+            // The passing path has already terminated the fixture child.
+          }
+        }
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    },
+    5_000,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "force-kills the same POSIX group when both leader and descendant ignore TERM",
+    async () => {
+      const fixtureDirectory = await mkdtemp(join(tmpdir(), "computer-use-force-tree-"));
+      const scriptPath = join(fixtureDirectory, "stubborn-installer.sh");
+      const childPidPath = join(fixtureDirectory, "child.pid");
+      await writeFile(
+        scriptPath,
+        [
+          "#!/usr/bin/env bash",
+          "set -u",
+          "child_pid_path=$1",
+          "trap '' TERM",
+          "/bin/bash -c 'trap \"\" TERM; while true; do sleep 1; done' &",
+          "child_pid=$!",
+          "printf '%s\\n' \"$child_pid\" > \"$child_pid_path\"",
+          "while true; do sleep 1; done",
+        ].join("\n"),
+        { mode: 0o700 },
+      );
+
+      let childPid: number | undefined;
+      try {
+        await expect(
+          nodeProcessRunner.run(
+            "/bin/bash",
+            [scriptPath, childPidPath],
+            { timeoutMs: 100, terminateTree: true, terminationGraceMs: 100 },
+          ),
+        ).rejects.toThrow("process timeout: /bin/bash");
+        childPid = Number.parseInt((await readFile(childPidPath, "utf8")).trim(), 10);
+        expect(Number.isSafeInteger(childPid)).toBe(true);
+        expect(() => process.kill(childPid!, 0)).toThrow();
+      } finally {
+        if (childPid !== undefined) {
+          try {
+            process.kill(childPid, "SIGKILL");
+          } catch {
+            // The passing path has already terminated the fixture descendant.
+          }
+        }
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    },
+    3_000,
+  );
+
   it("downloads and checks the exact macOS script group before local execution", async () => {
     const boundary = fakeBoundary();
     const lock = await fixtureLock();
@@ -139,10 +274,27 @@ describe("setup", () => {
     expect(installRun.args[0]).toBe(boundary.downloads[0].destination);
     expect(dirname(installRun.args[0])).toBe(dirname(boundary.downloads[1].destination));
     expect(installRun.env?.CUA_DRIVER_RS_VERSION).toBe("0.22.2");
+    expect(installRun).toMatchObject({
+      timeoutMs: 1_200_000,
+      terminateTree: true,
+      terminationGraceMs: 5_000,
+    });
     expect(boundary.runs).toContainEqual(expect.objectContaining({
       command: "/usr/bin/open",
       args: ["-n", "-g", "/Applications/CuaDriver.app", "--args", "serve"],
+      timeoutMs: 30_000,
     }));
+    expect(boundary.runs).toContainEqual(expect.objectContaining({
+      command: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
+      args: ["permissions", "grant"],
+      timeoutMs: 120_000,
+    }));
+    expect(
+      boundary.runs
+        .filter(({ command }) => command !== "/bin/bash")
+        .every(({ terminateTree, terminationGraceMs }) =>
+          terminateTree === undefined && terminationGraceMs === undefined),
+    ).toBe(true);
     expect(boundary.runs).not.toContainEqual(expect.objectContaining({
       args: ["autostart", "kick"],
     }));
@@ -150,6 +302,114 @@ describe("setup", () => {
     expect(result.warning).toMatchObject({ development_only: true });
 
     await expect(access(dirname(boundary.downloads[0].destination))).rejects.toThrow();
+  });
+
+  it.each([
+    ["60000", 60_000],
+    ["3600000", 3_600_000],
+  ])(
+    "uses valid COMPUTER_USE_INSTALL_TIMEOUT_MS=%s only for the installer",
+    async (configuredTimeout, expectedTimeout) => {
+      const boundary = fakeBoundary();
+
+      await runSetup(
+        { development: true, platform: "darwin", arch: "arm64" },
+        {
+          lock: await fixtureLock(),
+          ...boundary,
+          environment: { COMPUTER_USE_INSTALL_TIMEOUT_MS: configuredTimeout },
+          runDoctor: vi.fn(async () => healthyDoctor),
+        },
+      );
+
+      expect(boundary.runs.find(({ command }) => command === "/bin/bash")).toMatchObject({
+        timeoutMs: expectedTimeout,
+        terminateTree: true,
+        terminationGraceMs: 5_000,
+      });
+      expect(boundary.runs.find(({ command }) => command === "/usr/bin/open")).toMatchObject({
+        timeoutMs: 30_000,
+      });
+      expect(
+        boundary.runs.find(({ args }) => args.join(" ") === "permissions grant"),
+      ).toMatchObject({ timeoutMs: 120_000 });
+    },
+  );
+
+  it.each(["", "59999", "3600001", "120000.5", "not-a-timeout"])(
+    "rejects invalid COMPUTER_USE_INSTALL_TIMEOUT_MS=%j before executing the installer",
+    async (configuredTimeout) => {
+      const boundary = fakeBoundary();
+      const runDoctor = vi.fn(async () => healthyDoctor);
+
+      await expect(
+        runSetup(
+          { development: true, platform: "darwin", arch: "arm64" },
+          {
+            lock: await fixtureLock(),
+            ...boundary,
+            environment: { COMPUTER_USE_INSTALL_TIMEOUT_MS: configuredTimeout },
+            runDoctor,
+          },
+        ),
+      ).rejects.toThrow(
+        "COMPUTER_USE_INSTALL_TIMEOUT_MS must be a decimal integer from 60000 through 3600000",
+      );
+      expect(boundary.runs).toEqual([]);
+      expect(boundary.downloads).toEqual([]);
+      expect(runDoctor).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [
+      "password credential",
+      "http://install-user:install-secret@proxy.example.test:8080",
+      "install-secret",
+    ],
+    [
+      "username-only token",
+      "http://install-token@proxy.example.test:8080",
+      "install-token",
+    ],
+  ])("redacts a proxy %s echoed by a failed installer", async (_label, proxy, credential) => {
+    const boundary = fakeBoundary();
+    const originalRun = boundary.runner.run.bind(boundary.runner);
+    boundary.runner.run = async (command, args, options) => {
+      if (command === "/bin/bash") {
+        return {
+          code: 1,
+          stdout: "",
+          stderr: `failed through ${proxy}; authentication failed for ${credential}`,
+        };
+      }
+      return originalRun(command, args, options);
+    };
+
+    let failure: unknown;
+    try {
+      await runSetup(
+        { development: true, platform: "darwin", arch: "arm64" },
+        {
+          lock: await fixtureLock(),
+          ...boundary,
+          environment: { HTTPS_PROXY: proxy },
+          runDoctor: vi.fn(async () => healthyDoctor),
+        },
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(String(failure)).not.toContain(proxy);
+    expect(String(failure)).not.toContain(credential);
+    const serialized = JSON.stringify(
+      serializeCliFailure(failure, { HTTPS_PROXY: proxy }),
+    );
+    expect(serialized).not.toContain(proxy);
+    expect(serialized).not.toContain(credential);
+    expect(serialized).toContain("[redacted-proxy]");
   });
 
   it("uses the exact Windows PowerShell argv without shell interpolation", async () => {
@@ -182,7 +442,10 @@ describe("setup", () => {
         "0.22.2",
         "-AutoStart",
       ],
+      timeoutMs: 1_200_000,
     });
+    expect(boundary.runs[0]).not.toHaveProperty("terminateTree");
+    expect(boundary.runs[0]).not.toHaveProperty("terminationGraceMs");
   });
 
   it("fails closed before downloading when ordinary setup is not release eligible", async () => {

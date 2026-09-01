@@ -6,7 +6,7 @@
   "build": {
     "repository": "https://github.com/Nico0713520/universal-computer-use",
     "git_commit": "0000000000000000000000000000000000000000",
-    "product": "0.2.7",
+    "product": "0.2.8",
     "protocol": "1.2.0",
     "engine": "0.22.2"
   },

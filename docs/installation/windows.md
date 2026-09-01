@@ -1,11 +1,11 @@
 # Windows installation
 
-Version 0.2.7 does not promote Windows as part of the Mac Agent Preview. Windows remains a development-only desktop compatibility path: there is no public Beta, signed one-click MSI, or SmartScreen-ready installer yet, and UAC secure desktop remains unsupported.
+Version 0.2.8 does not promote Windows as part of the Mac Agent Preview. Windows remains a development-only desktop compatibility path: there is no public Beta, signed one-click MSI, or SmartScreen-ready installer yet, and UAC secure desktop remains unsupported.
 
 ## Prerequisites
 
 - Windows 10 or Windows 11 on x64. Windows ARM64 and 32-bit Windows are outside the v0.2 release matrix.
-- Node.js 22.19.0 or newer and an npm-compatible package manager.
+- Node.js 22.21–22.x or 24.5+ and an npm-compatible package manager.
 - Windows PowerShell and an unlocked, interactive user desktop. Session 0, a disconnected RDP desktop, the lock screen, and the UAC secure desktop are not supported.
 - A host Agent that supports local stdio MCP, forwards MCP image content to its current multimodal model, and can continue tool calls until the visible task is complete.
 

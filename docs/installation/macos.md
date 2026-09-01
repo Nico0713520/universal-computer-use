@@ -1,11 +1,11 @@
 # macOS installation
 
-Version 0.2.7 is a Mac Agent Preview (Developer Preview), not a public Beta. There is no one-click installer, DMG, notarized public package, or automatic host configuration in this milestone.
+Version 0.2.8 is a Mac Agent Preview (Developer Preview), not a public Beta. There is no one-click installer, DMG, notarized public package, or automatic host configuration in this milestone.
 
 ## Prerequisites
 
 - macOS 14 or newer on Apple silicon or Intel x64.
-- Node.js 22.19.0 or newer and an npm-compatible package manager.
+- Node.js 22.21–22.x or 24.5+ and an npm-compatible package manager.
 - An unlocked, foreground login session. The v0.2 plugin does not operate the login window, FileVault unlock screen, screen saver lock screen, or a disconnected background session.
 - A host Agent that supports local stdio MCP, forwards MCP image content to its current multimodal model, and can continue tool calls until the visible task is complete.
 
@@ -29,6 +29,12 @@ The global `computer-use setup` path is reserved for a future promoted package a
 
 Setup downloads `install.sh` from the exact locked GitHub release and its helper scripts from the exact locked Cua source commit into one temporary directory. It verifies every script SHA-256 before executing the local entry point, pins `CUA_DRIVER_RS_VERSION`, and never follows `latest` or `main`. The unmodified upstream installer downloads the release archive; the asset hash in the lock is promotion evidence rather than a claim that this wrapper re-hashes that internal archive transfer.
 
+If `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, or `https_proxy` is configured, invoke `computer-use setup` normally. The direct CLI re-executes only that command once with Node's environment-proxy support unless `NODE_USE_ENV_PROXY=1` or `--use-env-proxy` is already active. It inherits the terminal and child exit status and does not print the proxy value. TLS verification stays enabled, and every UCU-downloaded installer script still has to match its locked SHA-256 digest.
+
+The Cua installer has a 20-minute safety deadline. A successful install returns immediately; the longer ceiling allows Cua's own 600-second dead-lock recovery to complete on a retry. Set `COMPUTER_USE_INSTALL_TIMEOUT_MS` to a decimal value from `60000` through `3600000` to select a different installer-only deadline. Invalid values fail before the installer runs. On macOS, a timed-out installer receives `SIGTERM` as one UCU-owned process group and has five seconds to run its cleanup traps before that group is force-killed. The 30-second daemon launch and 120-second permission flow keep their separate deadlines.
+
+UCU never deletes Cua's private `~/.cua-driver/packages/.install.lock.d`. Do not blindly remove that directory: it may belong to a live installer. Let the locked upstream installer inspect its recorded owner PID and reclaim a dead lock, or first verify the owner through Cua's documented recovery procedure.
+
 After installation, setup verifies `/Applications/CuaDriver.app` with `codesign --verify --deep --strict` and Gatekeeper. A promoted release must also match the TeamIdentifier, bundle ID, and designated-requirement fingerprint in the lock. Locked Cua 0.22.2's macOS installer does not implement the Windows-only `autostart kick` command, so setup starts the verified app directly with `open -n -g /Applications/CuaDriver.app --args serve`, then delegates permission prompting to:
 
 ```bash
@@ -37,7 +43,7 @@ After installation, setup verifies `/Applications/CuaDriver.app` with `codesign 
 
 The plugin does not modify Codex, HanaAgent, WorkBuddy, Kimi, or another host's configuration automatically. The permission dialogs and System Settings entries keep the visible CuaDriver attribution; UCU does not hide or rebrand the signed Runtime identity.
 
-After installation, product 0.2.7 can recover an installed but stopped CuaDriver through either the independent diagnostic connector or the MCP pre-session connector. If the initial connection returns `runtime_unavailable`, that connector may make one bounded startup attempt before any diagnostic session or MCP request: it requires the fixed app path and locked signature, opens `serve`, and polls until the first successful connection or a 10-second hard deadline. Doctor also completes its trusted interactive-session, Runtime-identity, and daemon-permission prechecks before connecting. Recovery does not install or upgrade Cua, never replays an observation or GUI action, and never restarts Cua after an MCP session starts. During session initialization, UCU configures and verifies the Adaptive Cursor on both internal sessions. Default `auto` hides it during background actions and every observation, while foreground pointer actions remain visible. Use `--cursor visible` for debugging/recording or `--cursor hidden` for a fully quiet presentation layer. Both doctor modes remain input-free diagnostics even when their connector starts the already-installed verified daemon.
+After installation, product 0.2.8 can recover an installed but stopped CuaDriver through either the independent diagnostic connector or the MCP pre-session connector. If the initial connection returns `runtime_unavailable`, that connector may make one bounded startup attempt before any diagnostic session or MCP request: it requires the fixed app path and locked signature, opens `serve`, and polls until the first successful connection or a 10-second hard deadline. Doctor also completes its trusted interactive-session, Runtime-identity, and daemon-permission prechecks before connecting. Recovery does not install or upgrade Cua, never replays an observation or GUI action, and never restarts Cua after an MCP session starts. During session initialization, UCU configures and verifies the Adaptive Cursor on both internal sessions. Default `auto` hides it during background actions and every observation, while foreground pointer actions remain visible. Use `--cursor visible` for debugging/recording or `--cursor hidden` for a fully quiet presentation layer. Both doctor modes remain input-free diagnostics even when their connector starts the already-installed verified daemon.
 
 ## Screen Recording and Accessibility
 

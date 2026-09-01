@@ -5,7 +5,7 @@ This source-only lane proves the current developer preview through the two publi
 ## Requirements
 
 - macOS 14 or newer with an unlocked interactive desktop. The runner rejects the macOS login window before starting owned GUI resources.
-- Node.js 22.19 or newer and Google Chrome.
+- Node.js 22.21–22.x or 24.5+ and Google Chrome.
 - The exact Cua Driver version locked by `engine.lock.json`, installed as its stable signed application identity.
 - Screen Recording and Accessibility granted to Cua Driver. Successful `computer-use doctor --json` capture is the preflight proof.
 - No other agent or person competing for the same desktop while the deterministic fixture runs.

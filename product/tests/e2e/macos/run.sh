@@ -36,8 +36,8 @@ fi
 
 readonly NODE_BIN="$(command -v node || true)"
 [[ -n "${NODE_BIN}" && -x "${NODE_BIN}" ]] || fail "Node.js is required"
-"${NODE_BIN}" -e 'const [major,minor]=process.versions.node.split(".").map(Number); if (major<22 || (major===22 && minor<19)) process.exit(1)' \
-  || fail "Node.js 22.19 or newer is required"
+"${NODE_BIN}" -e 'const [major,minor]=process.versions.node.split(".").map(Number); const supported=(major===22&&minor>=21)||(major===24&&minor>=5)||major>=25; if (!supported) process.exit(1)' \
+  || fail "Node.js 22.21-22.x or 24.5+ is required"
 
 readonly APP_PATH="${CUA_E2E_CUA_APP_PATH:-/Applications/CuaDriver.app}"
 [[ "${APP_PATH}" == /* && -d "${APP_PATH}" ]] || fail "CUA_E2E_CUA_APP_PATH must name an installed absolute .app path"

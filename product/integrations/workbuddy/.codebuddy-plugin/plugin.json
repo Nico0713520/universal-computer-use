@@ -1,7 +1,7 @@
 {
   "name": "computer-use",
   "displayName": "Computer Use",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Experimental WorkBuddy declaration for the packaged Computer Use MCP.",
   "status": "experimental",
   "computerUse": {

@@ -100,7 +100,7 @@ Using a shell bridge, shell-driven JSON-RPC, host built-in Computer Use, AppleSc
 
 ## 4. Return only the privacy-safe v2 JSON report
 
-Return only the privacy-safe v2 JSON report conforming to \`tests/e2e/host/development-evidence.schema.json\`. It must include \`schema_version: 2\`, \`evidence_origin: external-run\`, repository \`${repository}\`, commit \`${commit}\`, product \`0.2.7\`, protocol \`1.2.0\`, engine \`0.22.2\`, the exact ${hostName} version and host-reported model, macOS version/architecture, \`direct_stdio: true\`, \`shell_bridge: false\`, \`builtin_computer_use: false\`, exactly the two tools, both PNG turns, the same model/direct loop, all three task results, limitations, and natural stop.
+Return only the privacy-safe v2 JSON report conforming to \`tests/e2e/host/development-evidence.schema.json\`. It must include \`schema_version: 2\`, \`evidence_origin: external-run\`, repository \`${repository}\`, commit \`${commit}\`, product \`0.2.8\`, protocol \`1.2.0\`, engine \`0.22.2\`, the exact ${hostName} version and host-reported model, macOS version/architecture, \`direct_stdio: true\`, \`shell_bridge: false\`, \`builtin_computer_use: false\`, exactly the two tools, both PNG turns, the same model/direct loop, all three task results, limitations, and natural stop.
 
 Do not return or store screenshots, prompts, the ephemeral value, nonces, tool arguments, clipboard contents, typed content, raw image payloads, paths, environment data, user or host identities, native IDs, window/snapshot refs, element tokens, or secrets. Use \`verified-development\` only if every required proof passes; otherwise return the truthful \`failed\`, \`blocked\`, or \`not-run\` record with its allowlisted non-pass signal.
 `;

@@ -13,11 +13,17 @@ import {
 import { verifyMacRuntimeSignature } from "../engine/runtime-startup.js";
 import { ComputerUseError } from "../errors.js";
 import type { DoctorReport } from "./doctor.js";
+import { redactProxyEnvironmentValues } from "./env-proxy.js";
 import type { Downloader, ProcessRunner, ProcessResult } from "./process-runner.js";
 
 const RELEASE_ROOT = "https://github.com/trycua/cua/releases/download";
 const SOURCE_ROOT = "https://raw.githubusercontent.com/trycua/cua";
-const PROCESS_TIMEOUT_MS = 120_000;
+const INSTALLER_TIMEOUT_MS = 1_200_000;
+const INSTALLER_TERMINATION_GRACE_MS = 5_000;
+const INSTALLER_TIMEOUT_MIN_MS = 60_000;
+const INSTALLER_TIMEOUT_MAX_MS = 3_600_000;
+const PERMISSION_TIMEOUT_MS = 120_000;
+const DAEMON_LAUNCH_TIMEOUT_MS = 30_000;
 
 export type SetupOptions = Readonly<{
   development: boolean;
@@ -48,6 +54,21 @@ export type SetupDependencies = Readonly<{
   macExecutablePath?: string;
   windowsExecutablePath?: string;
 }>;
+
+function resolveInstallerTimeoutMs(environment: NodeJS.ProcessEnv): number {
+  const configured = environment.COMPUTER_USE_INSTALL_TIMEOUT_MS;
+  if (configured === undefined) return INSTALLER_TIMEOUT_MS;
+  const invalid =
+    !/^[0-9]+$/u.test(configured) ||
+    Number(configured) < INSTALLER_TIMEOUT_MIN_MS ||
+    Number(configured) > INSTALLER_TIMEOUT_MAX_MS;
+  if (invalid) {
+    throw new Error(
+      "COMPUTER_USE_INSTALL_TIMEOUT_MS must be a decimal integer from 60000 through 3600000",
+    );
+  }
+  return Number(configured);
+}
 
 export function resolveEnginePlatform(
   platform: NodeJS.Platform,
@@ -99,9 +120,14 @@ async function verifySha256(path: string, expected: string): Promise<void> {
 async function requireSuccess(
   result: ProcessResult,
   label: string,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<ProcessResult> {
   if (result.code !== 0) {
-    throw new Error(`${label} failed: ${result.stderr.trim() || result.stdout.trim()}`);
+    const detail = redactProxyEnvironmentValues(
+      result.stderr.trim() || result.stdout.trim(),
+      environment,
+    );
+    throw new Error(`${label} failed: ${detail}`);
   }
   return result;
 }
@@ -173,6 +199,8 @@ export async function runSetup(
   for (const file of platformLock.installer_files) {
     assertSafeInstallerFilename(file.name);
   }
+  const environment = { ...(dependencies.environment ?? process.env) };
+  const installerTimeoutMs = resolveInstallerTimeoutMs(environment);
   const tempDirectory = await mkdtemp(join(tmpdir(), "computer-use-setup-"));
   try {
     const destinations = new Map<string, string>();
@@ -185,15 +213,17 @@ export async function runSetup(
     const entrypoint = destinations.get(platformLock.installer_entrypoint);
     if (entrypoint === undefined) throw new Error("installer entry point missing");
 
-    const environment = { ...(dependencies.environment ?? process.env) };
     if (platform === "macos") {
       environment.CUA_DRIVER_RS_VERSION = dependencies.lock.version;
       await requireSuccess(
         await dependencies.runner.run("/bin/bash", [entrypoint], {
           env: environment,
-          timeoutMs: PROCESS_TIMEOUT_MS,
+          timeoutMs: installerTimeoutMs,
+          terminateTree: true,
+          terminationGraceMs: INSTALLER_TERMINATION_GRACE_MS,
         }),
         "Cua installer",
+        environment,
       );
       const appPath = dependencies.macAppPath ?? "/Applications/CuaDriver.app";
       const executablePath =
@@ -202,15 +232,17 @@ export async function runSetup(
       await verifyMacRuntimeSignature(dependencies.lock, dependencies.runner, appPath);
       await requireSuccess(
         await dependencies.runner.run("/usr/bin/open", ["-n", "-g", appPath, "--args", "serve"], {
-          timeoutMs: 30_000,
+          timeoutMs: DAEMON_LAUNCH_TIMEOUT_MS,
         }),
         "Cua daemon startup",
+        environment,
       );
       await requireSuccess(
         await dependencies.runner.run(executablePath, ["permissions", "grant"], {
-          timeoutMs: PROCESS_TIMEOUT_MS,
+          timeoutMs: PERMISSION_TIMEOUT_MS,
         }),
         "Cua permission flow",
+        environment,
       );
     } else {
       await requireSuccess(
@@ -226,18 +258,20 @@ export async function runSetup(
             dependencies.lock.version,
             "-AutoStart",
           ],
-          { env: environment, timeoutMs: PROCESS_TIMEOUT_MS },
+          { env: environment, timeoutMs: installerTimeoutMs },
         ),
         "Cua installer",
+        environment,
       );
       const executablePath =
         dependencies.windowsExecutablePath ?? defaultWindowsExecutable(environment);
       await verifyWindowsSignature(dependencies.lock, dependencies.runner, executablePath);
       await requireSuccess(
         await dependencies.runner.run(executablePath, ["autostart", "kick"], {
-          timeoutMs: 30_000,
+          timeoutMs: DAEMON_LAUNCH_TIMEOUT_MS,
         }),
         "Cua daemon startup",
+        environment,
       );
     }
 

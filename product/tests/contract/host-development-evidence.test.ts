@@ -56,7 +56,7 @@ function completeDevelopmentEvidence(): JsonRecord {
     build: {
       repository: "https://github.com/Nico0713520/universal-computer-use",
       git_commit: "0123456789abcdef0123456789abcdef01234567",
-      product: "0.2.7",
+      product: "0.2.8",
       protocol: "1.2.0",
       engine: "0.22.2",
     },
@@ -676,7 +676,7 @@ describe("named-host development evidence v2", () => {
   it("retires the old Kimi development lane without changing its release runbook", async () => {
     const runbook = await readFile(new URL("kimi.md", hostDirectory), "utf8");
 
-    expect(runbook).toContain("Kimi is not part of the v0.2.7 Mac Agent Preview host set");
+    expect(runbook).toContain("Kimi is not part of the v0.2.8 Mac Agent Preview host set");
     expect(runbook).not.toContain("development-evidence.schema.json");
     expect(runbook).not.toContain("CUA_HOST_DEVELOPMENT_EVIDENCE_FILES");
     expect(runbook).toContain("CUA_HOST_EVIDENCE_FILES");

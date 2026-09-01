@@ -48,7 +48,7 @@ describe("no fixed action delay contract", () => {
     ]);
   });
 
-  it("allows only the six exact timeout and bounded-verification tuples", () => {
+  it("allows only the exact timeout and bounded-verification tuples", () => {
     const sources = [
       {
         path: "src/core/observe.ts",
@@ -64,6 +64,10 @@ describe("no fixed action delay contract", () => {
       {
         path: "src/engine/cua.ts",
         text: "function cancellableWait(waitMs: number) { setTimeout(() => undefined, waitMs); }",
+      },
+      {
+        path: "src/engine/agent-cursor.ts",
+        text: "function boundedCursorReadbackWait(delayMs: number) { setTimeout(() => undefined, delayMs); }",
       },
       {
         path: "src/engine/runtime-startup.ts",

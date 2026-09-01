@@ -22,14 +22,20 @@ describe("computer-use setup command diagnostic wiring", () => {
       command: string;
       args: readonly string[];
       timeoutMs: number;
+      terminateTree?: boolean;
+      terminationGraceMs?: number;
     }> = [];
     const runner = {
       async run(
         command: string,
         args: string[],
-        options: { timeoutMs: number },
+        options: {
+          timeoutMs: number;
+          terminateTree?: boolean;
+          terminationGraceMs?: number;
+        },
       ) {
-        runs.push({ command, args, timeoutMs: options.timeoutMs });
+        runs.push({ command, args, ...options });
         if (command === "/usr/bin/codesign" && args.includes("-dv")) {
           return {
             code: 0,
@@ -104,6 +110,19 @@ describe("computer-use setup command diagnostic wiring", () => {
     expect(connectMcpEngine).not.toHaveBeenCalled();
     expect(engine.observations).toBe(1);
     expect(engine.closes).toBe(1);
+    expect(runs.find(({ command }) => command === "/bin/bash")).toMatchObject({
+      timeoutMs: 1_200_000,
+      terminateTree: true,
+      terminationGraceMs: 5_000,
+    });
+    const daemonLaunch = runs.find(({ command }) => command === "/usr/bin/open");
+    expect(daemonLaunch).toMatchObject({ timeoutMs: 30_000 });
+    expect(daemonLaunch).not.toHaveProperty("terminateTree");
+    expect(daemonLaunch).not.toHaveProperty("terminationGraceMs");
+    const permissionGrant = runs.find(({ args }) => args.join(" ") === "permissions grant");
+    expect(permissionGrant).toMatchObject({ timeoutMs: 120_000 });
+    expect(permissionGrant).not.toHaveProperty("terminateTree");
+    expect(permissionGrant).not.toHaveProperty("terminationGraceMs");
     expect(runs).toContainEqual({
       command: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
       args: ["permissions", "status", "--json"],

@@ -134,6 +134,181 @@ describe("Cua Agent Cursor controller", () => {
     ]);
   });
 
+  it("waits for readback-only convergence without repeating configuration", async () => {
+    const sdk = healthySdk();
+    const originalCallTool = sdk.callTool.bind(sdk);
+    let readbacks = 0;
+    const waits: number[] = [];
+    sdk.callTool = async (name, argumentsJson, options): Promise<ToolResult> => {
+      const input = JSON.parse(argumentsJson) as Record<string, unknown>;
+      if (name === "get_agent_cursor_state") {
+        sdk.calls.push({ name, input });
+        readbacks += 1;
+        if (readbacks === 1) {
+          return result({
+            ...cursorState(String(input.session), false),
+            motion: {
+              ...(cursorState(String(input.session), false).motion as Record<string, unknown>),
+              glide_duration_ms: 0,
+              dwell_after_click_ms: 80,
+              idle_hide_ms: 20_000,
+            },
+          });
+        }
+        return result(cursorState(String(input.session), false));
+      }
+      return originalCallTool(name, argumentsJson, options);
+    };
+
+    const outcome = AgentCursorController.initialize(
+      sdk,
+      ["desktop"],
+      async (delayMs) => {
+        waits.push(delayMs);
+      },
+    );
+
+    await expect(outcome).resolves.toBeInstanceOf(AgentCursorController);
+    expect(waits).toEqual([10]);
+    expect(sdk.calls.map(({ name }) => name)).toEqual([
+      "set_agent_cursor_theme",
+      "set_agent_cursor_motion",
+      "set_agent_cursor_enabled",
+      "get_agent_cursor_state",
+      "get_agent_cursor_state",
+    ]);
+  });
+
+  it("uses the exact bounded convergence schedule without repeating configuration", async () => {
+    const sdk = healthySdk();
+    const originalCallTool = sdk.callTool.bind(sdk);
+    const waits: number[] = [];
+    sdk.callTool = async (name, argumentsJson, options): Promise<ToolResult> => {
+      const input = JSON.parse(argumentsJson) as Record<string, unknown>;
+      if (name === "get_agent_cursor_state") {
+        sdk.calls.push({ name, input });
+        return result({
+          ...cursorState(String(input.session), false),
+          motion: {
+            ...(cursorState(String(input.session), false).motion as Record<string, unknown>),
+            glide_duration_ms: 0,
+            dwell_after_click_ms: 80,
+            idle_hide_ms: 20_000,
+          },
+        });
+      }
+      return originalCallTool(name, argumentsJson, options);
+    };
+
+    const outcome = AgentCursorController.initialize(
+      sdk,
+      ["desktop"],
+      async (delayMs) => {
+        waits.push(delayMs);
+      },
+    ).then(
+      () => ({ status: "ready" as const }),
+      (error: unknown) => ({ status: "failed" as const, error }),
+    );
+
+    await expect(outcome).resolves.toMatchObject({
+      status: "failed",
+      error: {
+        code: "engine_contract_changed",
+        diagnosticReason: "cursor_initialization_failed",
+      },
+    });
+    expect(waits).toEqual([10, 20, 40, 80, 100, 150]);
+    expect(sdk.calls.filter(({ name }) => name === "get_agent_cursor_state")).toHaveLength(7);
+    expect(sdk.calls.filter(({ name }) => name === "set_agent_cursor_theme")).toHaveLength(1);
+    expect(sdk.calls.filter(({ name }) => name === "set_agent_cursor_motion")).toHaveLength(1);
+    expect(sdk.calls.filter(({ name }) => name === "set_agent_cursor_enabled")).toHaveLength(1);
+  });
+
+  it("does not leave another session polling after one session fails closed", async () => {
+    const sdk = healthySdk();
+    const originalCallTool = sdk.callTool.bind(sdk);
+    const waits: number[] = [];
+    sdk.callTool = async (name, argumentsJson, options): Promise<ToolResult> => {
+      const input = JSON.parse(argumentsJson) as Record<string, unknown>;
+      if (name === "get_agent_cursor_state") {
+        sdk.calls.push({ name, input });
+        if (input.session === "desktop") return result({ malformed: true });
+        return result({
+          ...cursorState(String(input.session), false),
+          motion: {
+            ...(cursorState(String(input.session), false).motion as Record<string, unknown>),
+            glide_duration_ms: 0,
+          },
+        });
+      }
+      return originalCallTool(name, argumentsJson, options);
+    };
+
+    await expect(
+      AgentCursorController.initialize(
+        sdk,
+        ["desktop", "window"],
+        async (delayMs) => {
+          waits.push(delayMs);
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "engine_contract_changed",
+      diagnosticReason: "cursor_initialization_failed",
+    });
+
+    expect(waits).toEqual([]);
+    expect(sdk.calls.filter(({ name }) => name === "get_agent_cursor_state")).toHaveLength(2);
+  });
+
+  it("aborts a hanging same-round read as soon as another session fails closed", async () => {
+    const sdk = healthySdk();
+    const originalCallTool = sdk.callTool.bind(sdk);
+    const abortedSessions: string[] = [];
+    let releaseWindow!: () => void;
+    let markWindowStarted!: () => void;
+    const windowStarted = new Promise<void>((resolve) => {
+      markWindowStarted = resolve;
+    });
+    sdk.callTool = async (name, argumentsJson, options): Promise<ToolResult> => {
+      const input = JSON.parse(argumentsJson) as Record<string, unknown>;
+      if (name !== "get_agent_cursor_state") {
+        return originalCallTool(name, argumentsJson, options);
+      }
+      sdk.calls.push({ name, input });
+      if (input.session === "desktop") return result({ malformed: true });
+      return new Promise<ToolResult>((resolve, reject) => {
+        releaseWindow = () => resolve(result(cursorState("window", false)));
+        markWindowStarted();
+        options?.signal?.addEventListener("abort", () => {
+          abortedSessions.push(String(input.session));
+          reject(new Error("cursor read aborted"));
+        }, { once: true });
+      });
+    };
+
+    const outcome = AgentCursorController.initialize(sdk, ["desktop", "window"])
+      .then(
+        () => ({ status: "ready" as const }),
+        (error: unknown) => ({ status: "failed" as const, error }),
+      );
+    await windowStarted;
+    await Promise.resolve();
+    await Promise.resolve();
+    const abortedBeforeRelease = [...abortedSessions];
+    releaseWindow();
+
+    await expect(outcome).resolves.toMatchObject({
+      status: "failed",
+      error: {
+        code: "engine_contract_changed",
+        diagnosticReason: "cursor_initialization_failed",
+      },
+    });
+    expect(abortedBeforeRelease).toEqual(["window"]);
+  });
+
   it("does not call Cua when a verified session already has the desired state", async () => {
     const sdk = healthySdk();
     const controller = await AgentCursorController.initialize(sdk, ["desktop", "window"]);
@@ -229,10 +404,63 @@ describe("Cua Agent Cursor controller", () => {
     ]);
   });
 
+  it("aborts a hanging same-stage configuration when its peer fails", async () => {
+    const sdk = healthySdk();
+    const originalCallTool = sdk.callTool.bind(sdk);
+    const abortedSessions: string[] = [];
+    let releaseWindow!: () => void;
+    let markWindowStarted!: () => void;
+    const windowStarted = new Promise<void>((resolve) => {
+      markWindowStarted = resolve;
+    });
+    sdk.callTool = async (name, argumentsJson, options): Promise<ToolResult> => {
+      const input = JSON.parse(argumentsJson) as Record<string, unknown>;
+      if (name !== "set_agent_cursor_theme") {
+        return originalCallTool(name, argumentsJson, options);
+      }
+      sdk.calls.push({ name, input });
+      if (input.session === "desktop") {
+        return result({ code: "theme_failed" }, true);
+      }
+      return new Promise<ToolResult>((resolve, reject) => {
+        releaseWindow = () => resolve(result({ session: "window" }));
+        markWindowStarted();
+        options?.signal?.addEventListener("abort", () => {
+          abortedSessions.push(String(input.session));
+          reject(new Error("theme aborted"));
+        }, { once: true });
+      });
+    };
+
+    const outcome = AgentCursorController.initialize(sdk, ["desktop", "window"])
+      .then(
+        () => ({ status: "ready" as const }),
+        (error: unknown) => ({ status: "failed" as const, error }),
+      );
+    await windowStarted;
+    for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+    const abortedBeforeRelease = [...abortedSessions];
+    releaseWindow();
+
+    await expect(outcome).resolves.toMatchObject({
+      status: "failed",
+      error: {
+        code: "engine_contract_changed",
+        diagnosticReason: "cursor_initialization_failed",
+      },
+    });
+    expect(abortedBeforeRelease).toEqual(["window"]);
+    expect(sdk.calls.filter(({ name }) => name === "set_agent_cursor_motion")).toEqual([]);
+  });
+
   it.each([
     {
       name: "malformed JSON",
       state: (): ToolResult => ({ ...result({}), structuredJson: "{not-json" }),
+    },
+    {
+      name: "tool error",
+      state: (): ToolResult => result({ code: "cursor_failed" }, true),
     },
     {
       name: "wrong session",
@@ -242,19 +470,10 @@ describe("Cua Agent Cursor controller", () => {
       name: "still enabled",
       state: (session: string): ToolResult => result(cursorState(session, true)),
     },
-    {
-      name: "wrong motion",
-      state: (session: string): ToolResult => result({
-        ...cursorState(session, false),
-        motion: {
-          ...(cursorState(session, false).motion as Record<string, unknown>),
-          glide_duration_ms: 900,
-        },
-      }),
-    },
-  ])("fails initialization for $name", async ({ state }) => {
+  ])("fails initialization immediately for $name", async ({ state }) => {
     const sdk = healthySdk();
     const originalCallTool = sdk.callTool.bind(sdk);
+    const waits: number[] = [];
     sdk.callTool = async (name, argumentsJson, options): Promise<ToolResult> => {
       const input = JSON.parse(argumentsJson) as Record<string, unknown>;
       if (name === "get_agent_cursor_state") {
@@ -264,11 +483,26 @@ describe("Cua Agent Cursor controller", () => {
       return originalCallTool(name, argumentsJson, options);
     };
 
-    await expect(AgentCursorController.initialize(sdk, ["desktop", "window"]))
-      .rejects.toMatchObject({
+    const outcome = AgentCursorController.initialize(
+      sdk,
+      ["desktop"],
+      async (delayMs) => {
+        waits.push(delayMs);
+      },
+    ).then(
+      () => ({ status: "ready" as const }),
+      (error: unknown) => ({ status: "failed" as const, error }),
+    );
+
+    await expect(outcome).resolves.toMatchObject({
+      status: "failed",
+      error: {
         code: "engine_contract_changed",
         diagnosticReason: "cursor_initialization_failed",
-      });
+      },
+    });
+    expect(waits).toEqual([]);
+    expect(sdk.calls.filter(({ name }) => name === "get_agent_cursor_state")).toHaveLength(1);
   });
 
   it("rejects duplicate or blank session names before calling Cua", async () => {

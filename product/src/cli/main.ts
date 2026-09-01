@@ -25,7 +25,11 @@ import {
 import { renderConfig, type ConfigClient } from "./config.js";
 import { createDoctorDependencyAdapter } from "./doctor-dependencies.js";
 import { renderDoctorHuman } from "./doctor-output.js";
-import { isDirectEntryPoint } from "./entrypoint.js";
+import { redactProxyEnvironmentValues } from "./env-proxy.js";
+import {
+  isDirectEntryPoint,
+  runDirectCliEntrypoint,
+} from "./entrypoint.js";
 import { runDoctor, type DoctorOptions } from "./doctor.js";
 import {
   fetchDownloader,
@@ -299,7 +303,10 @@ export async function runCli(
   throw new Error(usage());
 }
 
-export function serializeCliFailure(error: unknown): Readonly<{
+export function serializeCliFailure(
+  error: unknown,
+  environment: NodeJS.ProcessEnv = process.env,
+): Readonly<{
   ok: false;
   error: Readonly<{
     code: string;
@@ -314,7 +321,7 @@ export function serializeCliFailure(error: unknown): Readonly<{
       ok: false,
       error: {
         code: error.code,
-        message: error.message,
+        message: redactProxyEnvironmentValues(error.message, environment),
         recovery: error.recovery,
         retryable: error.retryable,
         ...(error.diagnosticReason === undefined
@@ -327,13 +334,29 @@ export function serializeCliFailure(error: unknown): Readonly<{
     ok: false,
     error: {
       code: "command_failed",
-      message: error instanceof Error ? error.message : String(error),
+      message: redactProxyEnvironmentValues(
+        error instanceof Error ? error.message : String(error),
+        environment,
+      ),
     },
   };
 }
 
-if (isDirectEntryPoint(process.argv[1], import.meta.url)) {
-  void runCli(process.argv.slice(2))
+const directEntrypointPath = process.argv[1];
+if (
+  directEntrypointPath !== undefined &&
+  isDirectEntryPoint(directEntrypointPath, import.meta.url)
+) {
+  void runDirectCliEntrypoint(
+    {
+      argv: process.argv.slice(2),
+      execArgv: process.execArgv,
+      environment: process.env,
+      nodeExecutablePath: process.execPath,
+      entrypointPath: directEntrypointPath,
+    },
+    { runCli },
+  )
     .then((code) => {
       process.exitCode = code;
     })
